@@ -20,10 +20,9 @@ from PyQt5.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QComboBox, QFi
 from ..core import formats
 from ..core.config import Config
 from ..core.model import Cue, CueDocument, normalize_cues, sec_to_ts, ts_to_sec
-from ..core import media
-from .cue_table import COL_E, COL_S, CueTable
+from .cue_table import COL_S, CueTable
 from .player import PlayerWidget
-from .theme import human_time, is_dark, open_path
+from .theme import human_time, is_dark
 from .timeline import Timeline
 
 
@@ -764,11 +763,18 @@ class EditorInterface(QWidget):
             return
         row = self.doc.index_of(cue)
         if row >= 0 and row != self.table.currentRow():
+            # 播放跟随换行前，必须先把编辑框里正在编辑的那行落盘：
+            # 否则 _editing_row 被挪到新行后，用户一回编辑框按 Enter，
+            # 上一条的半截文本就被写进这一行，覆盖原内容。
+            if self.edit_area.hasFocus():
+                self._apply_inline_silent()
             self.table.blockSignals(True)
             self.table.selectRow(row)
             self.table.scrollToItem(self.table.item(row, 5), QAbstractItemView.PositionAtCenter)
             self.table.blockSignals(False)
             self._editing_row = row
+            if not self.edit_area.hasFocus() and self.doc and 0 <= row < len(self.doc.cues):
+                self.edit_area.setPlainText(self.doc.cues[row].display_text)
 
     def _on_duration(self, sec: float) -> None:
         if self.doc and sec > 0:
@@ -873,6 +879,9 @@ class EditorInterface(QWidget):
             return
         if self.doc is None:
             self.doc = CueDocument(source_video="", path="")
+            # 必须回灌主窗：main.doc 还指着 None 的话，Ctrl+S 会提示"没有内容"，
+            # 导入的字幕根本存不下来（main_window 的其它入口都是成对设置的）。
+            self.main.doc = self.doc
         if self.doc.cues:
             self.push_undo()
         self.doc.cues = cues
@@ -915,11 +924,17 @@ class EditorInterface(QWidget):
         if not self.doc or not (0 <= row < len(self.doc.cues)):
             return
         c = self.doc.cues[row]
+        # 模型漏输出某行时会传回空串：直接写就把那条字幕清空了，
+        # 而且这条路径没有 undo 快照。空文本一律忽略。
+        text = (text or "").strip()
+        if not text or text == c.display_text:
+            return
         if c.original_text == "":
             c.original_text = c.text
         c.text = text
         c.state = "llm"
         self.table.mark_row_llm(row, text)
+        self.main.mark_dirty()
 
     def mark_all_llm(self) -> None:
         self.timeline.update()

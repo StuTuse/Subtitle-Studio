@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import os
 import traceback
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, List, Optional
 
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal
 
-from ..core import formats, llm, media, transcriber
+from ..core import llm, media, transcriber
 from ..core.config import Config
 from ..core.model import Cue, CueDocument
 
@@ -142,15 +142,17 @@ class FixWorker(_BaseWorker):
 
     sig_cue = pyqtSignal(int, str)   # row, text
 
-    def __init__(self, cfg: Config, cues: List[Cue]):
+    def __init__(self, cfg: Config, cues: List[Cue], extra: str = ""):
         super().__init__()
         self.cfg = cfg
         self.cues = cues
+        self.extra = extra
 
     def run(self) -> None:
         try:
             res = llm.fix_document(self.cfg, self.cues, progress=self._progress,
-                                   cancel=self.cancelled, on_cue=self._on_cue)
+                                   cancel=self.cancelled, on_cue=self._on_cue,
+                                   extra=self.extra)
             self.sig_done.emit(res)
         except Exception as e:
             self.sig_failed.emit(llm._friendly_err(e) if not isinstance(e, ValueError) else str(e))

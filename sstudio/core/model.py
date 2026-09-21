@@ -72,7 +72,7 @@ class Cue:
     confidence: Optional[float] = None
     words: List[Dict[str, Any]] = field(default_factory=list)  # [{start,end,word,prob}]
     notes: str = ""
-    id: str = field(default_factory=lambda: uuid.uuid4().hex[:10])
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
 
     # ------------------------------------------------------------------ utils
     @property
@@ -109,7 +109,7 @@ class Cue:
             confidence=d.get("confidence"),
             words=list(d.get("words", []) or []),
             notes=str(d.get("notes", "") or ""),
-            id=str(d.get("id") or uuid.uuid4().hex[:10]),
+            id=str(d.get("id") or uuid.uuid4().hex[:16]),
         )
 
 
@@ -140,8 +140,13 @@ class CueDocument:
         """后一条开始早于前一条结束时，压缩前一条的结束时间（保序，不丢内容）。"""
         for i in range(len(self.cues) - 1):
             a, b = self.cues[i], self.cues[i + 1]
-            if a.end > b.start and a.start < b.start:
+            if a.end <= b.start:
+                continue
+            if a.start < b.start:
                 a.end = max(a.start + 0.01, b.start - 0.001)
+            else:
+                # 起点相同（ASR 断句常见）：不留整段重叠，前条压成极短窗口
+                a.end = a.start + 0.01
 
     def index_of(self, cue: Cue) -> int:
         for i, c in enumerate(self.cues):
@@ -198,6 +203,7 @@ class CueDocument:
         picked = [self.cues[i] for i in idx if 0 <= i < len(self.cues)]
         if len(picked) < 2:
             return None
+        first = min(i for i in idx if 0 <= i < len(self.cues))
         picked.sort(key=lambda c: c.start)
         texts = [c.display_text.strip() for c in picked if c.display_text.strip()]
         merged = Cue(
@@ -210,7 +216,14 @@ class CueDocument:
             confidence=min([c.confidence for c in picked if c.confidence is not None], default=None),
         )
         merged.words = [w for c in picked for w in c.words]
-        self.cues[idx[0]:idx[-1] + 1] = [merged]
+        # 只能删除"被选中"的那些行：idx 是表格多选，Ctrl 隔行点选完全正常，
+        # 若按 idx[0]..idx[-1] 整段切片会把夹在中间未选中的字幕一起吞掉。
+        drop = set(idx)
+        # 保留项里首行位置替换成 merged，其余选中行直接消失；
+        # 未选中但夹在中间的行原样保留（旧实现按切片整段替换会吞掉它们）。
+        self.cues = [merged if i == first else c
+                     for i, c in enumerate(self.cues)
+                     if i == first or i not in drop]
         return merged
 
     def split_long(self, max_chars: int = 20, max_dur: float = 7.0) -> int:

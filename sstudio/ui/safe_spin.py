@@ -77,8 +77,16 @@ class _WheelGuard:
             "QListWidget::item{padding:5px 12px;}"
             "QListWidget::item:selected{background:#2f6db3;color:#ffffff;}")
         self._menu = m
+        # 弹窗无父级：控件销毁后弹窗若还开着，点击会对已析构的 C++ 对象
+        # setValue。关窗即删 + 析构信号清引用，两头都堵上。
+        m.setAttribute(Qt.WA_DeleteOnClose, True)
+        m.destroyed.connect(lambda: self._menu_gone(m))
         m.move(QCursor.pos())
         m.show()
+
+    def _menu_gone(self, m: QListWidget) -> None:
+        if getattr(self, "_menu", None) is m:
+            self._menu = None
 
     def _pick(self, item: QListWidgetItem) -> None:
         v = item.data(Qt.UserRole)
@@ -94,8 +102,11 @@ class _WheelGuard:
         return []
 
     def close_popup(self) -> None:
-        if self._menu is not None and self._menu.isVisible():
-            self._menu.close()
+        try:
+            if self._menu is not None and self._menu.isVisible():
+                self._menu.close()
+        except RuntimeError:      # C++ 对象已随窗口销毁
+            self._menu = None
 
 
 class SafeSpinBox(QSpinBox, _WheelGuard):

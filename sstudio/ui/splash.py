@@ -70,7 +70,7 @@ def paint_app_icon(p: QPainter, rect: QRectF) -> None:
     p.restore()
 
 
-def app_icon() -> "QIcon":
+def app_icon():      # -> QIcon（QIcon 在函数内导入，注解会触发 pyflakes 误报）
     """把同一造型渲染成多尺寸 QIcon：窗口标题栏/任务栏用，无需外部文件。"""
     from PyQt5.QtGui import QIcon, QPixmap
     ic = QIcon()

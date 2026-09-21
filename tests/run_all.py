@@ -27,6 +27,7 @@ SUITES = [
     ("release_shortcut", "发版脚本：桌面快捷方式同步", False),
     ("doctor",       "环境体检：检查项、镜像修复编排、首启向导", False),
     ("settings_reset", "恢复默认设置：保留 API Key/地址、确认框原生可靠", False),
+    ("bugfix_sweep",   "全面审查修复回归：merge/往返/原子写/止损/污染", False),
     ("gui",          "界面构建与交互冒烟（offscreen）", False),
     ("transcribe",   "真实转写（需本地 CT2 模型）", True),
 ]

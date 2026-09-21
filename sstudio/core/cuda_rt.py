@@ -26,7 +26,7 @@ import ctypes
 import os
 import sys
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 _REQUIRED = ("cublas64_12.dll", "cudart64_12.dll")
 _OPTIONAL = ("cudnn64_9.dll", "cudnn_ops64_9.dll")
@@ -36,6 +36,7 @@ _NEEDED = _REQUIRED
 
 _registered: List[str] = []
 _result: Optional["CudaRuntime"] = None
+_result_extra: str = ""
 
 
 @dataclass
@@ -217,12 +218,18 @@ def discover(extra_dir: Optional[str] = None) -> CudaRuntime:
 
 
 def register(extra_dir: Optional[str] = None, force: bool = False) -> CudaRuntime:
-    """发现并注册 CUDA 12 运行目录。结果会被缓存。"""
-    global _result
-    if _result is not None and not force:
+    """发现并注册 CUDA 12 运行目录。结果会被缓存。
+
+    缓存必须区分 extra_dir：自检/doctor 往往先无参调用一次，若缓存不记
+    当时用的目录，用户在设置里指定的 CUDA 目录就会整会话都不生效。
+    """
+    global _result, _result_extra
+    req = os.path.abspath(extra_dir) if extra_dir else ""
+    if _result is not None and not force and req == _result_extra:
         return _result
 
     rt = discover(extra_dir)
+    _result_extra = req
     if sys.platform == "win32" and rt.usable:
         for d in {rt.cublas_dir, rt.cudart_dir, rt.cudnn_dir}:
             if not d or d in _registered:

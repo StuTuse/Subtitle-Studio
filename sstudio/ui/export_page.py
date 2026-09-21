@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import List
 
 from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, CheckBox, ComboBox,
                             FluentIcon as FIF, InfoBar, InfoBarPosition, LineEdit,
                             PrimaryPushButton, PushButton, StrongBodyLabel, SubtitleLabel)
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QVBoxLayout, QWidget)
 
 from ..core import formats
 from ..core.config import Config
-from ..core.model import CueDocument
 from .theme import open_path
 
 

@@ -30,6 +30,9 @@ class LLMError(RuntimeError):
 
 
 # ------------------------------------------------------------------ 客户端
+_clients: Dict[tuple, Any] = {}
+
+
 def load_client(prof: LLMProfile):
     from openai import OpenAI
 
@@ -42,11 +45,52 @@ def load_client(prof: LLMProfile):
     except Exception:
         kwargs["timeout"] = 300.0
     kwargs["max_retries"] = 0        # 重试由 fix_document 统一管理，避免叠加放大占用
-    return OpenAI(**kwargs)
+    # 同一接入点复用 client：每批都新建会重建 httpx 连接池，几十批就是
+    # 几十次 TCP+TLS 握手。任何会改变 client 行为的字段都在缓存键里。
+    key = (kwargs.get("base_url", ""), kwargs["api_key"], kwargs["timeout"])
+    c = _clients.get(key)
+    if c is None:
+        c = _clients[key] = OpenAI(**kwargs)
+    return c
 
 
 class ReasoningBudgetError(LLMError):
     """推理模型的思考把 max_tokens 全吃光，正文为空。"""
+
+
+_ABORT_NOTE = "__aborted__"      # worker 因全局止损放弃批次时的标记（不进失败清单）
+
+_CONN_REFUSED_MARKERS = (
+    "connection refused", "connectionreset", "connection reset",
+    "connection aborted", "target machine actively refused",
+    "getaddrinfo failed", "name or service not known",
+    "nodename nor servname", "network is unreachable",
+    "unable to connect", "failed to establish a new connection",
+)
+
+
+def _is_conn_refused(e: BaseException) -> bool:
+    """服务根本没开 / 地址不可达（区别于偶发超时）。
+
+    只有这种错误才值得全局止损：重试一万次也不会好。超时必须排除——
+    偶发慢响应重试就能过去，误判会把整篇纠错半途掐掉。顺着 __cause__/
+    __context__ 链向上找，因为 openai SDK 会把底层的 ConnectionRefusedError
+    包进 APIConnectionError。
+    """
+    seen: set = set()
+    chain: Optional[BaseException] = e
+    while chain is not None and id(chain) not in seen:
+        seen.add(id(chain))
+        name = type(chain).__name__
+        if name in ("TimeoutError", "ReadTimeout", "ConnectTimeout"):
+            return False                     # 明确超时：交给重试，别全局止损
+        if name == "ConnectionRefusedError":
+            return True                      # Windows 的 str 是本地化文案，认类型最稳
+        low = str(chain).lower()
+        if any(k in low for k in _CONN_REFUSED_MARKERS):
+            return True
+        chain = chain.__cause__ or chain.__context__
+    return False
 
 
 def _reasoning_of(msg) -> str:
@@ -413,20 +457,24 @@ def sanity_check(src: str, dst: str) -> Optional[str]:
 
 # ------------------------------------------------------------------ 修正流程
 def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
-                 cancel: Cancel = None, on_cue: Optional[Callable[[int, str], None]] = None
-                 ) -> FixResult:
+                 cancel: Cancel = None, on_cue: Optional[Callable[[int, str], None]] = None,
+                 extra: str = "") -> FixResult:
+    """批量纠错。extra 是"本轮补充指令"：只进本次提示词，不写回 cfg.glossary
+    （曾经拼进术语表并保存，点一次运行就在持久配置里叠一份，越滚越大）。"""
     prof = cfg.profile()
     if not prof.api_key and prof.kind != "ollama":
         raise LLMError("尚未配置 API Key。请到「模型设置」里填写。")
     bundle = PromptBundle.from_cfg(cfg)
     glossary = (cfg.glossary or "").strip()
+    if extra.strip():
+        glossary = (glossary + "\n【本轮补充】" + extra.strip()).strip()
     script = (cfg.reference_script or "").strip()
     bs = max(1, int(cfg.batch_size))
     batches = [(i, cues[i:i + bs]) for i in range(0, len(cues), bs)]
     result = FixResult(texts=[c.display_text for c in cues])
     done = 0
     lock = __import__("threading").Lock()
-    _abort_on_conn_error: List[Optional[str]] = [None]   # 首个连接错误：全局止损
+    _abort_flag: List[Optional[str]] = [None]   # 服务连不上：全局止损标记
 
     def one(idx: int, batch: List[Cue], attempt: int = 0) -> Optional[Dict[int, str]]:
         msg = bundle.render(batch, idx, glossary, script)
@@ -451,12 +499,13 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
             time.sleep(min(0.25, max(0.01, deadline - time.time())))
 
     def worker(job: Tuple[int, List[Cue]]):
-        nonlocal done
         idx, batch = job
         if cancel and cancel():
             return idx, None, "已取消"
         err = ""
         for attempt in range(max(1, int(cfg.auto_retry) + 1)):
+            if _abort_flag[0] is not None:
+                return idx, None, _ABORT_NOTE
             if attempt:
                 # 限流/并发满：等久一点再试，固定几百毫秒只会一直撞在同一个坑里
                 _sleep(min(20.0, 3.0 * (2 ** (attempt - 1))) if "限流" in err else 1.2 * attempt)
@@ -474,38 +523,37 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                 err = _friendly_err(e)
                 if "API Key" in err or "模型名不存在" in err:
                     return idx, None, err          # 参数错误，重试无意义
-                low = err.lower()
-                if ("connection" in low or "connect" in low or "unreachable" in low
-                        or "dns" in low or "网络不通" in err or "超时" in err):
-                    # 连不上服务：立刻放弃本批并全局止损——网关没开时，
-                    # 每批都重试 5 次 × 12 批能把几分钟变成十几分钟白等
-                    if _abort_on_conn_error[0] is None:
-                        _abort_on_conn_error[0] = err
+                if _is_conn_refused(e):
+                    # 服务根本没开/地址写错：立刻放弃本批并全局止损。
+                    # 注意只认「连不上」，不把偶发超时算进来——单批超时重试就好，
+                    # 误判成服务挂掉会把整篇纠错半途掐掉。
+                    if _abort_flag[0] is None:
+                        _abort_flag[0] = err
                     return idx, None, err
                 if cancel and cancel():
                     return idx, None, "已取消"
         return idx, None, err
 
     workers = max(1, min(int(cfg.concurrency), len(batches) or 1))
+    aborted_cancels = False
     with cf.ThreadPoolExecutor(max_workers=workers) as ex:
         futures = [ex.submit(worker, j) for j in batches]
         for fut in cf.as_completed(futures):
+            if fut.cancelled():
+                continue                    # 被止损取消的排队批次：直接跳过
             idx, got, err = fut.result()
             with lock:
                 done += 1
                 if progress:
                     progress(f"已修正 {done}/{len(batches)} 批", done / max(1, len(batches)))
+            if _abort_flag[0] is not None and not aborted_cancels:
+                # 服务连不上：排队中还没开跑的批次一律不再发起
+                aborted_cancels = True
+                for f2 in futures:
+                    f2.cancel()
             if err:
-                # 服务连不上：把剩余未开跑的批次全部取消，别让它们继续排队白等
-                if _abort_on_conn_error[0] is not None:
-                    for f2 in futures:
-                        f2.cancel()
-                    if done == 1:
-                        raise LLMError(
-                            "连不上模型服务，已停止全部批次。\n\n" + err
-                            + "\n\n请检查：模型服务是否启动（本地网关要先开）、"
-                              "地址是否正确、网络/代理是否正常。")
-                result.failures.append(f"第 {idx + 1} 行起：{err}")
+                if err != _ABORT_NOTE:      # 止损而放弃的批次不进失败清单刷消息
+                    result.failures.append(f"第 {idx + 1} 行起：{err}")
                 continue
             assert got is not None
             batch = cues[idx:idx + bs]
@@ -533,6 +581,11 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                         cue.state = "llm"
                     if on_cue:
                         on_cue(no, new)
+    if _abort_flag[0] is not None:
+        raise LLMError(
+            "连不上模型服务，已停止剩余批次。\n\n" + _abort_flag[0]
+            + "\n\n请检查：模型服务是否启动（本地网关要先开）、"
+              "地址是否正确、网络/代理是否正常。")
     note = no_reasoning_note(prof)
     if note:
         result.failures.append(note)       # 跑完提示一次即可，不逐批刷屏

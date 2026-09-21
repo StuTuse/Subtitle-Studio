@@ -29,6 +29,9 @@ def _clean_inline(text: str) -> str:
     return text.replace("&nbsp;", " ").strip()
 
 
+_SPEAKER_LINE_RE = re.compile(r"^\s*([^:\n]{1,24}?):$")
+
+
 def parse_srt(text: str) -> List[Cue]:
     text = text.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n")
     blocks = re.split(r"\n\s*\n", text.strip())
@@ -51,9 +54,18 @@ def parse_srt(text: str) -> List[Cue]:
         end = ts_to_sec(pos[0])
         if start is None or end is None:
             continue
-        body = "\n".join(lines[idx + 1:]).strip()
+        body_lines = lines[idx + 1:]
+        speaker = ""
+        # to_srt 把说话人写成独占一行的「名字:」；导入时剥回去，否则往返一次
+        # 每条字幕正文都无缘无故多了个前缀。只认整行就是「短词+冒号」的情况。
+        if body_lines:
+            m = _SPEAKER_LINE_RE.match(body_lines[0])
+            if m:
+                speaker = m.group(1).strip()
+                body_lines = body_lines[1:]
+        body = "\n".join(body_lines).strip()
         cues.append(Cue(start=start, end=end, text=_clean_inline(body),
-                        original_text=_clean_inline(body)))
+                        original_text=_clean_inline(body), speaker=speaker))
     return cues
 
 
@@ -63,6 +75,9 @@ def parse_vtt(text: str) -> List[Cue]:
     text = re.sub(r"^NOTE\b.*?(?=\n\s*\n|$)", "", text, flags=re.S | re.M)
     text = re.sub(r"^STYLE\b.*?(?=\n\s*\n|$)", "", text, flags=re.S | re.M)
     text = re.sub(r"^[{}]$", "", text, flags=re.M)
+    # <v 说话人> 是 VTT 的标准语音标签，整行替换成 to_srt 同款、parse_srt
+    # 能剥回来的「名字:」行；直接混进正文的话会被 _strip_vtt_tags 删掉。
+    text = re.sub(r"^<v(?:\.[^>\s]*)?\s+([^>]+)>\s*$", r"\1:", text, flags=re.M)
     return parse_srt(text)
 
 
@@ -133,6 +148,12 @@ def parse_json_obj(data) -> List[Cue]:
             st = ts_to_sec(st)
         if isinstance(en, str):
             en = ts_to_sec(en)
+        if isinstance(st, bool) or isinstance(en, bool):
+            continue                    # bool 是 int 子类，别让 true/false 当成时间
+        if st is not None and not isinstance(st, (int, float)):
+            continue
+        if en is not None and not isinstance(en, (int, float)):
+            continue
         txt = item.get("text", item.get("content", "")) or ""
         if st is None or en is None or not str(txt).strip():
             continue
@@ -311,15 +332,17 @@ def parse_any(text: str, filename: str = "") -> Tuple[List[Cue], str]:
     if stripped[:1] in "[{":
         try:
             return parse_json_obj(json.loads(text)), "json"
-        except Exception:
+        except Exception as e:
             if ext == ".json":
-                raise
+                raise ValueError(f"JSON 字幕解析失败：{e}") from e
 
     try:
         if ext == ".vtt" or stripped.startswith("WEBVTT"):
             return parse_vtt(text), "vtt"
         if ext == ".ass" or "[Events]" in head:
             return parse_ass(text), "ass"
+        # 扩展名是 .lrc 就直接按 LRC 解析；混了 [hh:mm:ss] 加强时间戳的
+        # LRC 文件很常见，不能因此放弃认领
         if ext == ".lrc" or (_LRC_RE.search(head) and not _HMS_RE.search(head)):
             return parse_lrc(text), "lrc"
         if "-->" in head:

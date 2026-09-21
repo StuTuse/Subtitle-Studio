@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from typing import Optional
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QFont, QFontDatabase, QPalette
@@ -157,9 +156,14 @@ def is_dark() -> bool:
 
 def human_time(sec: float) -> str:
     sec = max(0.0, float(sec or 0))
-    h = int(sec // 3600)
-    m = int((sec % 3600) // 60)
-    s = sec % 60
+    # 先四舍五入到百分秒再拆位：否则 3599.999 会显示成 "59:60.00"
+    total = round(sec, 2)
+    h = int(total // 3600)
+    m = int((total % 3600) // 60)
+    s = total - h * 3600 - m * 60
+    if s >= 60:
+        s -= 60
+        m += 1
     if h:
         return f"{h}:{m:02d}:{s:05.2f}"
     return f"{m}:{s:05.2f}"

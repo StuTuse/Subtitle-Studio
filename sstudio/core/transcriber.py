@@ -470,23 +470,46 @@ class WhisperCppEngine:
         if not os.path.isfile(model):
             raise TranscribeError("请选择一个 ggml-*.bin 模型文件。")
         out = audio_path + ".whispercpp.json"
+        # 上次运行（取消/崩溃）可能留下旧结果：不清掉的话，本次即使
+        # whisper-cli 没产出新文件也会把**上一次的字幕**当新结果解析成功。
+        if os.path.isfile(out):
+            try:
+                os.remove(out)
+            except OSError:
+                pass
+        lang = self.cfg.language or "auto"
+        task = "transcribe"
+        if lang.startswith("translate:"):
+            # 与 faster-whisper 引擎同一套约定：translate:xx 表示翻译成 xx 语
+            task = "translate"
+            lang = lang.split(":", 1)[1] or "en"
         cmd = [exe, "-m", model, "-f", audio_path, "-oj", "-of", out, "-l",
-               self.cfg.language if self.cfg.language != "auto" else "auto"]
+               lang if lang != "auto" else "auto"]
+        if task == "translate":
+            cmd += ["-tr"]
         if progress:
             progress("whisper.cpp 识别中…", -1)
         t0 = time.time()
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, errors="replace",
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, errors="replace",
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as e:
+            raise TranscribeError(f"无法启动 whisper.cpp：{e}")
         assert p.stdout is not None
-        for line in p.stdout:
-            if cancel and cancel():
+        try:
+            for line in p.stdout:
+                if cancel and cancel():
+                    p.kill()
+                    raise TranscribeError("已取消。")
+                m = re.search(r"(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->", line)
+                if m and progress:
+                    progress(f"whisper.cpp: {m.group(1)}", -1)
+            p.wait()
+        finally:
+            if p.poll() is None:
                 p.kill()
-                raise TranscribeError("已取消。")
-            m = re.search(r"(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->", line)
-            if m and progress:
-                progress(f"whisper.cpp: {m.group(1)}", -1)
-        p.wait()
+                p.wait()
         if not os.path.isfile(out):
             raise TranscribeError("whisper.cpp 未产出结果文件。")
         with open(out, "r", encoding="utf-8") as f:

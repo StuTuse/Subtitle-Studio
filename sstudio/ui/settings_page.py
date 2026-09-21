@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
+import re
 
 from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox, EditableComboBox,
                             FluentIcon as FIF, InfoBar, InfoBarPosition, LineEdit,
                             PasswordLineEdit, PrimaryPushButton, PushButton, ScrollArea,
                             SimpleCardWidget, SpinBox, DoubleSpinBox, StrongBodyLabel,
                             SubtitleLabel, SwitchButton, TextEdit, TogglePushButton)
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QGuiApplication
 from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QStackedWidget, QVBoxLayout, QWidget)
@@ -661,7 +661,7 @@ class SettingsInterface(QWidget):
 
     def _test(self) -> None:
         self._collect_profile()
-        from .workers import TestLLMWorker, reap
+        from .workers import reap
         reap(getattr(self, "_test_worker", None))   # 连点测试时安全回收上一个
         self._test_worker = None
         p = self.cfg.profile()

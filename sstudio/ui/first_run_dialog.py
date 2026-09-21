@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import List
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (QDialog, QHBoxLayout, QLabel, QPlainTextEdit,
@@ -44,6 +44,7 @@ except Exception:  # pragma: no cover
 
 from ..core import doctor
 from ..core.config import Config
+from .workers import ThreadedCall, reap
 
 _LEVEL_TAG = {"required": "必需", "recommend": "建议", "optional": "可选"}
 
@@ -62,9 +63,8 @@ class FirstRunDialog(QDialog):
         self._fixing_id = ""
         self._worker = None
         self._build_ui()
+        self._auto_fix = bool(auto_fix)
         QTimer.singleShot(60, self._run_checks)
-        if auto_fix:
-            QTimer.singleShot(400, self._fix_all)
 
     # ------------------------------------------------------------ 界面
     def _build_ui(self) -> None:
@@ -115,8 +115,9 @@ class FirstRunDialog(QDialog):
         self.btn_fix_all = PrimaryPushButton("一键修复", self)
         self.btn_fix_all.clicked.connect(self._fix_all)
         btns.addWidget(self.btn_fix_all)
+        self._required_ok = True     # 必需组件是否齐全；决定关闭按钮的真实语义
         self.btn_close = QPushButton("稍后再说", self)
-        self.btn_close.clicked.connect(self.reject)
+        self.btn_close.clicked.connect(self._on_close)
         btns.addWidget(self.btn_close)
         v.addLayout(btns)
 
@@ -164,6 +165,30 @@ class FirstRunDialog(QDialog):
             if r.widget():
                 r.widget().deleteLater()
 
+    # ------------------------------------------------------------ 关闭
+    def _on_close(self) -> None:
+        """必需组件没装齐时，这个按钮显示"退出程序"，就必须真的退出。
+
+        否则用户带着缺 PyQt 组件 / 没有转写引擎的半残界面继续用，
+        随便点一下才是更难解释的报错。注意这里不能直接 QApplication.quit()：
+        exec_() 自己就是一层事件循环，quit 只会把它弹回调用处——主窗口
+        照样会冒出来。置 abort_app 标志，由 maybe_show_first_run 的调用方
+        决定结束进程。
+        """
+        if self._required_ok:
+            self.reject()
+            return
+        self.abort_app = True
+        self.reject()
+
+    def closeEvent(self, e) -> None:      # noqa: N802
+        """点窗口 X 同样受"必需组件缺失就别往下走"的约束。"""
+        if not self._required_ok:
+            e.ignore()
+            self._on_close()
+            return
+        e.accept()
+
     # ------------------------------------------------------------ 检查
     def _run_checks(self) -> None:
         self._items = doctor.check_all()
@@ -174,13 +199,20 @@ class FirstRunDialog(QDialog):
         s = doctor.summary(self._items)
         self.title.setText(s)
         if doctor.all_required_ok(self._items):
+            self._required_ok = True
             self.btn_close.setText("完成，开始使用")
             self.btn_fix_all.setVisible(bool(need))
             self.btn_fix_all.setText(f"一键修复（{len(need)}）" if need else "")
         else:
+            self._required_ok = False
             self.btn_close.setText("退出程序")
             self.btn_fix_all.setVisible(True)
             self.btn_fix_all.setText(f"一键修复（{len(need)}）")
+        if getattr(self, "_auto_fix", False):
+            # 等检查结果真正回来再自动修复：定在 400ms 的定时器在慢机器上
+            # 会抢在 _run_checks 之前跑，静默空转一次
+            self._auto_fix = False
+            QTimer.singleShot(0, self._fix_all)
 
     # ------------------------------------------------------------ 修复
     def _fix_all(self) -> None:
@@ -192,7 +224,6 @@ class FirstRunDialog(QDialog):
         self._fix_many([it])
 
     def _fix_many(self, todo: List[doctor.CheckItem]) -> None:
-        from .workers import ThreadedCall, reap
         self.btn_fix_all.setEnabled(False)
         self.btn_close.setEnabled(False)
         self.fix_bar.setVisible(True)
@@ -201,7 +232,6 @@ class FirstRunDialog(QDialog):
         pkgs: List[str] = []
         for it in todo:
             pkgs.extend(it.fix_pkgs)
-        total_steps = len(doctor.PIP_INDEXES)
 
         def work(progress, log, cancel):
             return doctor.pip_install(pkgs, progress=progress, log=log, cancel=cancel)
@@ -251,14 +281,19 @@ class FirstRunDialog(QDialog):
             self.resize(self.width(), max(560, self.height()))
 
 
-def maybe_show_first_run(cfg: Config, parent=None) -> None:
-    """首次使用（配置文件不存在）时弹一次体检窗口。"""
+def maybe_show_first_run(cfg: Config, parent=None) -> bool:
+    """首次使用（配置文件不存在）时弹一次体检窗口。
+
+    返回 False 表示必需组件缺失且用户选择/被迫退出——调用方应结束进程。
+    """
     from ..core.config import config_path
     try:
         first = not os.path.isfile(config_path())
     except Exception:
         first = False
-    if first:
-        dlg = FirstRunDialog(cfg, parent)
-        dlg.setModal(True)
-        dlg.exec_()
+    if not first:
+        return True
+    dlg = FirstRunDialog(cfg, parent)
+    dlg.setModal(True)
+    dlg.exec_()
+    return not getattr(dlg, "abort_app", False)

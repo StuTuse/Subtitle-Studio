@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional
+from typing import List
 
-from PyQt5.QtCore import QRect, QSize, Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QFont, QPainter, QTextOption
+from PyQt5.QtCore import QSize, Qt, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QFont
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu,
                              QStyledItemDelegate, QTableWidget, QTableWidgetItem,
                              QTextEdit)
 
-from ..core.model import Cue, sec_to_ts, ts_to_sec
+from ..core.model import Cue, sec_to_ts
 from .theme import _crisp, is_dark, monospace, state_color, state_text
 
 COL_NO, COL_S, COL_E, COL_D, COL_STATE, COL_TEXT = range(6)

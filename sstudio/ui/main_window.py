@@ -9,9 +9,9 @@ from typing import Optional
 from qfluentwidgets import (FluentIcon as FIF, FluentWindow, InfoBar, InfoBarPosition,
                             IndeterminateProgressBar, MessageBox, NavigationItemPosition,
                             setTheme)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
-from PyQt5.QtWidgets import QDialog, QFileDialog, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QDialog, QFileDialog, QLabel
 
 from ..core import media
 from ..core.config import Config
@@ -21,7 +21,7 @@ from .editor_page import EditorInterface
 from .export_page import ExportInterface
 from .fix_page import FixInterface
 from .settings_page import SettingsInterface
-from .theme import apply_theme, open_path
+from .theme import apply_theme
 from .workers import TranscribeWorker, reap
 
 
@@ -429,7 +429,11 @@ class MainWindow(FluentWindow):
         if self._stale(gen):
             return
         cancelled = "取消" in (msg or "")
+        w = self._worker
         self._worker = None
+        # 必须 reap：sig_failed 发出时线程往往还没走完 finally 清理。直接丢掉
+        # 引用会让 GC 在运行中析构 QThread，Qt 直接 abort（成功路径就是这么做的）。
+        reap(w)
         self._end_progress()
         self.progressLabel.setText("")
         if self.doc is not None and self.doc.source_video:
@@ -450,7 +454,7 @@ class MainWindow(FluentWindow):
         self.progressLabel.setText(msg)
         self.progressLabel.setVisible(True)
         self.progressLabel.adjustSize()
-        QTimer.singleShot(0, lambda: self.resizeEvent(None) if False else self.update())
+        QTimer.singleShot(0, self.update)
 
     def _end_progress(self) -> None:
         self.progress.setVisible(False)
@@ -557,6 +561,15 @@ class MainWindow(FluentWindow):
                 self._worker.wait(5000)
             except RuntimeError:
                 pass
+        # AI 纠错线程同样要等：否则关窗后它还在往已销毁的页面发信号、
+        # 网络请求继续跑，进程迟迟不退出。
+        try:
+            fw = getattr(self.fix, "worker", None)
+            if fw is not None:
+                fw.cancel()
+                fw.wait(5000)
+        except RuntimeError:
+            pass
         super().closeEvent(e)
 
     def _close_save_quit(self) -> None:

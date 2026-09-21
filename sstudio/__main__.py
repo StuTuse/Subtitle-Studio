@@ -59,6 +59,11 @@ def main(argv=None) -> int:
     parser.add_argument("--no-fix", action="store_true", help="headless 模式：跳过 LLM 纠错")
     args, extra = parser.parse_known_args(argv)
 
+    if args.headless and extra:
+        # headless 是给脚本用的：拼错的参数必须当场报错（exit 2），
+        # 不能像 GUI 那样把多余项当成"要打开的文件"静默走偏
+        parser.error("headless 模式不认识的参数：" + " ".join(extra))
+
     if args.version:
         from sstudio import describe
         print(describe())
@@ -148,15 +153,52 @@ def main(argv=None) -> int:
     splash.finish()
 
     # 首次使用：弹环境体检（检查必要组件，缺啥可一键补装）。只在首启自动弹。
+    # 返回 False = 必需组件缺失且用户点了"退出程序"，此时不能再进主界面。
     try:
         from sstudio.ui.first_run_dialog import maybe_show_first_run
-        maybe_show_first_run(cfg, parent=win)
+        if not maybe_show_first_run(cfg, parent=win):
+            win.hide()
+            return 0
     except Exception:
-        pass
+        # 向导自身崩了不能连累主程序，但也不能一点线索都不留
+        try:
+            import traceback
+            from sstudio.core.config import data_dir
+            with open(os.path.join(data_dir(), "crash.log"), "a",
+                      encoding="utf-8") as f:
+                f.write("\n# 首启体检窗口异常\n")
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
 
     target = args.file or (extra[0] if extra else "")
     if target and os.path.isfile(target):
         QTimer.singleShot(250, lambda: win._load_any(os.path.abspath(target)))
+
+    # 运行期兜底：启动段的异常由 run.py 接住，但进入事件循环之后（点按钮、
+    # 加载文件回调里）抛出的异常不走那条路径。打包版是窗口程序、没有控制台，
+    # 用户只会看到窗口突然消失，什么线索都不剩。这里挂一个钩子，至少把完整
+    # traceback 落到 crash.log，并提示日志位置。
+    def _hook(etype, value, tb):
+        import traceback
+        traceback.print_exception(etype, value, tb)
+        try:
+            import datetime as dt
+            from sstudio.core.config import data_dir
+            p = os.path.join(data_dir(), "crash.log")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(f"# 运行期异常  {dt.datetime.now().isoformat(timespec='seconds')}\n\n")
+                traceback.print_exception(etype, value, tb, file=f)
+            try:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.critical(win if win.isVisible() else None,
+                                     "Subtitle Studio 遇到问题",
+                                     "操作触发了一个错误，详情已保存到：\n\n" + p)
+            except Exception:
+                pass
+        except Exception:
+            pass
+    sys.excepthook = _hook
 
     return app.exec_()
 

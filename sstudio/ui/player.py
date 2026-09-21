@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from PyQt5.QtCore import Qt, QUrl, pyqtSignal, QTimer
+from PyQt5.QtCore import QUrl, pyqtSignal
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import QSizePolicy, QVBoxLayout, QWidget

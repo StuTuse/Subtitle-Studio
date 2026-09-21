@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 
 from qfluentwidgets import PushButton, PrimaryPushButton, SubtitleLabel, TextBrowser
-from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QGuiApplication
 from PyQt5.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QVBoxLayout
 

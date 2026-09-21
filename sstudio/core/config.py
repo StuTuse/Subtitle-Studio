@@ -257,6 +257,10 @@ class Config:
         # 老配置里的该值回落到默认引擎，避免设置页下拉框落空。
         if cfg.asr_engine not in ("faster-whisper", "whisper.cpp", "openai_api"):
             cfg.asr_engine = "faster-whisper"
+        # 迁移：更早的版本每点一次「开始纠错」就往术语表尾部追加一段
+        # 【本轮补充】，永久越滚越大。读到旧配置时把这些尾巴清掉。
+        if isinstance(cfg.glossary, str) and "【本轮补充】" in cfg.glossary:
+            cfg.glossary = cfg.glossary.split("【本轮补充】")[0].strip()
         if profs:
             cfg.profiles = [LLMProfile.from_dict(p) for p in profs if isinstance(p, dict)]
         if not cfg.profiles:
@@ -274,9 +278,17 @@ class Config:
             return cls()
 
     def save(self) -> None:
+        # 原子写：先写临时文件再 os.replace 整块替换。直接 open("w") 会先
+        # 清空原文件，写入中途断电/崩溃 → 半截 JSON → 下次 load 失败静默
+        # 回退默认，用户的 API Key 全丢。
         try:
-            with open(config_path(), "w", encoding="utf-8") as f:
+            path = config_path()
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
         except Exception:
             pass
 
@@ -294,10 +306,13 @@ class Config:
         其余全部回到出厂值。调用方负责 ``save()``。
         """
         fresh = Config()
+        import copy
         for f in type(self).__dataclass_fields__:
             if f in self._RESET_KEEP:
                 continue
-            setattr(self, f, getattr(fresh, f))
+            # deepcopy：直接赋引用的话，self 和 fresh 共享同一个列表/字典，
+            # 之后改 self 会牵动别的持有者
+            setattr(self, f, copy.deepcopy(getattr(fresh, f)))
 
     # ------------------------------------------------------------ helpers
     def profile(self, name: Optional[str] = None) -> LLMProfile:
@@ -314,4 +329,5 @@ class Config:
         if path in self.recent_files:
             self.recent_files.remove(path)
         self.recent_files.insert(0, path)
-        del self.recent_files[self.max_recent:]
+        # max_recent 可能被手改成 0/负数：负数切片会"删尾巴"，语义完全反了
+        self.recent_files = self.recent_files[:max(1, int(self.max_recent or 0))]

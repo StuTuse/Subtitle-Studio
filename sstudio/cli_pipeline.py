@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import sys
 import time
-from typing import List
 
 from .core import formats, media, transcriber
 from .core.config import Config
@@ -89,11 +88,22 @@ def run_pipeline(args) -> int:
 
     out = args.out or (os.path.splitext(video)[0] + ".srt")
     key = os.path.splitext(out)[1].lstrip(".").lower()
-    key = {"srt": "srt", "vtt": "vtt", "ass": "ass", "txt": "txt", "json": "json",
-           "md": "md", "html": "html", "lrc": "lrc"}.get(key, "srt")
+    fmt_map = {"srt": "srt", "vtt": "vtt", "ass": "ass", "txt": "txt",
+               "json": "json", "md": "md", "html": "html", "lrc": "lrc"}
+    if key not in fmt_map:
+        # 命令行工具不猜意图：扩展名不认识就明确报错，而不是悄悄改名成 .srt
+        _p(f"不支持的输出扩展名 .{key}（可选：{'/'.join(fmt_map)}）")
+        return 2
+    key = fmt_map[key]
+    if os.path.isdir(out):
+        _p(f"--out 是一个目录：{out}，请给完整文件名")
+        return 2
     text = formats.export_text(doc, key)
     os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
-    with open(out, "w", encoding="utf-8-sig" if key == "srt" else "utf-8", newline="") as f:
+    # 与 GUI 导出一致：SRT 用用户设置的编码（此前写死 utf-8-sig，
+    # 同一工程两种出口产物不一致）
+    enc = getattr(cfg, "export_encoding", "utf-8-sig") if key == "srt" else "utf-8"
+    with open(out, "w", encoding=enc, errors="replace", newline="") as f:
         f.write(text)
     # 顺带存一份工程文件，便于之后回到 GUI 精修
     proj = os.path.splitext(out)[0] + ".ssp"

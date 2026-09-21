@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from PyQt5.QtCore import QPoint, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPolygon
 from PyQt5.QtWidgets import QSizePolicy, QWidget
 
-from ..core.model import Cue, CueDocument, sec_to_ts
+from ..core.model import CueDocument, sec_to_ts
 from .theme import is_dark
 
 

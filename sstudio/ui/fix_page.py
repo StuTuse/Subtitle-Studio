@@ -14,7 +14,6 @@ from PyQt5.QtGui import QGuiApplication
 from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QProgressBar,
                              QSplitter, QVBoxLayout, QWidget)
 
-from ..core import llm
 from ..core.config import Config
 from .safe_spin import SafeSpinBox
 from .workers import FixWorker
@@ -29,6 +28,7 @@ class FixInterface(QWidget):
         self.main = main
         self.worker: Optional[FixWorker] = None
         self._live: dict = {}
+        self._row_map: list = []      # run() 之前也可能收到迟到信号，先占位
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 18, 28, 16)
@@ -237,6 +237,8 @@ class FixInterface(QWidget):
             parent=self, position=InfoBarPosition.TOP, duration=2600)
 
     def run(self) -> None:
+        if self.worker is not None:
+            return                      # 防重入：按钮被 InfoBar 遮挡时键盘还能触发
         doc = self.main.doc
         if not doc or not doc.cues:
             return
@@ -247,13 +249,13 @@ class FixInterface(QWidget):
         self.cfg.glossary = self.glossary.toPlainText().strip()
         self.cfg.reference_script = self.script.toPlainText()
         self.cfg.keep_original = self.chk_keep.isChecked()
-        if self.extra.toPlainText().strip():
-            self.cfg.glossary = (self.cfg.glossary + "\n【本轮补充】"
-                                 + self.extra.toPlainText().strip()).strip()
         self.cfg.save()
 
         rows = self.main.editor.table.selected_rows()
-        if self.chk_selection_only.isChecked() and rows:
+        if self.chk_selection_only.isChecked():
+            if not rows:
+                self.log.append("勾了「只处理选中」但没选中任何行——先在编辑页选行。")
+                return
             cues = [doc.cues[r] for r in rows]
             self._row_map = rows
         else:
@@ -266,7 +268,9 @@ class FixInterface(QWidget):
         self.progress.setValue(0)
         self.log.append(f"开始处理 {len(cues)} 条（{self.cfg.profile().model}）…")
 
-        self.worker = FixWorker(self.cfg, cues)
+        # 「本轮指令」是临时输入：作为参数传下去，绝不拼进 cfg.glossary。
+        # 早先每点一次运行就往持久配置里追加一份，越滚越大还看不见。
+        self.worker = FixWorker(self.cfg, cues, extra=self.extra.toPlainText())
         self.worker.sig_progress.connect(self._on_progress)
         self.worker.sig_cue.connect(self._on_cue)
         self.worker.sig_done.connect(self._on_done)

@@ -67,45 +67,44 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; \
     GroupDescription: "附加任务："; Flags: unchecked
 
 [UninstallDelete]
-; 卸载时清掉运行中可能生成的临时文件；SSData（模型/配置）由用户决定是否删
+; 卸载时清掉运行中可能生成的临时文件
 Type: files; Name: "{app}\*.log"
 
-[UninstallRun]
-Filename: "{cmd}"; Parameters: "/C if exist ""{app}\SSData\_uninstall_purge"" rd /s /q ""{app}\SSData"""; \
-    Flags: runhidden; RunOnceId: "PurgeSSData"
-
 [Code]
-// 卸载最后一页问一句：要不要连用户数据（模型缓存/配置/工程）一起删。
-// 默认保留——模型一下载就是几个 G，误删很伤。
+// 卸载最后一页问一句：要不要连用户数据一起删。
+// · {app}\SSData —— 便携模式的数据（模型一下载就是几个 G，默认保留）。
+// · %APPDATA%\SubtitleStudio —— config.json 里有**明文 API Key**；
+//   %LOCALAPPDATA%\SubtitleStudio —— 音频/模型缓存。默认安装模式数据在
+//   这两个目录，早先卸载完全不管，换机/卖电脑时密钥就留在机器上了。
+var
+  PurgeUserData: Boolean;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Resp: Boolean;begin
+  Resp: Boolean;
+begin
   if CurUninstallStep = usPostUninstall then
   begin
-    if DirExists(ExpandConstant('{app}\SSData')) then
+    Resp := MsgBox(
+      '要保留字幕模型缓存、配置与工程文件吗？' #13#10 +
+      '（配置里存有模型 API Key；模型重新下载要几个 G）' #13#10 +
+      '选「是」保留（下次安装可继续用）；选「否」全部删除。',
+      mbConfirmation, MB_YESNO) = IDYES;
+    PurgeUserData := not Resp;
+    if DirExists(ExpandConstant('{app}\SSData')) and PurgeUserData then
+      DelTree(ExpandConstant('{app}\SSData'), True, True, True);
+    if PurgeUserData then
     begin
-      Resp := MsgBox(
-        '要保留字幕模型缓存、配置与工程文件（SSData 文件夹）吗？' #13#10 +
-        '选「是」保留（下次安装可继续用，不用重新下载模型）；' #13#10 +
-        '选「否」全部删除。', mbConfirmation, MB_YESNO) = IDYES;
-      if not Resp then
-        DelTree(ExpandConstant('{app}\SSData'), True, True, True);
+      DelTree(ExpandConstant('{userappdata}\SubtitleStudio'), True, True, True);
+      DelTree(ExpandConstant('{localappdata}\SubtitleStudio'), True, True, True);
     end;
   end;
 end;
 
 // 装完直接启动一次，第一眼就能看到体检向导（若组件缺失）。
-var
-  ErrCode: Integer;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssPostInstall then
-    if not WizardSilent then
-      Exec(ExpandConstant('{app}\{#AppExe}'), '', '',
-           SW_SHOW, ewNoWait, ErrCode);
-end;
-
+// 只走 [Run] 完成页勾选这一条路：早先这里还有一个 ssPostInstall Exec，
+// 交互安装时和完成页各启动一次 → 两个实例并发抢写 config.json、
+// 弹两个首启向导。
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "立即运行 {#AppNameZh}"; \
     Flags: nowait postinstall skipifsilent
