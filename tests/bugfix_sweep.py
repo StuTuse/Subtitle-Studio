@@ -181,4 +181,53 @@ cues = formats.parse_json_obj(__import__("json").loads(bad))
 check("null/bool/数组时间戳的行被跳过", [c.text for c in cues] == ["ok"],
       [c.text for c in cues])
 
+
+section("11. 模型名解析：精确优先，子串误配垫后")
+import sstudio.core.transcriber as tr
+_eng = tr.FasterWhisperEngine(_cfg)
+_orig_disc = tr.discover_ct2_models
+tr.discover_ct2_models = lambda: [
+    {"name": "turbo", "path": r"C:\m\faster-whisper-large-v3-turbo"},
+    {"name": "v3", "path": r"C:\m\faster-whisper-large-v3"},
+]
+try:
+    check("large-v3 不被 turbo 目录截胡",
+          _eng.resolve_model("large-v3") == r"C:\m\faster-whisper-large-v3",
+          _eng.resolve_model("large-v3"))
+    check("large-v3-turbo 精确命中 turbo",
+          _eng.resolve_model("large-v3-turbo") == r"C:\m\faster-whisper-large-v3-turbo")
+finally:
+    tr.discover_ct2_models = _orig_disc
+
+
+section("12. worker 内意外异常不拖垮整个纠错")
+import sstudio.core.llm as _llm
+
+state = {"n": 0}
+
+
+def flaky_chat(prof, messages, on_delta=None, _retry_no_cap=True):
+    state["n"] += 1
+    if state["n"] == 1:
+        raise RuntimeError("没预料到的内部错误")
+    return "\n".join(f"[{i}] {c.text}" for i, c in enumerate(_cur2[0]))
+
+
+_cfg2 = Config()
+_cfg2.profiles[0].api_key = "sk-test"
+_cfg2.batch_size = 2
+_cfg2.concurrency = 1
+_cfg2.auto_retry = 0
+_cfg2.strict_mode = False
+_cfg2.glossary = ""
+_cur2 = [[Cue(i, i + 1, "句%d" % i) for i in range(6)]]
+_orig2 = _llm.chat
+_llm.chat = flaky_chat
+try:
+    res2 = _llm.fix_document(_cfg2, _cur2[0])
+    check("首批炸了但其余批次照常返回", len(res2.failures) >= 1
+          and "内部错误" in res2.failures[0], res2.failures[:2])
+finally:
+    _llm.chat = _orig2
+
 raise SystemExit(finish())

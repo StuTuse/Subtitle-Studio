@@ -154,16 +154,22 @@ def find_external_whisper_cli() -> List[str]:
     out: List[str] = []
     roots = [os.path.expandvars(r"%LOCALAPPDATA%")]
     seen_roots = set()
+    truncated = False
     for root in roots:
         real = os.path.normcase(os.path.abspath(root)) if root else ""
         if not real or real in seen_roots or not os.path.isdir(root):
             continue
         seen_roots.add(real)
         try:
-            _scan_shallow(root, "faster-whisper", 3, out)
+            visited = _scan_shallow(root, "faster-whisper", 3, out)
+            if visited > _EXT_MAX_VISIT:
+                truncated = True
         except Exception:
             pass
-    _ext_cli_cache_set(out)
+    # 被条目上限截断过时不缓存：否则"只扫了一半"的结果会被当成完整答案，
+    # 后面真正装了 whisper 的目录永远扫不到，除非重启。
+    if not truncated:
+        _ext_cli_cache_set(out)
     return out
 
 
@@ -228,9 +234,15 @@ class FasterWhisperEngine:
         if os.path.isdir(m):
             return m
         key = m.lower()
-        for cand in discover_ct2_models():
+        # 先精确匹配，再退子串：光用子串会让 "large-v3" 静默命中
+        # faster-whisper-large-v3-turbo 目录——用户以为跑的是满血 v3。
+        cands = discover_ct2_models()
+        for cand in cands:
             base = os.path.basename(cand["path"]).lower()
-            if base == key or base == f"faster-whisper-{key}" or key in base:
+            if base == key or base == f"faster-whisper-{key}":
+                return cand["path"]
+        for cand in cands:
+            if key in os.path.basename(cand["path"]).lower():
                 return cand["path"]
         return m
 
@@ -526,9 +538,13 @@ class WhisperCppEngine:
             text = (tr.get("text") or "").strip()
             if not text:
                 continue
-            cues.append(Cue(start=tr.get("offsets", {}).get("from", 0) / 1000.0,
-                            end=tr.get("offsets", {}).get("to", 0) / 1000.0,
-                            text=text, original_text=text))
+            off = tr.get("offsets") or {}      # 坏输出里 offsets 可能是 null
+            try:
+                st = float(off.get("from", 0)) / 1000.0
+                en = float(off.get("to", 0)) / 1000.0
+            except (TypeError, ValueError):
+                continue
+            cues.append(Cue(start=st, end=en, text=text, original_text=text))
         if os.path.isfile(out):
             os.remove(out)
         return TranscriptResult(cues=cues, meta={"engine": self.key, "model": model,

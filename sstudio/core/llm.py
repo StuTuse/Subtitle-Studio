@@ -196,19 +196,32 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
         kw2 = dict(kw)
         kw2["stream"] = True
         parts: List[str] = []
+        reason_parts: List[str] = []
         try:
             for chunk in client.chat.completions.create(**kw2):
                 try:
-                    d = chunk.choices[0].delta.content if chunk.choices else None
+                    delta = chunk.choices[0].delta if chunk.choices else None
                 except (AttributeError, IndexError):
-                    d = None
+                    delta = None
+                if delta is None:
+                    continue
+                d = getattr(delta, "content", None)
                 if d:
                     parts.append(d)
                     on_delta(d)
-        except Exception:
-            if not parts:
+                else:
+                    # 推理模型流式时 content 恒为 None、思考走 reasoning 字段；
+                    # 不收进来的话这里返回空串被当成功，用户看不到任何提示
+                    rd = (getattr(delta, "reasoning_content", None)
+                          or getattr(delta, "reasoning", None))
+                    if rd:
+                        reason_parts.append(rd)
+        except Exception as e:
+            # 半途断流：已有输出留给调用方处理，但"连不上"必须抛出——
+            # 吞掉它全局止损就收不到信号，剩余批次会继续排队白等
+            if not parts or _is_conn_refused(e):
                 raise
-        return "".join(parts).strip(), ""
+        return "".join(parts).strip(), "".join(reason_parts).strip()
 
     text, reasoning = once(kwargs)
     if text or not reasoning or on_delta is not None or not _retry_no_cap:
@@ -499,6 +512,15 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
             time.sleep(min(0.25, max(0.01, deadline - time.time())))
 
     def worker(job: Tuple[int, List[Cue]]):
+        idx, batch = job
+        try:
+            return _worker_inner(job)
+        except Exception as e:                # noqa: BLE001
+            # cancel()/_sleep/render 里冒出的意外异常绝不能逸出到 fut.result()，
+            # 否则整个 as_completed 循环被打断，已完成批次的结果全部作废。
+            return idx, None, _friendly_err(e)
+
+    def _worker_inner(job: Tuple[int, List[Cue]]):
         idx, batch = job
         if cancel and cancel():
             return idx, None, "已取消"
