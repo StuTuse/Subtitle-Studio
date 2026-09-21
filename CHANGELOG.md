@@ -1,5 +1,10 @@
 # 更新日志
 
+## [1.6.0] - 2026-09-21
+
+- 软件现在默认使用 GPU 推理：CUDA 12 运行库探测兼容 nvidia 新版 pip 包布局，有 N 卡即自动 GPU 转写（实测 240 条字幕 21.5s，24 倍速实时）。
+- 体检向导一键修 GPU 的包名更正（nvidia-cuda-runtime-cu12，旧包名在 PyPI 不存在导致装不全）。
+- AI 纠错提速：模型服务没启动时秒级报错并停止全部批次，不再每批重试 5 次白等几分钟；正常路径实测 240 条 8.3s。
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
 版本号唯一真源是根目录的 `VERSION` 文件，发版请用 `python release.py`。
 
