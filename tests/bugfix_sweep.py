@@ -230,4 +230,31 @@ try:
 finally:
     _llm.chat = _orig2
 
+
+section("13. 单实例互斥：第二个进程不再起来")
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+import time
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtNetwork import QLocalSocket
+from sstudio.ui.single_instance import SingleInstance, _server_name
+
+_app = QApplication.instance() or QApplication([])
+_a1 = SingleInstance(_app)
+check("首个实例占住锁", _a1.try_start() is True)
+_a2 = SingleInstance(_app)
+check("后到实例检测到在跑的实例、自动让位", _a2.try_start() is False)
+_fired = []
+_a1.on_activate = lambda: _fired.append(1)
+_c = QLocalSocket()
+_c.connectToServer(_server_name())
+if _c.waitForConnected(800):
+    _c.write(b"activate")
+    _c.waitForBytesWritten(300)
+    _c.disconnectFromServer()
+_t0 = time.time()
+while time.time() - _t0 < 2.0 and not _fired:
+    _app.processEvents()
+    time.sleep(0.02)
+check("唤醒回调被触发（第二实例会把主窗拉到前台）", bool(_fired))
+
 raise SystemExit(finish())

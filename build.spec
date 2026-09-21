@@ -97,7 +97,7 @@ a = Analysis(
         "PyQt5.Qt3DCore", "PyQt5.Qt3DRender", "PyQt5.QtPdf", "PyQt5.QtSql",
         "PyQt5.QtBluetooth", "PyQt5.QtNfc", "PyQt5.QtSerialPort",
         "PyQt5.QtTest", "PyQt5.QtWebSockets",
-        "tkinter", "unittest", "pydoc_data",
+        "tkinter", "pydoc_data",   # unittest 不排：省不了 2 MB，却有依赖方 import 它
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

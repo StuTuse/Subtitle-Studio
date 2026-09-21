@@ -123,6 +123,15 @@ def main(argv=None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Subtitle Studio")
     app.setOrganizationName("SubtitleStudio")
+
+    # 单实例：图标多点两下会同时起来几个进程，互写 config.json、弹两份首启
+    # 向导。后到的把在跑的那份唤到前台，自己安静退出。守护本身起不来时
+    # try_start 返回 True 放行，绝不为这个挡住正常启动。
+    from sstudio.ui.single_instance import SingleInstance
+    single = SingleInstance(app)
+    if not single.try_start():
+        return 0
+
     # 默认字体是 SimSun 9pt：点阵感重、发虚。统一换成雅黑 UI。
     from sstudio.ui.theme import ui_font
     app.setFont(ui_font(9))
@@ -145,6 +154,19 @@ def main(argv=None) -> int:
 
     splash.show_stage("正在初始化工作区…")
     win = MainWindow(cfg)
+
+    def _wake():
+        # 第二实例请求唤醒：从托盘/最小化拉回前台
+        try:
+            if win.isMinimized():
+                win.showNormal()
+            win.show()
+            win.raise_()
+            win.activateWindow()
+        except Exception:
+            pass
+    single.on_activate = _wake
+
     win.show()
     from PyQt5.QtGui import QGuiApplication as _QGA2
     for _p in _QGA2.topLevelWindows():        # 强制主窗口真正画出第一帧
