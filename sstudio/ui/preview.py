@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
-
 from qfluentwidgets import PushButton, PrimaryPushButton, SubtitleLabel, TextBrowser
 from PyQt5.QtGui import QGuiApplication
-from PyQt5.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QVBoxLayout
+from PyQt5.QtWidgets import QDialog, QFileDialog, QHBoxLayout, QMessageBox, QVBoxLayout
 
 from .theme import monospace
 
@@ -48,5 +46,6 @@ class TextPreviewDialog(QDialog):
             try:
                 with open(fp, "w", encoding="utf-8", newline="") as f:
                     f.write(self._text)
-            except OSError:
-                pass
+            except OSError as e:
+                # 静默失败比报错更糟：用户以为存好了。给一次明确提示。
+                QMessageBox.warning(self, "保存失败", f"{type(e).__name__}: {e}")
