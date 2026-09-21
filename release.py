@@ -30,6 +30,14 @@ import subprocess
 import sys
 from typing import Optional
 
+# 输出重定向到管道（如后台任务、CI）时 Windows 默认走 GBK，
+# ✓/· 这类字符会直接 UnicodeEncodeError 崩掉 —— 统一强制 UTF-8。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # type: ignore
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")   # type: ignore
+except Exception:
+    pass
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 VERSION_FILE = os.path.join(ROOT, "VERSION")
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
@@ -185,32 +193,36 @@ def sync_shortcut(exe_path: str, dirs: "Optional[list]" = None) -> list:
 
     for d in dirs:
         lnk_path = os.path.join(d, name)
-        if not os.path.isfile(lnk_path):
+        try:
+            if not os.path.isfile(lnk_path):
+                lnk = shell.CreateShortcut(lnk_path)
+                lnk.TargetPath = exe_path
+                lnk.WorkingDirectory = os.path.dirname(exe_path)
+                lnk.Description = "Subtitle Studio · 视频字幕工坊"
+                lnk.Save()
+                touched.append(lnk_path)
+                print(f"✓ 新建快捷方式：{lnk_path}")
+                continue
+            target = shell.CreateShortcut(lnk_path).TargetPath or ""
+            norm = os.path.normcase(os.path.normpath(target))
+            norm_new = os.path.normcase(os.path.normpath(exe_path))
+            if norm == norm_new:
+                continue                      # 已经指向最新产物
+            # 归属判定：目标 basename 是本软件 exe 就算我们的快捷方式
+            #（不管在哪个 dist/目录里；用户给别的软件建快捷方式不会用这个名字）。
+            is_ours = os.path.normcase(os.path.basename(target)) == \
+                os.path.normcase(os.path.basename(exe_path))
+            if target and not is_ours:
+                continue                      # 指向别的软件，不越权
             lnk = shell.CreateShortcut(lnk_path)
             lnk.TargetPath = exe_path
             lnk.WorkingDirectory = os.path.dirname(exe_path)
-            lnk.Description = "Subtitle Studio · 视频字幕工坊"
             lnk.Save()
             touched.append(lnk_path)
-            print(f"✓ 新建快捷方式：{lnk_path}")
-            continue
-        target = shell.CreateShortcut(lnk_path).TargetPath or ""
-        norm = os.path.normcase(os.path.normpath(target))
-        norm_new = os.path.normcase(os.path.normpath(exe_path))
-        if norm == norm_new:
-            continue                      # 已经指向最新产物
-        # 归属判定：目标 basename 是本软件 exe 就算我们的快捷方式
-        #（不管在哪个 dist/目录里；用户给别的软件建快捷方式不会用这个名字）。
-        is_ours = os.path.normcase(os.path.basename(target)) == \
-            os.path.normcase(os.path.basename(exe_path))
-        if target and not is_ours:
-            continue                      # 指向别的软件，不越权
-        lnk = shell.CreateShortcut(lnk_path)
-        lnk.TargetPath = exe_path
-        lnk.WorkingDirectory = os.path.dirname(exe_path)
-        lnk.Save()
-        touched.append(lnk_path)
-        print(f"✓ 快捷方式已同步 → {exe_path}\n  ({lnk_path})")
+            print(f"✓ 快捷方式已同步 → {exe_path}\n  ({lnk_path})")
+        except Exception as e:
+            # 公共桌面新建通常需要管理员权限；单个目录失败不影响其它目录
+            print(f"· 跳过 {lnk_path}（{getattr(e, 'excepinfo', None) and e.excepinfo[2] or e}）")
     if not touched:
         print("· 桌面快捷方式已指向最新产物，无需改动")
     return touched
