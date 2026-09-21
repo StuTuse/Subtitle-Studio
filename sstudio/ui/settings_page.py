@@ -48,6 +48,7 @@ class SettingsInterface(QWidget):
         lay.addWidget(self._build_prompt(host))
         lay.addWidget(self._build_asr(host))
         lay.addWidget(self._build_misc(host))
+        lay.addWidget(self._build_doctor(host))
         lay.addStretch(1)
 
         bar = QHBoxLayout()
@@ -390,6 +391,32 @@ class SettingsInterface(QWidget):
         form.addRow("空隙阈值", self.gap_max)
         v.addLayout(form)
         return card
+
+    # ------------------------------------------------------------ 环境体检
+    def _build_doctor(self, parent) -> CardWidget:
+        card = CardWidget(parent)
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.setSpacing(10)
+        v.addWidget(StrongBodyLabel("环境体检", card))
+        tip = CaptionLabel(
+            "检查本地转写、视频解码、GPU 加速等组件是否就绪；"
+            "缺什么可以一键从国内镜像补装。首次启动时也会自动检查。", card)
+        tip.setWordWrap(True)
+        v.addWidget(tip)
+        h = QHBoxLayout()
+        h.addStretch(1)
+        self.btn_doctor = PrimaryPushButton("打开体检窗口", card)
+        self.btn_doctor.clicked.connect(self._open_doctor)
+        h.addWidget(self.btn_doctor)
+        v.addLayout(h)
+        return card
+
+    def _open_doctor(self) -> None:
+        from .first_run_dialog import FirstRunDialog
+        dlg = FirstRunDialog(self.cfg, parent=self.window())
+        dlg.setModal(True)
+        dlg.exec_()
 
     # ------------------------------------------------------------ 载入/保存
     def _load(self) -> None:

@@ -147,6 +147,13 @@ def main(argv=None) -> int:
     app.processEvents()
     splash.finish()
 
+    # 首次使用：弹环境体检（检查必要组件，缺啥可一键补装）。只在首启自动弹。
+    try:
+        from sstudio.ui.first_run_dialog import maybe_show_first_run
+        maybe_show_first_run(cfg, parent=win)
+    except Exception:
+        pass
+
     target = args.file or (extra[0] if extra else "")
     if target and os.path.isfile(target):
         QTimer.singleShot(250, lambda: win._load_any(os.path.abspath(target)))

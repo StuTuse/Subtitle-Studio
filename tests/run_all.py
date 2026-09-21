@@ -25,6 +25,7 @@ SUITES = [
     ("engines",      "模型发现、工程往返、引擎可用性", False),
     ("version",      "版本号真源、打包溯源、发版校验", False),
     ("release_shortcut", "发版脚本：桌面快捷方式同步", False),
+    ("doctor",       "环境体检：检查项、镜像修复编排、首启向导", False),
     ("gui",          "界面构建与交互冒烟（offscreen）", False),
     ("transcribe",   "真实转写（需本地 CT2 模型）", True),
 ]

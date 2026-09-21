@@ -1,0 +1,264 @@
+# -*- coding: utf-8 -*-
+"""首次启动体检向导：检查必要组件，缺啥点一下就补装。
+
+触发：首次使用（无配置文件）时自动弹一次；设置页「环境体检」按钮可随时重开。
+只有 required 缺失时才强制「修复后才能开始用」；其余都可以「稍后再说」。
+"""
+
+from __future__ import annotations
+
+import os
+from typing import List, Optional
+
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import (QDialog, QHBoxLayout, QLabel, QPlainTextEdit,
+                             QProgressBar, QPushButton, QVBoxLayout, QWidget)
+
+try:
+    from qfluentwidgets import (BodyLabel, CardWidget, CaptionLabel, InfoBar,
+                                PrimaryPushButton, ProgressRing, StrongBodyLabel,
+                                TitleLabel)
+except Exception:  # pragma: no cover
+    CardWidget = QWidget
+    BodyLabel = QLabel
+    CaptionLabel = QLabel
+    StrongBodyLabel = QLabel
+    TitleLabel = QLabel
+    PrimaryPushButton = QPushButton
+
+    def InfoBar(*a, **kw):
+        class _N:
+            @staticmethod
+            def success(**kw):
+                pass
+            @staticmethod
+            def warning(**kw):
+                pass
+            @staticmethod
+            def error(**kw):
+                pass
+        return _N()
+
+    def ProgressRing(*a, **kw):
+        return QProgressBar()
+
+from ..core import doctor
+from ..core.config import Config
+
+_LEVEL_TAG = {"required": "必需", "recommend": "建议", "optional": "可选"}
+
+
+class FirstRunDialog(QDialog):
+    """体检窗口。用法：dlg = FirstRunDialog(cfg); dlg.exec_()"""
+
+    def __init__(self, cfg: Config, parent=None, auto_fix: bool = False):
+        super().__init__(parent)
+        self.cfg = cfg
+        self.setWindowTitle("环境体检 · Subtitle Studio")
+        self.resize(640, 560)
+        self.setMinimumSize(560, 480)
+        self._items: List[doctor.CheckItem] = []
+        self._log: List[str] = []
+        self._fixing_id = ""
+        self._worker = None
+        self._build_ui()
+        QTimer.singleShot(60, self._run_checks)
+        if auto_fix:
+            QTimer.singleShot(400, self._fix_all)
+
+    # ------------------------------------------------------------ 界面
+    def _build_ui(self) -> None:
+        v = QVBoxLayout(self)
+        v.setContentsMargins(24, 20, 24, 16)
+        v.setSpacing(10)
+
+        self.title = TitleLabel("正在检查运行环境…", self)
+        v.addWidget(self.title)
+        self.subtitle = CaptionLabel(
+            "只检查本机组件，不上传任何信息。缺什么可以一键补装。", self)
+        v.addWidget(self.subtitle)
+
+        self.ring = ProgressRing(self)
+        self.ring.setFixedSize(22, 22)
+
+        # 检查结果列表
+        self.rows_host = QVBoxLayout()
+        self.rows_host.setSpacing(6)
+        v.addLayout(self.rows_host)
+
+        v.addStretch(1)
+
+        # 修复进度（默认隐藏）
+        self.fix_bar = QProgressBar(self)
+        self.fix_bar.setRange(0, 100)
+        self.fix_bar.setVisible(False)
+        v.addWidget(self.fix_bar)
+        self.fix_label = CaptionLabel("", self)
+        self.fix_label.setVisible(False)
+        self.fix_label.setWordWrap(True)
+        v.addWidget(self.fix_label)
+
+        # 日志折叠区（默认隐藏）
+        self.log_box = QPlainTextEdit(self)
+        self.log_box.setReadOnly(True)
+        self.log_box.setFont(self.font())
+        self.log_box.setVisible(False)
+        self.log_box.setMinimumHeight(120)
+        v.addWidget(self.log_box, 1)
+
+        btns = QHBoxLayout()
+        btns.setSpacing(8)
+        self.btn_log = QPushButton("详细日志", self)
+        self.btn_log.clicked.connect(self._toggle_log)
+        btns.addWidget(self.btn_log)
+        btns.addStretch(1)
+        self.btn_fix_all = PrimaryPushButton("一键修复", self)
+        self.btn_fix_all.clicked.connect(self._fix_all)
+        btns.addWidget(self.btn_fix_all)
+        self.btn_close = QPushButton("稍后再说", self)
+        self.btn_close.clicked.connect(self.reject)
+        btns.addWidget(self.btn_close)
+        v.addLayout(btns)
+
+    def _add_row(self, it: doctor.CheckItem) -> None:
+        card = CardWidget(self)
+        h = QHBoxLayout(card)
+        h.setContentsMargins(14, 8, 14, 8)
+        h.setSpacing(10)
+        mark = QLabel("✓" if it.ok else ("✕" if it.level == "required" else "⚠"), card)
+        f = mark.font(); f.setBold(True); f.setPointSize(12); mark.setFont(f)
+        mark.setStyleSheet("color:#1a7f37" if it.ok else
+                           ("color:#c42b1c" if it.level == "required" else "color:#b8860b"))
+        mark.setFixedWidth(18)
+        h.addWidget(mark)
+
+        mid = QVBoxLayout()
+        mid.setSpacing(1)
+        name = BodyLabel(f"{it.title}（{_LEVEL_TAG.get(it.level, it.level)}）", card)
+        mid.addWidget(name)
+        det = it.detail or ""
+        line2 = it.why + (f"　<span style='color:#888'>{det}</span>" if det else "")
+        sub = CaptionLabel(line2, card)
+        sub.setWordWrap(True)
+        try:
+            sub.setTextFormat(Qt.RichText)
+        except Exception:
+            pass
+        mid.addWidget(sub)
+        h.addLayout(mid, 1)
+
+        if it.fixable and not it.ok:
+            btn = PrimaryPushButton(it.fix_note or "安装", card)
+            btn.clicked.connect(lambda _=False, i=it: self._fix_one(i))
+            h.addWidget(btn)
+        elif it.fix_note and not it.ok:
+            tip = CaptionLabel("手动安装", card)
+            tip.setToolTip(it.fix_note)
+            h.addWidget(tip)
+        self.rows_host.addWidget(card)
+        it._row_btn = btn if (it.fixable and not it.ok) else None   # type: ignore
+
+    def _clear_rows(self) -> None:
+        while self.rows_host.count():
+            r = self.rows_host.takeAt(0)
+            if r.widget():
+                r.widget().deleteLater()
+
+    # ------------------------------------------------------------ 检查
+    def _run_checks(self) -> None:
+        self._items = doctor.check_all()
+        self._clear_rows()
+        for it in self._items:
+            self._add_row(it)
+        need = [i for i in self._items if not i.ok and i.fixable]
+        s = doctor.summary(self._items)
+        self.title.setText(s)
+        if doctor.all_required_ok(self._items):
+            self.btn_close.setText("完成，开始使用")
+            self.btn_fix_all.setVisible(bool(need))
+            self.btn_fix_all.setText(f"一键修复（{len(need)}）" if need else "")
+        else:
+            self.btn_close.setText("退出程序")
+            self.btn_fix_all.setVisible(True)
+            self.btn_fix_all.setText(f"一键修复（{len(need)}）")
+
+    # ------------------------------------------------------------ 修复
+    def _fix_all(self) -> None:
+        todo = [i for i in self._items if not i.ok and i.fixable]
+        if todo:
+            self._fix_many(todo)
+
+    def _fix_one(self, it: doctor.CheckItem) -> None:
+        self._fix_many([it])
+
+    def _fix_many(self, todo: List[doctor.CheckItem]) -> None:
+        from .workers import ThreadedCall, reap
+        self.btn_fix_all.setEnabled(False)
+        self.btn_close.setEnabled(False)
+        self.fix_bar.setVisible(True)
+        self.fix_label.setVisible(True)
+        self.fix_bar.setValue(2)
+        pkgs: List[str] = []
+        for it in todo:
+            pkgs.extend(it.fix_pkgs)
+        total_steps = len(doctor.PIP_INDEXES)
+
+        def work(progress, log, cancel):
+            return doctor.pip_install(pkgs, progress=progress, log=log, cancel=cancel)
+
+        def on_prog(msg: str, pct: float) -> None:
+            # pct 已是 0..1（镜像阶段），映射到进度条
+            self.fix_bar.setValue(int(max(0, min(1, pct)) * 100))
+            self.fix_label.setText(msg)
+
+        def on_log(line: str) -> None:
+            self._log.append(line)
+            if self.log_box.isVisible():
+                self.log_box.setPlainText("\n".join(self._log[-400:]))
+
+        self._worker = ThreadedCall(work, on_prog, on_log, lambda: False)
+        self._worker.setParent(self)
+        self._worker.sig_done.connect(lambda res: self._on_fix_done(res, todo))
+        self._worker.sig_failed.connect(lambda m: self._on_fix_done((False, m), todo))
+        reap(self._worker)
+        self._worker.start()
+
+    def _on_fix_done(self, result, todo) -> None:
+        ok, msg = result if isinstance(result, tuple) else (False, str(result))
+        reap(self._worker)
+        self._worker = None
+        self.btn_fix_all.setEnabled(True)
+        self.btn_close.setEnabled(True)
+        if ok:
+            self.fix_bar.setValue(100)
+            self.fix_label.setText("修复完成，正在重新检查…")
+            QTimer.singleShot(600, self._run_checks)
+            QTimer.singleShot(2400, lambda: (self.fix_bar.setVisible(False),
+                                             self.fix_label.setVisible(False)))
+        else:
+            self.fix_label.setText(msg)
+            InfoBar.error(title="安装失败", content=msg.splitlines()[0][:120],
+                          orient=Qt.Horizontal, isClosable=True, duration=8000,
+                          parent=self)
+            self.btn_log.click() if not self.log_box.isVisible() else None
+
+    def _toggle_log(self) -> None:
+        vis = not self.log_box.isVisible()
+        self.log_box.setVisible(vis)
+        self.btn_log.setText("收起日志" if vis else "详细日志")
+        if vis:
+            self.log_box.setPlainText("\n".join(self._log) or "（暂无日志）")
+            self.resize(self.width(), max(560, self.height()))
+
+
+def maybe_show_first_run(cfg: Config, parent=None) -> None:
+    """首次使用（配置文件不存在）时弹一次体检窗口。"""
+    from ..core.config import config_path
+    try:
+        first = not os.path.isfile(config_path())
+    except Exception:
+        first = False
+    if first:
+        dlg = FirstRunDialog(cfg, parent)
+        dlg.setModal(True)
+        dlg.exec_()
