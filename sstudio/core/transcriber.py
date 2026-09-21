@@ -463,9 +463,16 @@ class WhisperCppEngine:
     def transcribe(self, audio_path: str, progress: Optional[Progress] = None,
                    cancel: Optional[Cancel] = None) -> TranscriptResult:
         import shutil as _s
-        exe = _s.which("whisper-cli") or _s.which("main") or ""
+        exe = _s.which("whisper-cli") or ""
         if not exe:
-            raise TranscribeError("未找到 whisper-cli / main.exe。请安装 whisper.cpp 或在 PATH 中提供。")
+            # 老版 whisper.cpp 的可执行文件就叫 main.exe——但 PATH 里任何
+            # 程序的 main.exe 都会命中，必须同目录有 whisper.dll 才认
+            cand = _s.which("main")
+            if cand and (os.path.isfile(os.path.join(os.path.dirname(cand), "whisper.dll"))
+                         or os.path.isfile(os.path.join(os.path.dirname(cand), "libwhisper.dll"))):
+                exe = cand
+        if not exe:
+            raise TranscribeError("未找到 whisper-cli。请安装 whisper.cpp 或在 PATH 中提供。")
         model = self.cfg.whisper_model
         if not os.path.isfile(model):
             raise TranscribeError("请选择一个 ggml-*.bin 模型文件。")
