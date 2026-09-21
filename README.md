@@ -51,7 +51,7 @@ faster-whisper 需要 **CTranslate2** 格式的模型。本机会自动扫描这
 %USERPROFILE%\.cache\huggingface\hub
 %USERPROFILE%\.cache\modelscope\hub
 %USERPROFILE%\.cache\whisper
-SSData\models                                          ← 本程序自己的下载目录
+%LOCALAPPDATA%\SubtitleStudio\models                   ← 本程序自己的下载目录
 ```
 
 在 **设置 → 语音转写引擎** 里点「重新扫描本地模型」即可看到全部命中项；
@@ -204,7 +204,7 @@ python tests\run_all.py --quick    :: 跳过需要模型的转写用例，10 秒
 ## 八、常见问题
 
 **Q：转写报「本地找不到模型，且无法联网下载」**
-设置 → 模型 → 重新扫描本地模型 → 选一个已下载的模型；或联网状态下选「在线下载」项，首次自动下到 `SSData\models`。
+设置 → 模型 → 重新扫描本地模型 → 选一个已下载的模型；或联网状态下选「在线下载」项，首次自动下到 `%LOCALAPPDATA%\SubtitleStudio\models`。
 
 **Q：GPU 跑不动 / 显存爆了**
 设置里把「计算设备」改成 `cpu`，或「量化精度」改成 `int8`；也可换 `large-v3-turbo`（1.5 GB，8GB 显存很稳）。
@@ -281,7 +281,7 @@ pyinstaller build.spec --noconfirm
 
 打包时值得注意的三点，都是踩过坑的：
 
-* **模型不打包**。每个 1.5–3 GB。程序运行时扫描标准缓存目录（HuggingFace/ModelScope）与自家 `SSData\models` 直接复用，见第三节。
+* **模型不打包**。每个 1.5–3 GB。程序运行时扫描标准缓存目录（HuggingFace/ModelScope）与自家模型目录（`%LOCALAPPDATA%\SubtitleStudio\models`）直接复用，见第三节。
 * **`PyQt5.QtXml` 不能排除**。qfluentwidgets 硬依赖它，只有 0.2 MB；误排会让打包版界面直接起不来（自检里会显示 `No module named 'PyQt5.QtXml'`）。
 * **git 调用带 `CREATE_NO_WINDOW`**。打包版是无窗口程序，起子进程会闪黑框；冻结环境直接跳过 git，改读构建期固化的 `BUILDINFO`。
 
@@ -294,7 +294,7 @@ pyinstaller build.spec --noconfirm
 
 `--check` 会逐项打印 PyQt5 / qfluentwidgets / faster-whisper / CTranslate2 / GPU 可推理 / ffmpeg，并列出发现的本地模型。GUI 版用户看不到命令行，遇到"打不开"时把 exe 拖到 cmd 里跑这两条即可定位。
 
-> 提醒：配置与 API Key 写在 exe 同级的 `SSData\`，是明文。拷给别人前记得清空这个目录（或首次启动后在设置里填）。
+> 提醒：配置与 API Key 写在 `%APPDATA%\SubtitleStudio\config.json`，是明文。把这份配置拷给别人前记得清空该目录（或首次启动后在设置里重新填）。
 
 ---
 
