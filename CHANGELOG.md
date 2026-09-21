@@ -1,20 +1,47 @@
 # 更新日志
 
-## [1.5.0] - 2026-09-21
-
-- 新增 Windows 安装程序：免管理员用户级安装、卸载可选保留模型缓存、装完自动启动；release.py 发版链自动产出 setup.exe。
-## [1.4.0] - 2026-09-21
-
-- 新增环境体检：首次启动自动检查必要组件（Python/PyQt5/faster-whisper/PyAV/CUDA），缺失可一键经国内镜像补装；设置页可随时重开体检。
-## [1.3.0] - 2026-09-21
-
-- 剔除对第三方转写软件的一切探测与借用：模型只从标准缓存目录与自家 SSData\\models 发现，ffmpeg/CUDA 只认标准位置；老配置里已移除的引擎名自动回落 faster-whisper。
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
 版本号唯一真源是根目录的 `VERSION` 文件，发版请用 `python release.py`。
 
+## [1.5.0] - 2026-09-21
+
+### 安装程序
+- 新增 Windows 安装程序（Inno Setup）：免管理员用户级安装到
+  `%LOCALAPPDATA%\Programs\Subtitle Studio`，中文向导界面。
+- 卸载时询问是否保留模型缓存、配置与工程文件（SSData），默认保留——
+  模型一下载就是几个 G，误删很伤；确认后才会全部删除。
+- 装完自动启动一次：首次使用会直接进入环境体检向导，缺组件当场补。
+- `release.py --build` 发版链自动产出 `installer\SubtitleStudio-<版本>-setup.exe`
+  （版本号经 `/DAppVersion=` 注入）；未安装 Inno Setup 时温和跳过并给出下载地址。
+
+## [1.4.0] - 2026-09-21
+
+### 环境体检
+- 新增首次启动体检向导：自动检查必要组件（Python / PyQt5 / faster-whisper /
+  PyAV / ffmpeg / CUDA 12 运行库），纯本机检测、不上传任何信息。
+- 缺失组件可**一键补装**：`python -m pip` 走 清华 → 阿里 → 官方 三镜像自动回退，
+  自动跟随 Windows 系统代理；修复后立即复核，不轻信退出码。
+- 只有必需组件缺失才强制修复；其余可「稍后再说」。
+- 设置页新增「环境体检」入口，可随时重开体检窗口。
+- 新增测试 `tests/doctor.py`：假 pip 验证镜像回退与失败文案、检查项结构自洽、
+  向导 UI 冒烟，全程离线。
+
+## [1.3.0] - 2026-09-21
+
+### 自主化
+- 转写后端收敛为 faster-whisper / whisper.cpp / 云端 API 三种，模型与运行库
+  只从标准位置发现（HuggingFace / ModelScope 公共缓存、自家 `SSData\models`、
+  pip wheel、标准 CUDA 安装），不再借用其它软件的私有目录。
+- 老配置里已移除的引擎名自动回落 `faster-whisper`，下拉框不会落空。
+- README / 介绍页 / requirements 同步更新。
+
 ## [1.2.0] - 2026-09-21
 
-- 暗色模式全面重做：原生输入/表格控件跟随深色，字重与对比度按暗色专门调校，切主题即时生效。
+### 界面
+- 暗色模式全面重做：应用级暗色调色板（原生 QTableWidget / QPlainTextEdit /
+  滚动条真正跟随深色），字幕表行染、状态徽章、时间轴、警示色按暗色专门调校。
+- 全局字体启用 `PreferFullHinting`，小字号中文更实更清晰。
+- light / dark / auto 跟随系统切换，改主题即时生效（表格重染 + 时间轴重绘）。
 
 ## [1.1.1] - 2026-09-21
 
