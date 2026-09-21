@@ -62,7 +62,7 @@ class Timeline(QWidget):
         p.drawRoundedRect(0, bar_top, w, bar_h, 4, 4)
 
         if not self.doc or not self.doc.cues:
-            p.setPen(QPen(QColor("#8a8a8a")))
+            p.setPen(QPen(QColor("#a8a8a8") if dark else QColor("#8a8a8a")))
             f = QFont()
             f.setPointSize(9)
             p.setFont(f)
@@ -71,13 +71,13 @@ class Timeline(QWidget):
             return
 
         dur = max(1.0, self.duration)
-        # 字幕色块
+        # 字幕色块（暗色整体提亮，与 #1f1f1f 底拉开）
         colors = {
-            "asr": QColor("#5b9bd5") if dark else QColor("#8fbfe8"),
-            "llm": QColor("#3aa76d") if dark else QColor("#7fd3a2"),
-            "edited": QColor("#d8a13a") if dark else QColor("#f0c96a"),
-            "review": QColor("#d13438") if dark else QColor("#f08a8a"),
-            "confirmed": QColor("#4b7bb5") if dark else QColor("#7fa8dc"),
+            "asr": QColor("#6faee0") if dark else QColor("#8fbfe8"),
+            "llm": QColor("#43c283") if dark else QColor("#7fd3a2"),
+            "edited": QColor("#e8b04c") if dark else QColor("#f0c96a"),
+            "review": QColor("#f2606a") if dark else QColor("#f08a8a"),
+            "confirmed": QColor("#5e93d6") if dark else QColor("#7fa8dc"),
         }
         for i, c in enumerate(self.doc.cues):
             x0 = int(c.start / dur * w)
@@ -91,8 +91,8 @@ class Timeline(QWidget):
             p.setBrush(col)
             p.drawRect(max(0, x0), bar_top + 2, max(1, x1 - x0), bar_h - 4)
 
-        # 刻度
-        p.setPen(QPen(QColor("#9a9a9a")))
+        # 刻度（暗色下时间文字用亮灰，浅灰在深底里看不清）
+        p.setPen(QPen(QColor("#b8b8b8") if dark else QColor("#8a8a8a")))
         f = QFont()
         f.setPointSize(8)
         p.setFont(f)

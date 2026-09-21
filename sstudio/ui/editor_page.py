@@ -23,7 +23,7 @@ from ..core.model import Cue, CueDocument, normalize_cues, sec_to_ts, ts_to_sec
 from ..core import media
 from .cue_table import COL_E, COL_S, CueTable
 from .player import PlayerWidget
-from .theme import human_time, open_path
+from .theme import human_time, is_dark, open_path
 from .timeline import Timeline
 
 
@@ -204,6 +204,8 @@ class EditorInterface(QWidget):
             "Shift+Enter 才是换行。（双击表格里的文字也能就地编辑）")
         f = self.edit_area.font()
         f.setPointSizeF(10.5)
+        from .theme import _crisp
+        _crisp(f)          # CJK 小字全 hinting，暗色浅底上都更实
         self.edit_area.setFont(f)
         self.edit_area.setTabChangesFocus(True)
         self.edit_area.setMinimumWidth(220)
@@ -349,6 +351,12 @@ class EditorInterface(QWidget):
         self.table.cue_selected.connect(self._on_select)
         self.table.cue_activated.connect(self._jump_to)
         self.table.request_action.connect(self._act)
+        # 主题切换（light/dark/auto）后重染表格状态色、重绘时间轴
+        self._last_dark = None
+        self._theme_timer = QTimer(self)
+        self._theme_timer.setInterval(400)
+        self._theme_timer.timeout.connect(self._watch_theme)
+        self._theme_timer.start()
         # Enter 保存并下一条；Shift+Enter 换行（在 eventFilter 里拦截）
         self.edit_area.installEventFilter(self)
 
@@ -460,6 +468,27 @@ class EditorInterface(QWidget):
             self.hero_bar.setRange(0, 0)      # 忙碌指示
             self.hero_pct.setText("…")
         self.hero_sub.setText(msg)
+
+    def _watch_theme(self) -> None:
+        """轮询 qfluentwidgets 主题（它切主题不发 Qt 信号）。变了就重染表格。"""
+        try:
+            d = is_dark()
+        except Exception:
+            return
+        if self._last_dark is None:
+            self._last_dark = d
+            return
+        if d != self._last_dark:
+            self._last_dark = d
+            # auto 模式跟随系统明暗切换：调色板也要跟着换
+            from .theme import _apply_app_palette
+            try:
+                _apply_app_palette(d)
+            except Exception:
+                pass
+            if self.doc is not None:
+                self.table.render(self.doc.cues, self.table.currentRow())
+            self.table.viewport().update()
 
     def set_document(self, doc: Optional[CueDocument], reset_history: bool = True) -> None:
         self.doc = doc

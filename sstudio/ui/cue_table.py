@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu
                              QTextEdit)
 
 from ..core.model import Cue, sec_to_ts, ts_to_sec
-from .theme import is_dark, monospace, state_color, state_text
+from .theme import _crisp, is_dark, monospace, state_color, state_text
 
 COL_NO, COL_S, COL_E, COL_D, COL_STATE, COL_TEXT = range(6)
 
@@ -63,6 +63,7 @@ class CueTable(QTableWidget):
         self._mono = monospace(9)
         self._body = QFont()
         self._body.setPointSizeF(9.5)
+        _crisp(self._body)
         self.setItemDelegateForColumn(COL_TEXT, _TextDelegate(self))
 
         self.setHorizontalHeaderLabels(["#", "开始", "结束", "时长", "状态", "字幕内容"])
@@ -110,7 +111,8 @@ class CueTable(QTableWidget):
             d.setTextAlignment(Qt.AlignCenter)
             d.setFlags(d.flags() & ~Qt.ItemIsEditable)
             if c.duration > 8:
-                d.setForeground(QBrush(QColor("#d13438")))
+                # 过长字幕警示：暗色下用更亮的红，保证与深底对比够
+                d.setForeground(QBrush(QColor("#ff6b6b") if dark else QColor("#d13438")))
             self.setItem(r, COL_D, d)
 
             st = QTableWidgetItem(state_text(c.state))
@@ -128,7 +130,9 @@ class CueTable(QTableWidget):
             if col.alpha():
                 tx.setBackground(QBrush(col))
             if c.state == "review":
+                # 待复查：暗色亮红 / 浅色深红，两种皮肤都保持高对比
                 tx.setForeground(QBrush(QColor("#ff8a8a") if dark else QColor("#c42b1c")))
+                f2 = QFont(tx.font()); _crisp(f2); tx.setFont(f2)
             self.setItem(r, COL_TEXT, tx)
 
             h = max(34, min(150, 20 + 16 * (c.display_text.count("\n") + 1)
@@ -236,12 +240,13 @@ class CueTable(QTableWidget):
 
 # ---------------------------------------------------------------- helpers
 def _state_badge(state: str, dark: bool) -> QColor:
+    # 暗色徽章提高亮度与饱和度，默认灰字（#e6e6e6）放上去才读得清
     return {
         "asr": QColor("#4a4a4a") if dark else QColor("#dfe6ec"),
-        "llm": QColor("#1c6b46") if dark else QColor("#b7e6c8"),
-        "edited": QColor("#7a6520") if dark else QColor("#f6e2a8"),
-        "review": QColor("#8a2b2b") if dark else QColor("#f8c9c9"),
-        "confirmed": QColor("#25507e") if dark else QColor("#c5ddf5"),
+        "llm": QColor("#1f7a4d") if dark else QColor("#b7e6c8"),
+        "edited": QColor("#93702a") if dark else QColor("#f6e2a8"),
+        "review": QColor("#a83232") if dark else QColor("#f8c9c9"),
+        "confirmed": QColor("#2f66a3") if dark else QColor("#c5ddf5"),
     }.get(state, QColor(Qt.transparent))
 
 
