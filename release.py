@@ -26,6 +26,7 @@ import argparse
 import datetime as _dt
 import os
 import re
+import shutil
 import subprocess
 import sys
 from typing import Optional
@@ -138,8 +139,54 @@ def do_build() -> None:
                    for dp, _, fs in os.walk(out) for f in fs) / 1048576
         print(f"✓ 产物：{exe}\n  体积 {size:.0f} MB")
         sync_shortcut(exe)
+        do_installer()
     else:
         sys.exit("× 打包结束但没找到 exe，请查看上方日志")
+
+
+# ------------------------------------------------------------ 安装包（Inno Setup）
+def _find_iscc() -> str:
+    """定位 Inno Setup 编译器；找不到返回空串。"""
+    cands = [
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", ""),
+                     r"Inno Setup 6\ISCC.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), r"Inno Setup 6\ISCC.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Inno Setup 6\ISCC.exe"),
+    ]
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    which = shutil.which("ISCC")
+    return which or ""
+
+
+def do_installer() -> None:
+    """用 Inno Setup 把 dist 产物打成单文件安装程序。没有 ISCC 时温和跳过。
+
+    版本号经 /DAppVersion= 注入（ISPP 对 VERSION 文件的字符串/整数比较行为
+    因版本而异，注入是最稳的方式）。
+    """
+    iss = os.path.join(ROOT, "installer.iss")
+    if not os.path.isfile(iss):
+        print("· 无 installer.iss，跳过安装包")
+        return
+    iscc = _find_iscc()
+    if not iscc:
+        print("· 未安装 Inno Setup 6，跳过安装包编译。"
+              "安装后重跑本步即可生成 setup.exe：\n"
+              "  https://jrsoftware.org/isdl.php")
+        return
+    print("\n· Inno Setup 编译安装包中（lzma2，1~2 分钟）…")
+    r = run([iscc, f"/DAppVersion={read_version()}", iss], check=False, capture=True)
+    out = os.path.join(ROOT, "installer")
+    setup = os.path.join(
+        out, f"SubtitleStudio-{read_version()}-setup.exe")
+    if os.path.isfile(setup):
+        mb = os.path.getsize(setup) / 1048576
+        print(f"✓ 安装包：{setup}\n  体积 {mb:.1f} MB")
+    else:
+        print("× 未找到安装包产物，ISCC 输出：")
+        print((r.stdout if isinstance(r.stdout, str) else "")[-800:])
 
 
 # ------------------------------------------------------------ 桌面快捷方式
