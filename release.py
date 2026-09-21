@@ -124,8 +124,10 @@ def update_changelog(old: str, new: str, notes: str) -> None:
     old_text = open(CHANGELOG, encoding="utf-8").read() if os.path.isfile(CHANGELOG) else ""
     body = old_text.split("\n", 1)[1] if old_text.startswith("# ") else old_text
     head = old_text.split("\n", 1)[0] if old_text.startswith("# ") else "# 更新日志"
+    body = body.lstrip("\n")
+    tail = "" if not body else ("\n" + body if body.startswith("## [") else body)
     with open(CHANGELOG, "w", encoding="utf-8", newline="\n") as f:
-        f.write(head + "\n\n" + "\n".join(entry) + body.lstrip("\n"))
+        f.write(head + "\n\n" + "\n".join(entry) + tail)
     print(f"· CHANGELOG 已加入 [{new}] 段落，记得检查措辞")
 
 
