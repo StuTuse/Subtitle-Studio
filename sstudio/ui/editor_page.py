@@ -1,0 +1,933 @@
+"""字幕编辑主界面：播放器 + 时间轴 + 字幕表 + 工具条 + 编辑区。"""
+
+from __future__ import annotations
+
+import os
+from typing import List, Optional
+
+from qfluentwidgets import (Action, BodyLabel, CaptionLabel, CommandBar, FluentIcon as FIF,
+                            IndeterminateProgressBar, InfoBar, InfoBarPosition, LineEdit,
+                            PrimaryPushButton, PrimaryToolButton, ProgressBar, PushButton,
+                            SearchLineEdit,
+                            Slider, StrongBodyLabel, ToolButton)
+from PyQt5.QtCore import Qt, QObject, QEvent, QTimer, pyqtSignal
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QComboBox, QFileDialog,
+                             QFrame, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
+                             QShortcut, QSizePolicy, QSplitter, QTextEdit, QVBoxLayout,
+                             QWidget, QApplication)
+
+from ..core import formats
+from ..core.config import Config
+from ..core.model import Cue, CueDocument, normalize_cues, sec_to_ts, ts_to_sec
+from ..core import media
+from .cue_table import COL_E, COL_S, CueTable
+from .player import PlayerWidget
+from .theme import human_time, open_path
+from .timeline import Timeline
+
+
+class EditorInterface(QWidget):
+    doc_changed = pyqtSignal()
+    say = pyqtSignal(str, int)
+
+    def __init__(self, cfg: Config, main):
+        super().__init__()
+        self.setObjectName("editor")
+        self.setWindowTitle("字幕编辑")
+        self.cfg = cfg
+        self.main = main
+        self.doc: Optional[CueDocument] = None
+        self._undo: List[dict] = []
+        self._redo: List[dict] = []
+        self._follow = True
+        self._editing_row = -1
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 8, 12, 6)
+        root.setSpacing(6)
+
+        # ------------------------------------------------------- 工具条
+        self.bar = CommandBar(self)
+        self.bar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+
+        def act(icon, text, slot):
+            a = Action(icon, text, self)
+            a.triggered.connect(slot)
+            return a
+
+        self.bar.addActions([
+            act(FIF.VIDEO, " 导入视频", lambda: self.main.open_media_dialog()),
+            act(FIF.PLAY, " 开始转写", lambda: self.main.start_transcribe()),
+            act(FIF.BROOM, " AI 纠错", lambda: self.main.goto_fix()),
+            act(FIF.SAVE, " 导出", lambda: self.main.switch_to("export")),
+        ])
+        self.bar.addSeparator()
+        self.bar.addActions([
+            act(FIF.FOLDER, "打开工程", self._open_project),
+            act(FIF.SAVE_AS, "保存工程", lambda: self.main.save_project()),
+            act(FIF.ADD, "导入字幕", self._import_subtitle),
+            act(FIF.REMOVE, "撤销", self.undo),
+            act(FIF.SYNC, "重做", self.redo),
+        ])
+        self.bar.addSeparator()
+        self.btn_filter = act(FIF.SEARCH, "筛选", self._toggle_filter)
+        self.bar.addAction(self.btn_filter)
+        root.addWidget(self.bar)
+
+        # -------------------------------------------------- 筛选行（默认隐藏）
+        self.filter_row = QWidget(self)
+        fr = QHBoxLayout(self.filter_row)
+        fr.setContentsMargins(0, 0, 0, 0)
+        self.search = SearchLineEdit(self.filter_row)
+        self.search.setPlaceholderText("搜索字幕文本 / 输入 #数字 跳到第 N 条 / 支持正则")
+        self.search.setMaximumWidth(420)
+        self.search.textChanged.connect(self._filter)
+        fr.addWidget(self.search)
+        self.chk_only_problem = ToolButton(self.filter_row)
+        self.chk_only_problem.setCheckable(True)
+        self.chk_only_problem.setText(" 只看待复查/过长/过快")
+        self.chk_only_problem.clicked.connect(self._filter)
+        fr.addWidget(self.chk_only_problem)
+        fr.addStretch(1)
+        self.stat_label = CaptionLabel("—", self.filter_row)
+        fr.addWidget(self.stat_label)
+        self.filter_row.setVisible(False)
+        root.addWidget(self.filter_row)
+
+        # ---------------------------------------------- 导入/转写流程面板
+        # 空态时占住主区域：导入 → 开始转写 → 进度，全部在这一条流程里。
+        self.hero = QFrame(self)
+        self.hero.setObjectName("heroPanel")
+        self.hero.setStyleSheet(
+            "#heroPanel{background:palette(base);border:1px dashed palette(mid);"
+            "border-radius:10px;}")
+        hv = QVBoxLayout(self.hero)
+        hv.setContentsMargins(24, 18, 24, 18)
+        hv.setSpacing(8)
+        self.hero_title = StrongBodyLabel("拖入视频，或选择一个文件开始", self.hero)
+        f = self.hero_title.font(); f.setPointSize(14); self.hero_title.setFont(f)
+        hv.addWidget(self.hero_title, 0, Qt.AlignHCenter)
+        self.hero_sub = CaptionLabel(
+            "导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线", self.hero)
+        hv.addWidget(self.hero_sub, 0, Qt.AlignHCenter)
+        brow = QHBoxLayout()
+        brow.setSpacing(10)
+        brow.addStretch(1)
+        self.btn_import2 = PushButton(" 选择视频", self.hero)
+        self.btn_import2.clicked.connect(lambda: self.main.open_media_dialog())
+        brow.addWidget(self.btn_import2)
+        self.btn_start = PrimaryPushButton(" 开始转写", self.hero, FIF.PLAY)
+        self.btn_start.setMinimumHeight(34)
+        self.btn_start.setMinimumWidth(150)
+        self.btn_start.setEnabled(False)
+        self.btn_start.setToolTip("提取音频并开始识别（需先在上方或此处导入视频）")
+        self.btn_start.clicked.connect(lambda: self.main.start_transcribe())
+        brow.addWidget(self.btn_start)
+        brow.addStretch(1)
+        hv.addLayout(brow)
+        prow = QHBoxLayout()
+        prow.setSpacing(10)
+        self.hero_bar = ProgressBar(self.hero)
+        self.hero_bar.setRange(0, 1000)
+        self.hero_bar.setValue(0)
+        self.hero_bar.setTextVisible(False)
+        self.hero_bar.setFixedWidth(360)
+        self.hero_bar.setVisible(False)
+        prow.addWidget(self.hero_bar)
+        self.hero_pct = CaptionLabel("", self.hero)
+        self.hero_pct.setMinimumWidth(42)
+        self.hero_pct.setVisible(False)
+        prow.addWidget(self.hero_pct)
+        self.btn_cancel = PushButton("取消", self.hero)
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.clicked.connect(lambda: self.main.cancel_transcribe())
+        prow.addWidget(self.btn_cancel)
+        prow.addStretch(1)
+        ph = QHBoxLayout()
+        ph.addStretch(1); ph.addLayout(prow); ph.addStretch(1)
+        hv.addLayout(ph)
+        self.hero_status = CaptionLabel("", self.hero)
+        hv.addWidget(self.hero_status, 0, Qt.AlignHCenter)
+        self.hero.setMinimumHeight(150)
+        root.addWidget(self.hero)
+        self._flow = "empty"
+
+        # -------------------------------------------------- 播放器 + 字幕表
+        # 排版参考 Subtitle Edit：上带「播放器 | 修改区」并排（时间轴/控件条
+        # 全宽压在下面），下带字幕表独占整行。列表横竖都 ≥ 半屏：
+        # 竖向约 62%，横向 100% 宽。编辑区不再和列表抢横向空间。
+        split = QSplitter(Qt.Vertical, self)
+        split.setHandleWidth(5)   # 上下两区贴紧：手柄细一点
+        root.addWidget(split, 1)
+        self.split = split
+        split.setVisible(False)   # 空态先让位给流程面板，转完再上场
+
+        top = QWidget(split)
+        tl = QGridLayout(top)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(3)          # 播放器→时间轴→播放控件：贴紧，别散
+
+        # 上带左右分栏：播放器吃左边，修改区吃右边
+        hsplit = QSplitter(Qt.Horizontal, top)
+        hsplit.setHandleWidth(6)
+        self.player = PlayerWidget(hsplit)
+        hsplit.addWidget(self.player)
+
+        edit_box = QWidget(hsplit)
+        eb = QVBoxLayout(edit_box)
+        eb.setContentsMargins(4, 0, 0, 0)
+        eb.setSpacing(5)
+        self.cur_row = CaptionLabel("未选中", edit_box)
+        self.cur_row.setWordWrap(True)
+        eb.addWidget(self.cur_row)
+        # 小进度条：当前选中的是第几条 / 一共多少条，改字幕时一眼看到进度
+        prrow = QHBoxLayout()
+        prrow.setContentsMargins(0, 0, 0, 0)
+        prrow.setSpacing(6)
+        self.pos_bar = ProgressBar(edit_box)
+        self.pos_bar.setRange(0, 100)
+        self.pos_bar.setValue(0)
+        self.pos_bar.setTextVisible(False)
+        self.pos_bar.setFixedHeight(8)
+        self.pos_bar.setToolTip("当前字幕在全部字幕中的位置")
+        prrow.addWidget(self.pos_bar, 1)
+        self.pos_label = CaptionLabel("0 / 0", edit_box)
+        self.pos_label.setMinimumWidth(58)
+        prrow.addWidget(self.pos_label)
+        eb.addLayout(prrow)
+        eb.addWidget(BodyLabel("修改内容（Enter 保存并跳下一条）", edit_box))
+        self.edit_area = QPlainTextEdit(edit_box)
+        self.edit_area.setPlaceholderText(
+            "选中一条字幕后，这里会显示它的文本。\n"
+            "直接改错别字，Enter 保存并跳到下一条；\n"
+            "Shift+Enter 才是换行。（双击表格里的文字也能就地编辑）")
+        f = self.edit_area.font()
+        f.setPointSizeF(10.5)
+        self.edit_area.setFont(f)
+        self.edit_area.setTabChangesFocus(True)
+        self.edit_area.setMinimumWidth(220)
+        self.edit_area.setMinimumHeight(48)
+        eb.addWidget(self.edit_area, 1)
+
+        er = QHBoxLayout()
+        er.setSpacing(6)
+        self.btn_save_edit = PrimaryPushButton(FIF.SAVE, "保存并下一条", edit_box)
+        self.btn_save_edit.clicked.connect(self._apply_inline)
+        er.addWidget(self.btn_save_edit)
+        b_del = ToolButton(edit_box)
+        b_del.setText("删除")
+        b_del.setToolTip("删除选中条目（Del 键同样可用）")
+        b_del.clicked.connect(lambda: self._act("delete"))
+        er.addWidget(b_del)
+        er.addStretch(1)
+        eb.addLayout(er)
+        er2 = QHBoxLayout()
+        er2.setSpacing(6)
+        for label, slot, tip in (
+                ("F2 拆分", lambda: self._act("split"), "在播放头位置把选中字幕一分为二"),
+                ("F3 合并", lambda: self._act("merge"), "把选中的多条合成一条"),
+                ("−0.1s", lambda: self._act("shift:-0.1"), "整条时间轴前移"),
+                ("+0.1s", lambda: self._act("shift:0.1"), "整条时间轴后移"),
+                ("消空隙", lambda: self._act("close_gaps"),
+                 "连续说话时字幕之间若有小空隙，播放会闪断：把不超过阈值的前一条"
+                 "结束时间拉齐到后一条开始。句末标点（。！？）结尾、或换了说话人"
+                 "的空隙会保留。阈值在 设置→其它 调。Ctrl+Z 撤销。")):
+            b = ToolButton(edit_box)
+            b.setText(label)
+            b.setToolTip(tip)
+            b.clicked.connect(slot)
+            er2.addWidget(b)
+        er2.addStretch(1)
+        eb.addLayout(er2)
+        hsplit.addWidget(edit_box)
+        hsplit.setCollapsible(0, False)
+        hsplit.setCollapsible(1, False)
+        # 播放器侧定住，富余宽度全给修改区
+        hsplit.setStretchFactor(0, 0)
+        hsplit.setStretchFactor(1, 1)
+        if cfg.editor_hsplit:
+            hsplit.setSizes(cfg.editor_hsplit)
+        else:
+            hsplit.setSizes([640, 480])
+        self.hsplit = hsplit
+        tl.addWidget(hsplit, 0, 0, 1, 3)
+
+        self.timeline = Timeline(top)
+        tl.addWidget(self.timeline, 1, 0, 1, 3)
+
+        transport = QWidget(top)
+        th = QHBoxLayout(transport)
+        th.setContentsMargins(0, 0, 0, 0)
+        th.setSpacing(4)
+        self.b_prev = ToolButton(FIF.LEFT_ARROW, transport)
+        self.b_prev.setToolTip("上一条 ←")
+        self.b_play = PrimaryToolButton(FIF.PLAY, transport)
+        self.b_play.setToolTip("播放/暂停 空格")
+        self.b_next = ToolButton(FIF.RIGHT_ARROW, transport)
+        self.b_next.setToolTip("下一条 →")
+        self.b_rewind = ToolButton(transport)
+        self.b_rewind.setText("−5s")
+        self.b_forward = ToolButton(transport)
+        self.b_forward.setText("+5s")
+        self.b_speed = ToolButton(transport)
+        self.b_speed.setText("1.0x")
+        self.b_speed.setToolTip("播放速度（点击切换）")
+        self.b_mute = ToolButton(FIF.VOLUME, transport)
+        self.vol = Slider(Qt.Horizontal, transport)
+        self.vol.setRange(0, 100)
+        self.vol.setValue(cfg.player_volume)
+        self.vol.setFixedWidth(90)
+        self.time_label = BodyLabel("0:00.00 / 0:00.00", transport)
+        self.b_loop_a = ToolButton(transport)
+        self.b_loop_a.setText("A")
+        self.b_loop_a.setToolTip("循环起点")
+        self.b_loop_b = ToolButton(transport)
+        self.b_loop_b.setText("B")
+        self.b_loop_b.setToolTip("循环终点")
+        self.b_loop_clear = ToolButton(transport)
+        self.b_loop_clear.setText("A-B")
+        self.b_loop_clear.setToolTip("取消循环")
+        self.follow_btn = ToolButton(transport)
+        self.follow_btn.setCheckable(True)
+        self.follow_btn.setChecked(True)
+        self.follow_btn.setText("跟随")
+        self.follow_btn.setToolTip("播放时自动滚动到当前字幕")
+        for w in (self.b_prev, self.b_play, self.b_next, self.b_rewind, self.b_forward,
+                  self.time_label, self.b_speed, self.vol, self.b_mute,
+                  self.b_loop_a, self.b_loop_b, self.b_loop_clear, self.follow_btn):
+            th.addWidget(w)
+        th.addStretch(1)
+        tl.addWidget(transport, 2, 0, 1, 3)
+        split.addWidget(top)
+
+        bottom = QWidget(split)
+        bl = QVBoxLayout(bottom)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(3)          # 紧贴上方的播放控件
+
+        # 字幕表独占下带整行：宽度即整页宽，编辑框挪到右上不再挤它
+        self.table = CueTable(bottom)
+        bl.addWidget(self.table, 1)
+        split.addWidget(bottom)
+        # 上下比例：字幕列表是主战场 → 播放器区压到最小可看高度，
+        # 列表区吃掉其余全部空间（实测约 62%，稳定过半屏）。
+        split.setSizes([480, 800])
+        split.setStretchFactor(0, 0)
+        split.setStretchFactor(1, 1)
+
+        # ---------------------------------------------------- 状态条
+        self.status = BodyLabel("就绪。拖入一个视频开始。", self)
+        self.status.setObjectName("editorStatus")
+        root.addWidget(self.status)
+
+        self._connect()
+        self._shortcuts()
+        QTimer.singleShot(0, self._refresh_enabled)
+
+    # ------------------------------------------------------------ 信号连接
+    def _connect(self) -> None:
+        self.b_play.clicked.connect(self.player.toggle)
+        self.b_prev.clicked.connect(lambda: self._step(-1))
+        self.b_next.clicked.connect(lambda: self._step(1))
+        self.b_rewind.clicked.connect(lambda: self.player.nudge(-5))
+        self.b_forward.clicked.connect(lambda: self.player.nudge(5))
+        self.b_speed.clicked.connect(lambda: self.b_speed.setText(f"{self.player.cycle_speed():.2f}x"))
+        self.b_mute.clicked.connect(lambda: self.vol.setValue(self.player.toggle_mute()))
+        self.vol.valueChanged.connect(self.player.set_volume)
+        self.b_loop_a.clicked.connect(lambda: (self.player.set_loop_a(), self._say("已设循环起点 A")))
+        self.b_loop_b.clicked.connect(lambda: (self.player.set_loop_b(), self._say("已设循环终点 B")))
+        self.b_loop_clear.clicked.connect(lambda: (self.player.clear_loop(), self._say("已取消循环")))
+        self.follow_btn.toggled.connect(lambda v: setattr(self, "_follow", bool(v)))
+        self.player.positionChanged.connect(self._on_position)
+        self.player.durationChanged.connect(self._on_duration)
+        self.player.error.connect(lambda m: self._say(m, 6000))
+        self.timeline.seek_requested.connect(self.player.seek)
+        self.timeline.cue_clicked.connect(self._select_row)
+        self.timeline.cue_range.connect(lambda a, b: self._select_range(a, b))
+        self.table.cue_changed.connect(self._on_text_changed)
+        self.table.cue_selected.connect(self._on_select)
+        self.table.cue_activated.connect(self._jump_to)
+        self.table.request_action.connect(self._act)
+        # Enter 保存并下一条；Shift+Enter 换行（在 eventFilter 里拦截）
+        self.edit_area.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if obj is self.edit_area:
+            if (event.type() == QEvent.KeyPress and event.key() in
+                    (Qt.Key_Return, Qt.Key_Enter)
+                    and not (event.modifiers() & Qt.ShiftModifier)):
+                self._apply_inline()
+                return True
+            if event.type() == QEvent.FocusOut:
+                # 离开编辑区先落盘：否则改了字直接点别处，改动会被无声丢掉
+                if self.edit_area.toPlainText() != (
+                        self.doc.cues[self._editing_row].display_text
+                        if self.doc and 0 <= self._editing_row < len(self.doc.cues)
+                        else None):
+                    self._apply_inline_silent()
+        return False
+
+    def _apply_inline_silent(self) -> None:
+        """失焦保存：只写回，不跳下一条。"""
+        row = self._editing_row
+        if not self.doc or row < 0 or row >= len(self.doc.cues):
+            return
+        self._on_text_changed(row, self.edit_area.toPlainText().strip("\n"))
+
+    def _shortcuts(self) -> None:
+        # 组合键类：不会与打字冲突，直接做 QShortcut
+        combo = [(QKeySequence("Ctrl+Z"), self.undo),
+                 (QKeySequence("Ctrl+Y"), self.redo),
+                 (QKeySequence("Ctrl+S"), lambda: self.main.save_project()),
+                 (QKeySequence("Ctrl+O"), lambda: self.main.open_media_dialog()),
+                 (QKeySequence("Ctrl+I"), self._import_subtitle),
+                 (QKeySequence("Ctrl+G"), lambda: self.main.start_transcribe()),
+                 (QKeySequence("Ctrl+D"), lambda: self._act("delete")),
+                 (QKeySequence("Ctrl+F"), self._focus_search),
+                 (QKeySequence("F2"), lambda: self._act("split")),
+                 (QKeySequence("F3"), lambda: self._act("merge")),
+                 ]
+        for seq, fn in combo:
+            s = QShortcut(seq, self)
+            s.setContext(Qt.WindowShortcut)
+            s.activated.connect(fn)
+        # 裸键（空格/方向键/逗号句号）：只在非文本输入控件里生效，避免吃掉打字
+        self._key_filter = _TransportKeyFilter(self.player, self)
+        self._key_filter.install()
+
+    def transport_key(self, key: int, mods) -> bool:
+        """返回 True 表示这个按键已被播放器消费。"""
+        shift = bool(mods & Qt.ShiftModifier)
+        if key == Qt.Key_Space:
+            self.player.toggle()
+            return True
+        if key == Qt.Key_Left:
+            self.player.nudge(-1 if shift else -5)
+            return True
+        if key == Qt.Key_Right:
+            self.player.nudge(1 if shift else 5)
+            return True
+        if key in (Qt.Key_Comma,):
+            self.player.nudge(-1 / 30.0)
+            return True
+        if key in (Qt.Key_Period,):
+            self.player.nudge(1 / 30.0)
+            return True
+        if key == Qt.Key_BracketLeft:
+            self._nudge_sel(-0.1)
+            return True
+        if key == Qt.Key_BracketRight:
+            self._nudge_sel(0.1)
+            return True
+        return False
+
+    # ------------------------------------------------------------ 文档挂载
+    # ------------------------------------------------------------ 导入/转写流程
+    def _set_flow(self, state: str, msg: str = "") -> None:
+        """empty=没导入；ready=已导入待转写；busy=转写中；done=已有字幕。"""
+        self._flow = state
+        busy = state == "busy"
+        ready = state == "ready"
+        self.btn_start.setEnabled(ready)
+        self.btn_start.setText(" 正在转写…" if busy else " 开始转写")
+        self.btn_import2.setEnabled(not busy)
+        self.btn_cancel.setEnabled(busy)
+        self.hero_bar.setVisible(busy)
+        self.hero_pct.setVisible(busy)
+        if state == "empty":
+            self.hero_title.setText("拖入视频，或选择一个文件开始")
+            self.hero_sub.setText("导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线")
+            self.hero_pct.setText("")
+            self.hero_bar.setRange(0, 1000); self.hero_bar.setValue(0)
+        elif state == "ready":
+            self.hero_title.setText(msg or "视频已就绪")
+            self.hero_sub.setText("点「开始转写」：自动提取音频 → 本地 Whisper 识别（全程离线）")
+        elif state == "busy":
+            self.hero_title.setText("正在转写…")
+            self.hero_sub.setText(msg or "提取音频 → 识别中，请稍候")
+        self.hero.setVisible(state != "done")
+
+    def set_flow_progress(self, msg: str, pct: float) -> None:
+        """由主窗转写进度驱动 hero 读条。pct<0 表示不确定阶段。"""
+        if self._flow != "busy":
+            return
+        if pct is not None and pct >= 0:
+            self.hero_bar.setRange(0, 1000)
+            self.hero_bar.setValue(int(max(0.0, min(1.0, pct)) * 1000))
+            self.hero_pct.setText(f"{pct * 100:.0f}%")
+        else:
+            self.hero_bar.setRange(0, 0)      # 忙碌指示
+            self.hero_pct.setText("…")
+        self.hero_sub.setText(msg)
+
+    def set_document(self, doc: Optional[CueDocument], reset_history: bool = True) -> None:
+        self.doc = doc
+        if reset_history:
+            self._undo, self._redo = [], []
+        self.table.render(doc.cues if doc else [])
+        self.timeline.set_document(doc)
+        if doc is not None and doc.source_video and os.path.isfile(doc.source_video):
+            self.player.load(doc.source_video)
+            self.player.set_volume(self.cfg.player_volume)
+        self._refresh_enabled()
+        self._filter(self.search.text())
+        self.update_status()
+        self._update_pos_bar(self.table.currentRow())
+        # 流程面板：有字幕→让位；只有视频→ready；什么都没有→empty
+        # 注意：CueDocument 定义了 __len__，空字幕的 doc 布尔值是 False，
+        # 必须用 is not None 判空。
+        if doc is not None and doc.cues:
+            self._set_flow("done")
+        elif doc is not None and doc.source_video:
+            self._set_flow("ready", f"已导入：{os.path.basename(doc.source_video)}")
+        else:
+            self._set_flow("empty")
+        self.split.setVisible(self._flow == "done")
+        if self._flow == "done":
+            # 隐藏期间的 setSizes 会在"首次显示"时被 Qt 按 sizeHint 重新分配；
+            # 载入真实视频后 QVideoWidget 的 sizeHint 会变成视频原始分辨率，
+            # 把上半区撑大、列表被挤小。显示后下一拍强制重新分配一次。
+            QTimer.singleShot(0, self._apply_split_ratio)
+
+    def _apply_split_ratio(self) -> None:
+        """上带（播放器|修改区+时间轴）压到约 300px，字幕表吃掉其余（≥62%）。"""
+        if not self.split.isVisible():
+            return
+        h = max(self.split.height(), 600)
+        top_min = self.split.widget(0).minimumSizeHint().height()
+        t = max(min(int(h * 0.38), 320), top_min, 200)
+        self.split.setSizes([t, max(h - t, 400)])
+
+    def current(self) -> Optional[CueDocument]:
+        return self.doc
+
+    def push_undo(self) -> None:
+        if not self.doc:
+            return
+        self._undo.append(self.doc.snapshot())
+        del self._undo[:-60]
+        self._redo.clear()
+
+    # ------------------------------------------------------------ 表格动作
+    def _on_text_changed(self, row: int, text: str) -> None:
+        if not self.doc or not (0 <= row < len(self.doc.cues)):
+            return
+        cue = self.doc.cues[row]
+        if cue.display_text == text:
+            return
+        self.push_undo()
+        cue.text = text
+        if cue.state not in ("review",):
+            cue.state = "edited"
+        self.table.update_row(row, cue)
+        self.timeline.update()
+        self.update_status()
+        self.main.mark_dirty()
+
+    def _update_pos_bar(self, row: int) -> None:
+        """位置进度条：当前第几条 / 总条数，改到哪儿一眼可见。"""
+        total = len(self.doc.cues) if self.doc else 0
+        if total <= 0 or row < 0 or row >= total:
+            self.pos_bar.setValue(0)
+            self.pos_label.setText(f"— / {total}" if total else "0 / 0")
+            return
+        self.pos_bar.setValue(int((row + 1) * 100 / total))
+        self.pos_label.setText(f"{row + 1} / {total}")
+
+    def _on_select(self, row: int) -> None:
+        self._editing_row = row
+        self._update_pos_bar(row)
+        if self.doc and 0 <= row < len(self.doc.cues):
+            c = self.doc.cues[row]
+            self.cur_row.setText(f"第 {row + 1} 条 · {human_time(c.start)} → {human_time(c.end)}"
+                                 f" · {c.duration:.2f}s")
+            # 编辑中不要把用户正在打的字冲掉（点击别行时由 focusOut 先落盘）
+            if not self.edit_area.hasFocus():
+                self.edit_area.setPlainText(c.display_text)
+            if self._follow:
+                self.timeline._sel = row
+                self.timeline.update()
+
+    def _apply_inline(self) -> None:
+        row = self._editing_row
+        if not self.doc or row < 0 or row >= len(self.doc.cues):
+            return
+        raw = self.edit_area.toPlainText().strip("\n")
+        self._on_text_changed(row, raw)
+        nxt = row + 1
+        self._select_row(nxt)
+        # 焦点还在编辑区 → _on_select 的防冲守卫会跳过刷新，
+        # 这里显式把下一条装进来，让用户连续改。
+        if self.doc and 0 <= nxt < len(self.doc.cues):
+            self.edit_area.setPlainText(self.doc.cues[nxt].display_text)
+            self.edit_area.setFocus()
+
+    def _act(self, action: str, rows: Optional[List[int]] = None) -> None:
+        if not self.doc:
+            return
+        rows = rows or self.table.selected_rows()
+        if not rows:
+            cur = self.table.currentRow()
+            rows = [cur] if cur >= 0 else []
+        if not rows and action not in ("insert", "close_gaps"):
+            self._say("先选中字幕条目。", 2000)
+            return
+        doc = self.doc
+
+        if action == "delete":
+            self.push_undo()
+            doc.remove(rows)
+            self._after_struct(min(rows))
+        elif action == "insert":
+            self.push_undo()
+            at = rows[0]
+            anchor = doc.cues[at] if at < len(doc.cues) else (doc.cues[-1] if doc.cues else None)
+            start = anchor.start if anchor else self.player.position()
+            cue = Cue(start=start, end=start + 2.0, text="", original_text="", state="edited")
+            doc.insert(at, cue)
+            self._after_struct(at)
+        elif action == "merge":
+            self.push_undo()
+            doc.merge(rows)
+            self._after_struct(rows[0])
+        elif action == "split":
+            self.push_undo()
+            r = rows[0]
+            cue = doc.cues[r]
+            pos = self.player.position()
+            if not (cue.start + 0.05 < pos < cue.end - 0.05):
+                pos = cue.start + cue.duration / 2
+            doc.split(r, pos)
+            self._after_struct(r)
+            self._say(f"已在 {sec_to_ts(pos)} 拆分", 2000)
+        elif action.startswith("shift:"):
+            d = float(action.split(":", 1)[1])
+            self.push_undo()
+            for r in rows:
+                doc.cues[r].shift(d)
+            self._after_struct(rows[0])
+        elif action.startswith("extend:"):
+            d = float(action.split(":", 1)[1])
+            self.push_undo()
+            for r in rows:
+                c = doc.cues[r]
+                c.end = max(c.start + 0.2, c.end + d)
+            normalize_cues(doc)
+            self._after_struct(rows[0])
+        elif action.startswith("set_time:"):
+            _, r, col = action.split(":")
+            r, col = int(r), int(col)
+            item = self.table.item(r, col)
+            v = ts_to_sec(item.text() if item else "")
+            if v is None:
+                self._say("时间格式无法识别，请用 00:00:12.340 或 12.34", 2500)
+                self.table.render(doc.cues, r)
+                return
+            self.push_undo()
+            c = doc.cues[r]
+            if col == COL_S:
+                c.start = min(v, c.end - 0.05)
+            else:
+                c.end = max(v, c.start + 0.05)
+            normalize_cues(doc)
+            self._after_struct(r)
+        elif action in ("review", "confirmed"):
+            self.push_undo()
+            for r in rows:
+                doc.cues[r].state = action
+            self.table.render(doc.cues, rows[0])
+            self.timeline.update()
+        elif action == "revert":
+            self.push_undo()
+            for r in rows:
+                c = doc.cues[r]
+                c.text = c.original_text
+                c.state = "asr"
+            self.table.render(doc.cues, rows[0])
+        elif action == "strip_punct":
+            self.push_undo()
+            import re as _re
+            for r in rows:
+                c = doc.cues[r]
+                c.text = _re.sub(r"[，。！？、；：,.!?;:\s]+$", "", c.display_text).strip()
+                c.state = "edited"
+            self.table.render(doc.cues, rows[0])
+        elif action == "close_gaps":
+            self.push_undo()
+            mg = float(getattr(self.cfg, "gap_max", 0.5) or 0.5)
+            touched, saved = doc.close_gaps(mg)
+            self.table.render(doc.cues, rows[0] if rows else 0)
+            self.timeline.update()
+            self.main.mark_dirty()
+            if touched:
+                self._say(f"已衔接 {touched} 处空隙（共 {saved:.1f}s，"
+                          f"阈值 ≤{mg:g}s），Ctrl+Z 可撤销", 4000)
+            else:
+                self._say(f"没有 ≤{mg:g}s 的空隙需要处理。", 2500)
+        elif action == "copy":
+            from PyQt5.QtWidgets import QApplication
+            QApplication.clipboard().setText("\n".join(
+                doc.cues[r].display_text for r in rows))
+            self._say(f"已复制 {len(rows)} 条文本", 2000)
+        elif action == "play_range":
+            c = doc.cues[rows[0]]
+            self.player.set_loop_a(c.start)
+            self.player.set_loop_b(c.end)
+            self.player.seek(c.start)
+            self.player.play()
+        elif action == "play_selection":
+            self.player.seek(doc.cues[rows[0]].start)
+            self.player.play()
+        self.update_status()
+        self.main.mark_dirty()
+
+    def _nudge_sel(self, d: float) -> None:
+        rows = self.table.selected_rows()
+        if rows:
+            self._act(f"shift:{d}", rows)
+
+    def _after_struct(self, row: int) -> None:
+        if not self.doc:
+            return
+        normalize_cues(self.doc)
+        self.table.render(self.doc.cues, max(0, min(row, len(self.doc.cues) - 1)))
+        self.timeline.update()
+        self._filter(self.search.text())
+        self._refresh_enabled()
+        self._update_pos_bar(self.table.currentRow())
+
+    # ------------------------------------------------------------ 撤销
+    def undo(self) -> None:
+        if not self.doc or not self._undo:
+            self._say("没有可撤销的操作。", 1500)
+            return
+        self._redo.append(self.doc.snapshot())
+        self.doc.restore(self._undo.pop())
+        self.table.render(self.doc.cues)
+        self.timeline.update()
+        self._update_pos_bar(self.table.currentRow())
+        self.main.mark_dirty()
+
+    def redo(self) -> None:
+        if not self.doc or not self._redo:
+            return
+        self._undo.append(self.doc.snapshot())
+        self.doc.restore(self._redo.pop())
+        self.table.render(self.doc.cues)
+        self.timeline.update()
+        self._update_pos_bar(self.table.currentRow())
+        self.main.mark_dirty()
+
+    # ------------------------------------------------------------ 播放同步
+    def _on_position(self, sec: float) -> None:
+        self.timeline.set_position(sec)
+        dur = self.player.duration() or (self.doc.duration if self.doc else 0)
+        self.time_label.setText(f"{human_time(sec)} / {human_time(dur)}")
+        if not self.doc or not self._follow:
+            return
+        if not self.player.playing:
+            # 暂停时的 seek 多是用户主动选行/改字引起的，
+            # 这时绝不能反过来把选中拽回播放头所在行。
+            return
+        cue = self.doc.at_time(sec)
+        if cue is None:
+            return
+        row = self.doc.index_of(cue)
+        if row >= 0 and row != self.table.currentRow():
+            self.table.blockSignals(True)
+            self.table.selectRow(row)
+            self.table.scrollToItem(self.table.item(row, 5), QAbstractItemView.PositionAtCenter)
+            self.table.blockSignals(False)
+            self._editing_row = row
+
+    def _on_duration(self, sec: float) -> None:
+        if self.doc and sec > 0:
+            self.doc.duration = sec
+            self.timeline.duration = max(sec, self.doc.end_time)
+            self.timeline.update()
+
+    def _select_row(self, row: int) -> None:
+        if self.doc and 0 <= row < len(self.doc.cues):
+            self.table.jump(row)
+            # jump 到"当前已经是"的行不会触发 currentCellChanged，
+            # 必须直接同步一次，否则 _editing_row 会停留在旧行。
+            self._on_select(row)
+            self.player.seek(self.doc.cues[row].start)
+
+    def _select_range(self, a: int, b: int) -> None:
+        self.table.clearSelection()
+        for r in range(a, min(b + 1, self.table.rowCount())):
+            self.table.selectRow(r)
+
+    def _jump_to(self, row: int) -> None:
+        if self.doc and 0 <= row < len(self.doc.cues):
+            self.player.seek(self.doc.cues[row].start)
+            self.player.play()
+
+    def _step(self, d: int) -> None:
+        if not self.doc or not self.doc.cues:
+            return
+        cur = self.table.currentRow()
+        nxt = max(0, min(len(self.doc.cues) - 1, (cur if cur >= 0 else 0) + d))
+        self._select_row(nxt)
+
+    def _on_dur(self, *_a) -> None:
+        pass
+
+    # ------------------------------------------------------------ 筛选
+    def _toggle_filter(self) -> None:
+        self.filter_row.setVisible(not self.filter_row.isVisible())
+        if self.filter_row.isVisible():
+            self.search.setFocus()
+
+    def _focus_search(self) -> None:
+        self.filter_row.setVisible(True)
+        self.search.setFocus()
+        self.search.selectAll()
+
+    def _filter(self, text: str) -> None:
+        text = (text or "").strip()
+        only_bad = self.chk_only_problem.isChecked()
+        if not self.doc:
+            return
+        import re as _re
+        rx = None
+        if text and not text.startswith("#"):
+            try:
+                rx = _re.compile(text, _re.I)
+            except _re.error:
+                rx = _re.compile(_re.escape(text), _re.I)
+        shown = 0
+        for r in range(self.table.rowCount()):
+            if r >= len(self.doc.cues):
+                break
+            c = self.doc.cues[r]
+            ok = True
+            if text.startswith("#"):
+                try:
+                    ok = (int(text[1:]) - 1) == r
+                except ValueError:
+                    ok = True
+            elif rx is not None:
+                ok = bool(rx.search(c.display_text))
+            if ok and only_bad:
+                ok = (c.state == "review" or len(c.display_text) > 28
+                      or (c.duration > 0 and len(c.display_text) / c.duration > 9)
+                      or c.duration < 0.5)
+            self.table.setRowHidden(r, not ok)
+            shown += 1 if ok else 0
+        total = self.table.rowCount()
+        self.stat_label.setText(f"显示 {shown} / {total} 条" if (text or only_bad) else f"共 {total} 条")
+
+    # ------------------------------------------------------------ 文件
+    def _open_project(self) -> None:
+        fp, _ = QFileDialog.getOpenFileName(self, "打开工程", self.cfg.last_dir or "",
+                                            "字幕工程 (*.ssp *.json);;所有文件 (*)")
+        if fp:
+            self.main.load_project(fp)
+
+    def _import_subtitle(self) -> None:
+        fp, _ = QFileDialog.getOpenFileName(self, "导入字幕/文稿", self.cfg.last_dir or "",
+                                            "字幕与文本 (*.srt *.vtt *.ass *.lrc *.txt *.json *.md);;所有文件 (*)")
+        if not fp:
+            return
+        try:
+            with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+        except OSError as e:
+            self._say(f"读取失败：{e}", 4000)
+            return
+        cues, fmt = formats.import_text(text, fp)
+        if not cues:
+            self._say("没能从这个文件解析出字幕。", 3000)
+            return
+        if self.doc is None:
+            self.doc = CueDocument(source_video="", path="")
+        if self.doc.cues:
+            self.push_undo()
+        self.doc.cues = cues
+        normalize_cues(self.doc)
+        self.doc.meta["imported_from"] = fp
+        self.doc.meta["imported_format"] = fmt
+        self.table.render(cues)
+        self.timeline.set_document(self.doc)
+        self._refresh_enabled()
+        self.main.mark_dirty()
+        self._say(f"已按 {fmt} 格式导入 {len(cues)} 条字幕。", 4000)
+        self.main.switch_to("editor")
+
+    # ------------------------------------------------------------ 状态
+    def update_status(self) -> None:
+        if not self.doc:
+            return
+        st = self.doc.stats()
+        rev = st["review"]
+        msg = (f"共 <b>{st['count']}</b> 条 · {human_time(st['duration'])} · "
+               f"均 {st['avg_cps']:.0f} 字/条 · {st['chars_per_sec']:.1f} 字/秒 · "
+               f"已修正 {st['changed']}")
+        if rev:
+            msg += f" · <span style='color:#c42b1c'>待复查 {rev}</span>"
+        self.status.setText(msg)
+        self.doc_changed.emit()
+
+    def _refresh_enabled(self) -> None:
+        has = bool(self.doc and self.doc.cues)
+        self.timeline.setEnabled(True)
+        self.edit_area.setEnabled(has)
+        self.b_play.setEnabled(self.player.duration() > 0)
+
+    def _say(self, msg: str, ms: int = 3000) -> None:
+        self.status.setText(msg)
+        QTimer.singleShot(ms, self.update_status)
+
+    # -------------------------------------------------------- 供外部调用
+    def apply_llm_text(self, row: int, text: str) -> None:
+        if not self.doc or not (0 <= row < len(self.doc.cues)):
+            return
+        c = self.doc.cues[row]
+        if c.original_text == "":
+            c.original_text = c.text
+        c.text = text
+        c.state = "llm"
+        self.table.mark_row_llm(row, text)
+
+    def mark_all_llm(self) -> None:
+        self.timeline.update()
+        self.update_status()
+
+
+class _TransportKeyFilter(QObject):
+    """裸键快捷键过滤器：焦点在文本输入控件（含表格编辑态）时完全不拦截。"""
+
+    NAV_KEYS = {Qt.Key_Space, Qt.Key_Left, Qt.Key_Right, Qt.Key_Comma, Qt.Key_Period,
+                Qt.Key_BracketLeft, Qt.Key_BracketRight}
+
+    def __init__(self, player, page):
+        super().__init__(page)
+        self.player = player
+        self.page = page
+
+    def install(self) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if event.type() != QEvent.KeyPress:
+            return False
+        if event.key() not in self.NAV_KEYS:
+            return False
+        w = QApplication.focusWidget()
+        if w is None or not self.page.isAncestorOf(w) and w is not self.page:
+            return False
+        if isinstance(w, (QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QAbstractSpinBox)):
+            return False
+        if isinstance(w, CueTable) and w.state() == CueTable.EditingState:
+            return False
+        if isinstance(w, CueTable) and event.key() in (Qt.Key_Left, Qt.Key_Right):
+            return False  # 让表格自己移动焦点
+        if self.page.transport_key(event.key(), event.modifiers()):
+            event.accept()
+            return True
+        return False

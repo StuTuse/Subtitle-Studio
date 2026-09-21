@@ -1,0 +1,33 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 打包产物 ----
+build/
+dist/
+
+# ---- 运行期数据（绝不入库：含 API Key、最近文件、缓存音频）----
+SSData/
+*.ssp
+*.log
+
+# ---- 测试临时物 ----
+tests/_tmp/
+_tmp/
+_tmphome/
+build_log.txt
+
+# ---- 本地草稿 / 探针脚本 ----
+_scratch/
+_probe_*.py
+dbg*.py
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store

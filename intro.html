@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Subtitle Studio · 把视频里的话变成字幕文件</title>
+<style>
+/* 动画方案沿用 software-guide 项目 */
+:root{
+  --bg:#05070d; --panel:rgba(15,22,40,.55); --panel2:rgba(10,15,30,.75);
+  --line:rgba(120,150,220,.13); --line2:rgba(130,160,230,.28);
+  --txt:#e8efff; --txt2:#a8b6d8; --txt3:#67769b;
+  --cyan:#22d3ee; --blue:#3b82f6; --violet:#a78bfa; --pink:#f472b6; --green:#34d399;
+  --grad:linear-gradient(120deg,#22d3ee 0%,#3b82f6 30%,#a78bfa 60%,#f472b6 100%);
+  --font:"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+  --mono:"Cascadia Code","JetBrains Mono",Consolas,monospace;
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:16.5px;line-height:1.9;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::selection{background:rgba(120,170,255,.32);color:#fff}
+::-webkit-scrollbar{width:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#4a6db8,#2b3f6e);border-radius:8px;border:3px solid transparent;background-clip:content-box}
+
+#bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5}
+.bg-glow{position:fixed;border-radius:50%;filter:blur(120px);z-index:0;pointer-events:none}
+.glow-a{width:640px;height:640px;background:rgba(34,120,220,.10);top:-220px;left:-160px;animation:drift 26s ease-in-out infinite alternate}
+.glow-b{width:560px;height:560px;background:rgba(150,80,230,.09);top:32%;right:-220px;animation:drift 32s ease-in-out infinite alternate-reverse}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(60px,-40px) scale(1.08)}100%{transform:translate(-40px,50px) scale(.96)}}
+
+#progress-bar{position:fixed;top:0;left:0;height:3px;width:0;z-index:1000;background:linear-gradient(90deg,var(--cyan),var(--blue),var(--violet),var(--pink))}
+
+#topnav{position:fixed;top:0;left:0;right:0;z-index:900;display:flex;align-items:center;gap:26px;padding:0 34px;height:58px;
+  background:rgba(6,9,16,.72);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);
+  opacity:0;transform:translateY(-100%);transition:.5s var(--ease)}
+#topnav.show{opacity:1;transform:translateY(0)}
+#topnav .brand{font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:2px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;text-decoration:none}
+#topnav .links{display:flex;gap:18px;flex:1}
+#topnav .links a{color:var(--txt2);text-decoration:none;font-size:14px;transition:.25s}
+#topnav .links a:hover{color:#fff}
+#topnav .links a.active{color:var(--cyan)}
+
+.hero{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:100px 24px 70px}
+.hero::after{content:"";position:absolute;left:50%;top:12%;width:60vw;height:340px;transform:translateX(-50%);
+  background:radial-gradient(50% 60% at 50% 40%,rgba(96,150,255,.15),transparent 75%);filter:blur(18px);pointer-events:none}
+.hero-badge{display:inline-flex;align-items:center;gap:9px;padding:7px 18px;border-radius:999px;background:rgba(120,165,255,.08);
+  border:1px solid rgba(140,180,255,.26);font-size:13px;color:#b9cfff;animation:fadeUp 1s .1s both}
+.hero-badge .dot{width:7px;height:7px;border-radius:50%;background:#6edc96;animation:dotPulse 2.4s infinite}
+@keyframes dotPulse{0%{box-shadow:0 0 0 0 rgba(110,220,150,.55)}70%{box-shadow:0 0 0 9px rgba(110,220,150,0)}100%{box-shadow:0 0 0 0 rgba(110,220,150,0)}}
+.hero h1{margin-top:30px;font-size:clamp(40px,7vw,86px);font-weight:850;line-height:1.1;letter-spacing:-2px}
+.hero h1 .ch{display:inline-block;opacity:0;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;background-size:220% 220%;transform:translateY(18px) rotateX(70deg)}
+.hero h1.split .ch{animation:chReveal .8s cubic-bezier(.16,1,.3,1) forwards,heroGrad 8s linear infinite}
+@keyframes chReveal{to{opacity:1;transform:none}}
+@keyframes heroGrad{to{background-position:220% center}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(36px)}to{opacity:1;transform:translateY(0)}}
+.hero .zh{margin-top:8px;font-size:clamp(17px,2.4vw,24px);color:var(--txt2);letter-spacing:10px;text-indent:10px;animation:fadeUp 1s .5s both}
+.hero .say{margin-top:30px;max-width:660px;font-size:clamp(16px,2vw,19px);color:rgba(214,228,255,.85);animation:fadeUp 1s .62s both}
+.hero-cta{display:flex;gap:14px;margin-top:40px;animation:fadeUp 1s .78s both;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-block;padding:13px 30px;border-radius:999px;font-size:15.5px;font-weight:600;text-decoration:none;transition:.32s var(--ease)}
+.btn-primary{background:linear-gradient(90deg,#0891b2,#2563eb);color:#fff;box-shadow:0 10px 34px rgba(30,110,240,.35)}
+.btn-primary:hover{transform:translateY(-3px);box-shadow:0 16px 44px rgba(30,110,240,.5)}
+.btn-ghost{background:rgba(255,255,255,.05);color:var(--txt);border:1px solid var(--line2)}
+.btn-ghost:hover{transform:translateY(-3px);border-color:var(--violet)}
+
+/* 模拟界面 */
+.studio-mock{width:min(820px,94%);margin:64px auto 0;border-radius:20px;overflow:hidden;text-align:left;
+  border:1px solid rgba(140,180,255,.28);background:linear-gradient(160deg,rgba(18,26,48,.92),rgba(10,14,28,.95));
+  backdrop-filter:blur(16px);box-shadow:0 40px 110px -30px rgba(0,0,0,.75);
+  animation:fadeUp 1s .95s both}
+.sm-bar{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid rgba(140,180,255,.14)}
+.sm-dots{display:flex;gap:7px}
+.sm-dots span{width:11px;height:11px;border-radius:50%}
+.sm-dots span:nth-child(1){background:#ff5f57}.sm-dots span:nth-child(2){background:#febc2e}.sm-dots span:nth-child(3){background:#28c840}
+.sm-title{font-family:var(--mono);font-size:12px;color:#9fb4dd}
+.sm-body{display:grid;grid-template-columns:1.5fr 1fr}
+.sm-screen{position:relative;aspect-ratio:16/9;background:radial-gradient(120% 120% at 30% 20%,#1a2350 0%,#131a38 45%,#0b0f22 100%);display:grid;place-items:center;overflow:hidden}
+.sm-screen::before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 32%,rgba(120,180,255,.07) 44%,rgba(167,139,250,.1) 50%,rgba(120,180,255,.07) 56%,transparent 68%);background-size:260% 100%;animation:shimmer 7s linear infinite}
+@keyframes shimmer{0%{background-position:135% 0}100%{background-position:-135% 0}}
+.sm-play{width:66px;height:66px;border-radius:50%;background:rgba(10,16,34,.55);border:1px solid rgba(140,190,255,.45);display:grid;place-items:center;box-shadow:0 0 34px rgba(90,150,255,.35)}
+.sm-play::after{content:"";width:0;height:0;border-style:solid;border-width:14px 0 14px 23px;border-color:transparent transparent transparent rgba(255,255,255,.92);margin-left:6px}
+.sm-cap{position:absolute;bottom:15px;left:0;right:0;text-align:center;padding:0 18px}
+.sm-cap span{display:inline-block;background:rgba(4,6,12,.74);padding:7px 16px;border-radius:9px;font-size:14.5px;border:1px solid rgba(140,180,255,.25);animation:cueSwap .5s cubic-bezier(.16,1,.3,1)}
+@keyframes cueSwap{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.sm-side{border-left:1px solid rgba(140,180,255,.12);background:rgba(8,12,24,.35);overflow:hidden}
+.sm-row{display:flex;gap:10px;padding:11px 14px;font-size:12.5px;color:#c9d6f2;align-items:center;opacity:.45;transition:.3s;border-bottom:1px dashed rgba(140,170,255,.07)}
+.sm-row .t{font-family:var(--mono);color:#7f92b8;font-size:10px;white-space:nowrap}
+.sm-row .x{flex:1;line-height:1.6}
+.sm-row .st{font-size:10px;padding:1px 8px;border-radius:999px;font-family:var(--mono);flex:none}
+.st-ok{color:#7ee0b0;border:1px solid rgba(60,210,150,.35)}
+.st-ai{color:#9ecbff;border:1px solid rgba(120,170,255,.35)}
+.st-warn{color:#fbd38d;border:1px solid rgba(240,180,60,.4)}
+.sm-row.cur{opacity:1;background:rgba(80,130,255,.10);animation:kbCardIn .45s cubic-bezier(.16,1,.3,1)}
+@keyframes kbCardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.sm-timeline{position:relative;height:42px;border-top:1px solid rgba(140,180,255,.14);background:rgba(8,12,24,.55)}
+.sm-track{position:absolute;inset:13px 14px;border-radius:8px;background:rgba(120,160,255,.06);overflow:hidden}
+.sm-seg{position:absolute;top:0;bottom:0;border-radius:5px;opacity:.55}
+.sm-head{position:absolute;top:9px;bottom:9px;width:2px;background:#fff;box-shadow:0 0 10px rgba(140,190,255,.95);left:4%;transition:left 2s cubic-bezier(.4,0,.2,1)}
+
+/* 正文版式:窄栏、少框、多留白 */
+.wrap{position:relative;z-index:2;max-width:780px;margin:0 auto;padding:0 26px}
+section{padding:90px 0 10px;scroll-margin-top:80px}
+h2{font-size:clamp(25px,3.4vw,34px);font-weight:800;letter-spacing:-.5px;margin-bottom:22px}
+section p{color:var(--txt2);margin-bottom:14px}
+section p b,section li b{color:#fff;font-weight:650}
+.note{font-size:13.5px;color:var(--txt3)}
+.hl{color:var(--cyan)}
+code{font-family:var(--mono);font-size:.86em;background:rgba(60,100,200,.14);color:#9fd0ff;padding:2px 8px;border-radius:6px}
+
+/* 三步小图 */
+.flow{display:flex;align-items:stretch;margin:34px 0 10px;flex-wrap:wrap}
+.flow .step{flex:1;min-width:200px;background:linear-gradient(160deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:20px 22px;backdrop-filter:blur(12px)}
+.flow .arrow{align-self:center;padding:0 12px;color:var(--txt3);font-size:20px}
+.flow .step .n{font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:2px}
+.flow .step h3{font-size:16.5px;margin:6px 0;font-weight:700}
+.flow .step p{font-size:13.5px;color:var(--txt2);margin:0;line-height:1.75}
+
+/* 使用场景 */
+.case{margin:26px 0;padding:26px 30px;background:linear-gradient(160deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(12px);transition:transform .45s var(--ease),border-color .35s,box-shadow .45s var(--ease)}
+.case:hover{transform:translateY(-4px);border-color:rgba(150,190,255,.4);box-shadow:0 20px 50px -18px rgba(25,65,165,.45)}
+.case h3{font-size:18px;font-weight:700;margin-bottom:10px}
+.case p{margin:0;font-size:15px}
+
+/* 上手步骤 */
+.how{margin:30px 0 8px}
+.how .h-step{display:flex;gap:22px;padding:24px 0;border-bottom:1px dashed rgba(140,170,255,.12)}
+.how .h-step:last-child{border-bottom:none}
+.how .h-no{flex:none;width:44px;height:44px;border-radius:50%;border:2px solid rgba(140,190,255,.4);display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:18px;color:var(--cyan);background:rgba(34,120,220,.08)}
+.how h3{font-size:17.5px;font-weight:700;margin-bottom:6px}
+.how p{margin:0;font-size:15px}
+
+/* AI 改字示例 */
+.chg{margin:28px 0;border:1px solid var(--line2);border-radius:16px;overflow:hidden}
+.chg .chg-head{padding:11px 18px;font-family:var(--mono);font-size:12px;color:#9fb4dd;background:rgba(150,190,255,.08);border-bottom:1px solid rgba(140,180,255,.16);letter-spacing:1px}
+.chg .chg-line{padding:14px 18px;font-size:14.5px;border-bottom:1px dashed rgba(140,170,255,.1)}
+.chg .chg-line:last-child{border-bottom:none}
+.chg s{color:#f87171}
+.chg .fix{color:#6ee7b7;font-weight:650}
+.chg .who{float:right;font-family:var(--mono);font-size:11.5px;color:var(--txt3);margin-left:12px}
+
+/* 问答 */
+.qa details{border-bottom:1px dashed rgba(140,170,255,.14)}
+.qa details:first-child{border-top:1px dashed rgba(140,170,255,.14)}
+.qa summary{cursor:pointer;list-style:none;padding:19px 6px;font-weight:650;font-size:16.5px;display:flex;gap:14px;align-items:baseline}
+.qa summary::-webkit-details-marker{display:none}
+.qa summary::before{content:"Q";font-family:var(--mono);color:var(--cyan);font-size:14px;flex:none}
+.qa details[open] summary{color:#fff}
+.qa .a{padding:0 6px 22px 34px;color:var(--txt2);font-size:15px}
+.qa .a::before{content:"A";font-family:var(--mono);color:var(--green);font-size:13px;margin-right:12px}
+.qa .a p{margin:0;display:inline}
+
+footer{position:relative;z-index:2;border-top:1px solid var(--line);margin-top:90px;padding:44px 26px 54px;text-align:center}
+footer .f-brand{font-family:var(--mono);font-weight:800;font-size:17px;letter-spacing:2px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+footer p{color:var(--txt3);font-size:13px;margin-top:10px}
+
+#to-top{position:fixed;right:26px;bottom:30px;width:44px;height:44px;border-radius:50%;z-index:1240;cursor:pointer;display:grid;place-items:center;font-size:19px;color:#eaf2ff;
+  border:1px solid rgba(140,190,255,.4);background:linear-gradient(160deg,rgba(40,70,140,.65),rgba(80,50,160,.65));backdrop-filter:blur(10px);
+  opacity:0;transform:translateY(24px) scale(.85);transition:.45s cubic-bezier(.34,1.56,.64,1)}
+#to-top.show{opacity:1;transform:none}
+#to-top:hover{transform:translateY(-4px)}
+
+.reveal{opacity:0;transform:translateY(34px) scale(.99);filter:blur(5px);
+  transition:opacity .9s cubic-bezier(.16,1,.3,1),transform .9s cubic-bezier(.16,1,.3,1),filter .9s cubic-bezier(.16,1,.3,1)}
+.reveal.in{opacity:1;transform:none;filter:blur(0)}
+#cursor-glow{position:fixed;width:560px;height:560px;left:-999px;top:-999px;border-radius:50%;pointer-events:none;z-index:1;
+  background:radial-gradient(circle,rgba(70,140,255,.07),transparent 70%);transform:translate(-50%,-50%);opacity:0;transition:opacity .9s;mix-blend-mode:screen}
+#cursor-glow.on{opacity:1}
+
+@media (max-width:760px){
+  .sm-body{grid-template-columns:1fr}
+  .sm-side{border-left:none;border-top:1px solid rgba(140,180,255,.12)}
+  .flow .arrow{display:none}
+  .flow .step{min-width:100%;margin-bottom:12px}
+  #topnav{padding:0 18px;gap:14px}
+  #topnav .links{gap:12px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;scroll-behavior:auto !important}
+  .reveal{opacity:1;transform:none;filter:none}
+  #cursor-glow{display:none}
+  .hero h1 .ch{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div class="bg-glow glow-a"></div><div class="bg-glow glow-b"></div>
+<div id="progress-bar"></div>
+
+<nav id="topnav">
+  <a class="brand" href="#top">SUBTITLE STUDIO</a>
+  <div class="links">
+    <a href="#what">这是干嘛的</a>
+    <a href="#who">适合谁</a>
+    <a href="#how">怎么用</a>
+    <a href="#ai">AI 那一步</a>
+    <a href="#qa">常见问题</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="hero-badge"><span class="dot"></span>免费 · 纯本地运行 · 不用注册账号</div>
+  <h1 id="heroTitle">Subtitle Studio</h1>
+  <div class="zh">把视频里的话，变成字幕文件</div>
+  <p class="say">你把视频拖进来，它自己听写一遍，顺手把错别字改掉。<br>最后你导出一个 SRT 文件，拖进剪映、PR、B 站后台，字幕就挂上了。</p>
+  <div class="hero-cta">
+    <a class="btn btn-primary" href="#how">看看怎么用</a>
+    <a class="btn btn-ghost" href="#what">它到底是什么</a>
+  </div>
+
+  <div class="studio-mock" aria-hidden="true">
+    <div class="sm-bar">
+      <div class="sm-dots"><span></span><span></span><span></span></div>
+      <span class="sm-title">Subtitle Studio</span>
+    </div>
+    <div class="sm-body">
+      <div class="sm-screen">
+        <div class="sm-play"></div>
+        <div class="sm-cap"><span id="smCapText">把视频拖进来，剩下的它来</span></div>
+      </div>
+      <div class="sm-side" id="smRows">
+        <div class="sm-row" data-text="把视频拖进来，剩下的它来"><span class="t">00:00</span><span class="x">把视频拖进来，剩下的它来</span><span class="st st-ok">已听写</span></div>
+        <div class="sm-row" data-text="它会把每句话的时间都记下来"><span class="t">00:03</span><span class="x">它会把每句话的时间都记下来</span><span class="st st-ok">已听写</span></div>
+        <div class="sm-row" data-text="打错的字它会帮你改掉"><span class="t">00:06</span><span class="x">打错的字它会帮你改掉</span><span class="st st-ai">AI 改字</span></div>
+        <div class="sm-row" data-text="改得不对的会标出来等你确认"><span class="t">00:10</span><span class="x">改得不对的会标出来等你确认</span><span class="st st-warn">等确认</span></div>
+        <div class="sm-row" data-text="最后导出 SRT 就能直接用"><span class="t">00:14</span><span class="x">最后导出 SRT 就能直接用</span><span class="st st-ok">可导出</span></div>
+      </div>
+    </div>
+    <div class="sm-timeline">
+      <div class="sm-track">
+        <div class="sm-seg" style="left:0%;width:19%;background:rgba(34,211,238,.55)"></div>
+        <div class="sm-seg" style="left:20%;width:20%;background:rgba(59,130,246,.55)"></div>
+        <div class="sm-seg" style="left:41%;width:19%;background:rgba(167,139,250,.55)"></div>
+        <div class="sm-seg" style="left:61%;width:20%;background:rgba(244,114,182,.5)"></div>
+        <div class="sm-seg" style="left:82%;width:18%;background:rgba(52,211,153,.5)"></div>
+      </div>
+      <div class="sm-head" id="smHead"></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ═══ 这是什么 ═══ -->
+  <section id="what">
+    <h2>一句话：它帮你给视频配字幕</h2>
+    <p>做视频的人都懂：片子里说的每一句话，都要变成一行行带时间点的文字，观众才能看到字幕。这件事以前靠手打——一边播放一边暂停，听一句写一句，十分钟的视频往往要折腾一个多小时。</p>
+    <p>Subtitle Studio 把这活儿自动化了。<b>它在你电脑上把语音听写出来</b>，每句话带准确的时间点；然后让 AI 把明显的错别字改掉；你最后通读一遍、导出文件，完事。</p>
+    <div class="flow reveal">
+      <div class="step"><span class="n">第一步</span><h3>拖入视频</h3><p>mp4、mkv、手机拍的、录屏的，都行。已有的 SRT 字幕文件也能拖进来接着改。</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="n">第二步</span><h3>点一下「转写」</h3><p>它在你电脑上把语音听写出来，几分钟的视频几十秒就听完。</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="n">第三步</span><h3>导出字幕</h3><p>导出 SRT（最通用），也可以是 VTT、ASS、Word 式的纯文稿等九种格式。</p></div>
+    </div>
+    <p class="note">导出的 SRT 文件可以直接用于：剪映、Premiere、必剪、B 站投稿后台、YouTube 后台，以及绝大多数播放器（把 SRT 和视频放同一个文件夹、改成同一个文件名，播放时就自带字幕）。</p>
+  </section>
+
+  <!-- ═══ 适合谁 ═══ -->
+  <section id="who">
+    <h2>什么人会用到它</h2>
+    <div class="case reveal">
+      <h3>发视频的博主</h3>
+      <p>口播、测评、vlog，平台现在都默认挂字幕，观众也习惯开着字幕看。以前手打一条视频的字幕要一两个小时，现在几分钟等它跑完，自己通读一遍就能交稿。</p>
+    </div>
+    <div class="case reveal">
+      <h3>录网课、做教程的</h3>
+      <p>一节四十分钟的课，没人想手打字幕。丢给它跑完，导出文稿还能顺手当讲义用。</p>
+    </div>
+    <div class="case reveal">
+      <h3>处理会议、访谈录音的</h3>
+      <p>两小时的会议录音丢进去，拿到带时间点的文字记录，谁在什么时候说了什么一查就有。</p>
+    </div>
+    <div class="case reveal">
+      <h3>手里有一堆别人给的字幕，想改改再用的</h3>
+      <p>不用重新听写。直接把 SRT 导进来，边看视频边改，改完再导出。</p>
+    </div>
+  </section>
+
+  <!-- ═══ 怎么用 ═══ -->
+  <section id="how">
+    <h2>上手只要四步</h2>
+    <p>界面就四个页面，从左到右挨个点过去，流程自然就走完了。</p>
+    <div class="how">
+      <div class="h-step reveal">
+        <div class="h-no">1</div>
+        <div><h3>把视频拖进窗口</h3><p>或者点按钮选文件。拖进来之后软件会自己把音频抽出来，你不用装别的工具。</p></div>
+      </div>
+      <div class="h-step reveal">
+        <div class="h-no">2</div>
+        <div><h3>点「开始转写」，等它听完</h3><p>有进度条，随时可以取消。跑完之后，视频画面下面就是一张字幕表：每句话一行、带起止时间，点哪句视频就跳到哪句。</p></div>
+      </div>
+      <div class="h-step reveal">
+        <div class="h-no">3</div>
+        <div><h3>通读一遍，改改不顺的地方</h3><p>像改文档一样直接改字；太长的一行可以拆成两句，相邻两句可以合并。改错了随时撤销。如果配了大模型，它已经先把错别字改过一轮了。</p></div>
+      </div>
+      <div class="h-step reveal">
+        <div class="h-no">4</div>
+        <div><h3>导出</h3><p>默认导 SRT 就够用；要交稿、要发 YouTube、要做文稿，同一个地方多勾几个格式，一次全出来。</p></div>
+      </div>
+    </div>
+    <p class="note">做了一半想明天再弄？直接关掉，软件会自动保存进度，下次打开接着来。整个工程还能存成一个 <code>.ssp</code> 文件，拷到别的电脑继续做。</p>
+  </section>
+
+  <!-- ═══ AI 那一步 ═══ -->
+  <section id="ai">
+    <h2>AI 只帮你改错别字，不添乱</h2>
+    <p>现在很多工具爱把整段文字丢给 AI「润色」，结果 AI 自作主张改句式、删内容、甚至把中文翻成英文。这个软件反着来：<b>AI 的权力被限制得很死</b>——只许改错别字，不许动句子的结构，更不许增删内容。</p>
+    <p>改完之后软件还要逐行验收：句子长度突变的不收、疑似被翻译的不收、少行多行的不收。拿不准的一律保留原文，标成黄色等你确认，<b>绝不会悄悄替你做主</b>。</p>
+    <div class="chg reveal">
+      <div class="chg-head">AI 改字前后对照（示例）</div>
+      <div class="chg-line"><span class="who">通过</span>今天我们来看看这个<del style="color:#f87171">按扭</del><span class="fix">按钮</span>在哪儿</div>
+      <div class="chg-line"><span class="who">通过</span>把这个参数调大一点就<del style="color:#f87171">箱</del><span class="fix">响</span>了</div>
+      <div class="chg-line"><span class="who">拦下</span>这里 AI 返回了三倍长的句子——判为擅自改写，<b>保留原文</b>，标黄待你确认</div>
+      <div class="chg-line"><span class="who">拦下</span>这里返回的是英文——判为偷偷翻译，<b>拒收</b></div>
+    </div>
+    <p>没有 API Key 也完全能用：转写照常，跳过 AI 改字这一步就行，自己通读改一遍即可。</p>
+  </section>
+
+  <!-- ═══ 关心隐私的话 ═══ -->
+  <section id="privacy">
+    <h2>你的视频不会传到网上</h2>
+    <p>听写这一步完全在你电脑里完成，用的叫 <b>Whisper</b>，是现在效果最好的一套开源语音识别；断网也能用。如果你后来又配了大模型改错字，那一步才需要联网——发送的也只有字幕文字本身，不含视频画面。</p>
+    <p>客户的未发布素材、公司内部录像、涉及隐私的录音，放在这类工具里比丢给网页版在线工具放心得多。</p>
+    <p class="note">首次使用前，软件会自检一遍：显卡能不能加速、本地有没有现成的识别模型（比如你装过「卡卡字幕助手」，它的模型会被直接借用，不用重新下载几个 G）。</p>
+  </section>
+
+  <!-- ═══ 常见问题 ═══ -->
+  <section id="qa">
+    <h2>可能想问的</h2>
+    <div class="qa reveal">
+      <details>
+        <summary>我的视频是手机随便拍的，杂音大，能识别准吗？</summary>
+        <div class="a"><p>环境音有点底噪没问题，识别效果依然可用；太吵的片段会个别字不准，你通读时顺手改掉即可。效果不理想时可以在设置里换更大的识别模型，更准，也慢一点。</p></div>
+      </details>
+      <details>
+        <summary>英语视频、中英混着说的视频行吗？</summary>
+        <div class="a"><p>行。几十种语言都能识别，中英夹着说也没问题，语言是自动判断的。</p></div>
+      </details>
+      <details>
+        <summary>一定要配 AI（大模型）才能用吗？</summary>
+        <div class="a"><p>不用。AI 改错字是锦上添花的一步，没有它整个流程照常走：转写 → 自己通读改一遍 → 导出。</p></div>
+      </details>
+      <details>
+        <summary>视频导进来画面是黑的？</summary>
+        <div class="a"><p>个别格式（比如 H.265 编码）Windows 默认没带解码器，预览放不出来。这不影响做字幕——听写、时间轴、导出都正常。想看到画面，装一下微软商店免费的「HEVC 视频扩展」，或者把视频转成 H.264。</p></div>
+      </details>
+      <details>
+        <summary>导出的字幕在剪映里怎么用？</summary>
+        <div class="a"><p>导出 SRT 后，在剪映里「素材 → 导入」把 SRT 拖进去，它就会出现在字幕轨道上，样式在剪映里调。</p></div>
+      </details>
+      <details>
+        <summary>收费吗？</summary>
+        <div class="a"><p>软件本身免费。听写在你自己电脑上跑，不花钱；只有你自愿配上某家大模型服务改错字时，按那家的用量计费（也有免费额度，本地部署的 Ollama 之类则完全免费）。</p></div>
+      </details>
+      <details>
+        <summary>和剪映自带的「识别字幕」比，有什么区别？</summary>
+        <div class="a"><p>剪映的识别要在它的云端跑，素材要先传上去；这个软件全程本地。另外它能导出九种格式、能改别人给的现成字幕、能按词级时间戳精细拆句，这些是通用剪辑软件不管的。</p></div>
+      </details>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="f-brand">SUBTITLE STUDIO</div>
+  <p>本地听写 · AI 只改错别字 · 导出即用 —— 开发者 Tuse Creation</p>
+</footer>
+
+<div id="to-top" title="回到顶部">↑</div>
+<script>
+/* 交互与动画 · 方案沿用 software-guide 项目 */
+(function(){
+"use strict";
+var rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+var fine = matchMedia('(pointer: fine)').matches;
+
+/* 粒子星空背景 */
+var canvas = document.getElementById('bg-canvas');
+var ctx = canvas.getContext('2d');
+var W, H, particles = [], stars = [];
+var mx = -9999, my = -9999;
+var glow = document.createElement('div');
+glow.id = 'cursor-glow';
+document.body.appendChild(glow);
+window.addEventListener('mousemove', function(ev){
+  mx = ev.clientX; my = ev.clientY;
+  glow.classList.add('on');
+  glow.style.left = mx + 'px';
+  glow.style.top = my + 'px';
+}, {passive:true});
+var COLORS = ['34,211,238','59,130,246','167,139,250','244,114,182'];
+function resize(){
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+function initParticles(){
+  particles = [];
+  var count = Math.min(90, Math.floor(W * H / 16000));
+  for(var i=0;i<count;i++){
+    particles.push({
+      x: Math.random()*W, y: Math.random()*H,
+      vx: (Math.random()-.5)*0.35, vy: (Math.random()-.5)*0.35,
+      r: Math.random()*1.8+0.6,
+      c: COLORS[Math.floor(Math.random()*COLORS.length)],
+      a: Math.random()*0.5+0.2
+    });
+  }
+  stars = [];
+  for(var j=0;j<60;j++){
+    stars.push({ x:Math.random()*W, y:Math.random()*H, r:Math.random()*1.1+0.2, tw:Math.random()*Math.PI*2 });
+  }
+}
+function drawBg(){
+  ctx.clearRect(0,0,W,H);
+  for(var s=0;s<stars.length;s++){
+    var st = stars[s];
+    st.tw += 0.02;
+    var alpha = 0.25 + Math.abs(Math.sin(st.tw))*0.45;
+    ctx.beginPath();
+    ctx.arc(st.x, st.y, st.r, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(200,220,255,'+alpha.toFixed(3)+')';
+    ctx.fill();
+  }
+  for(var i=0;i<particles.length;i++){
+    var p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    var dmx = p.x-mx, dmy = p.y-my, dm2 = dmx*dmx+dmy*dmy;
+    if(dm2 < 22500 && dm2 > 1){ var dmm = Math.sqrt(dm2), f = (1-dm2/22500)*1.4; p.x += dmx/dmm*f; p.y += dmy/dmm*f; }
+    if(p.x < -20) p.x = W+20; if(p.x > W+20) p.x = -20;
+    if(p.y < -20) p.y = H+20; if(p.y > H+20) p.y = -20;
+    var near = dm2 < 22500;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba('+p.c+','+Math.min(1, p.a + (near ? 0.3 : 0)).toFixed(3)+')';
+    ctx.fill();
+    if(dm2 < 30000){
+      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(mx,my);
+      ctx.strokeStyle = 'rgba('+p.c+','+((1-dm2/30000)*0.26).toFixed(3)+')';
+      ctx.lineWidth = 0.7; ctx.stroke();
+    }
+    for(var k=i+1;k<particles.length;k++){
+      var q = particles[k];
+      var dx = p.x-q.x, dy = p.y-q.y, d2 = dx*dx+dy*dy;
+      if(d2 < 12100){
+        var o = (1 - d2/12100) * 0.16;
+        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y);
+        ctx.strokeStyle = 'rgba('+p.c+','+o.toFixed(3)+')';
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+      }
+    }
+  }
+  requestAnimationFrame(drawBg);
+}
+resize(); initParticles();
+if(!rm){ requestAnimationFrame(drawBg); }
+window.addEventListener('resize', function(){ resize(); initParticles(); });
+
+/* 磁吸光标 */
+if(fine && !rm){
+  document.body.classList.add('has-mag');
+  var mc = document.createElement('div'); mc.id = 'mag-cursor';
+  document.body.appendChild(mc);
+  var mmx = innerWidth/2, mmy = innerHeight/2, ccx = mmx, ccy = mmy;
+  addEventListener('mousemove', function(e){ mmx = e.clientX; mmy = e.clientY; mc.classList.add('on'); }, {passive:true});
+  (function tick(){
+    ccx += (mmx - ccx) * .18; ccy += (mmy - ccy) * .18;
+    mc.style.transform = 'translate(' + ccx.toFixed(1) + 'px,' + ccy.toFixed(1) + 'px) translate(-50%,-50%)';
+    requestAnimationFrame(tick);
+  })();
+  document.addEventListener('mouseover', function(e){
+    var t = e.target.closest ? e.target.closest('a,summary,.step,.case,.h-no') : null;
+    if(t) mc.classList.add('mag'); else mc.classList.remove('mag');
+  }, {passive:true});
+  var st = document.createElement('style');
+  st.textContent = '#mag-cursor{position:fixed;left:0;top:0;width:36px;height:36px;border-radius:50%;z-index:1250;pointer-events:none;border:1.5px solid rgba(140,190,255,.55);transform:translate(-100px,-100px);transition:width .22s,height .22s,border-color .3s,background .3s;mix-blend-mode:screen;opacity:0}#mag-cursor.on{opacity:1}#mag-cursor.mag{width:60px;height:60px;background:rgba(120,180,255,.1);border-color:rgba(190,220,255,.9)}body.has-mag,body.has-mag *{cursor:none !important}@media (max-width:760px){#mag-cursor{display:none}}';
+  document.head.appendChild(st);
+}
+
+/* 标题逐字入场 */
+var titleEl = document.getElementById('heroTitle');
+if(titleEl){
+  var tText = titleEl.textContent;
+  titleEl.textContent = '';
+  for(var ti=0;ti<tText.length;ti++){
+    var ch = document.createElement('span');
+    ch.className = 'ch';
+    ch.textContent = tText[ti] === ' ' ? '\u00A0' : tText[ti];
+    ch.style.animationDelay = (0.2 + ti*0.045) + 's,' + (0.2 + ti*0.045) + 's';
+    titleEl.appendChild(ch);
+  }
+  if(!rm){ titleEl.classList.add('split'); }
+  else { titleEl.style.opacity = '1'; }
+}
+
+/* 滚动显现 */
+var revealEls = document.querySelectorAll('.reveal');
+if('IntersectionObserver' in window && !rm){
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        var elz = e.target, idxz = 0;
+        var par = elz.parentNode;
+        if(par){ var sibs = par.children; for(var zz=0; zz<sibs.length; zz++){ if(sibs[zz]===elz) idxz=zz; } }
+        elz.style.transitionDelay = (Math.min(idxz,6)*70)+'ms';
+        elz.classList.add('in'); io.unobserve(elz);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+  revealEls.forEach(function(el){ io.observe(el); });
+} else {
+  revealEls.forEach(function(el){ el.classList.add('in'); });
+}
+
+/* 进度条 + 导航 + 回顶 */
+var bar = document.getElementById('progress-bar');
+var nav = document.getElementById('topnav');
+var toTop = document.getElementById('to-top');
+var navLinks = document.querySelectorAll('#topnav .links a');
+var sections = [];
+navLinks.forEach(function(a){
+  var id = a.getAttribute('href').slice(1);
+  var sec = document.getElementById(id);
+  if(sec) sections.push({ el: sec, link: a });
+});
+var ticking = false;
+function onScroll(){
+  var doc = document.documentElement;
+  var max = doc.scrollHeight - window.innerHeight;
+  bar.style.width = (max > 0 ? (window.scrollY / max) * 100 : 0) + '%';
+  nav.classList.toggle('show', window.scrollY > 500);
+  var cur = null;
+  for(var i=0;i<sections.length;i++){
+    if(sections[i].el.getBoundingClientRect().top <= 130) cur = sections[i];
+  }
+  navLinks.forEach(function(a){ a.classList.remove('active'); });
+  if(cur) cur.link.classList.add('active');
+  toTop.classList.toggle('show', window.scrollY > 700);
+  ticking = false;
+}
+window.addEventListener('scroll', function(){
+  if(!ticking){ ticking = true; requestAnimationFrame(onScroll); }
+}, {passive:true});
+onScroll();
+toTop.addEventListener('click', function(){ window.scrollTo({top:0, behavior: rm ? 'auto' : 'smooth'}); });
+
+/* 模拟工作台循环 */
+var smRows = document.querySelectorAll('#smRows .sm-row');
+var smCap = document.getElementById('smCapText');
+var smHead = document.getElementById('smHead');
+var smIdx = -1, smTimer = null;
+function smStep(){
+  if(smIdx >= 0 && smRows[smIdx]) smRows[smIdx].classList.remove('cur');
+  smIdx = (smIdx + 1) % smRows.length;
+  var row = smRows[smIdx];
+  row.classList.add('cur');
+  if(smCap){
+    smCap.style.animation = 'none';
+    void smCap.offsetWidth;
+    smCap.style.animation = '';
+    smCap.textContent = row.getAttribute('data-text');
+  }
+  if(smHead){
+    smHead.style.left = (4 + smIdx * (88 / smRows.length)) + '%';
+  }
+}
+(function(){
+  if(rm || !smRows.length) return;
+  var mock = document.querySelector('.studio-mock');
+  if('IntersectionObserver' in window && mock){
+    new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){ if(!smTimer){ smStep(); smTimer = setInterval(smStep, 2400); } }
+        else { if(smTimer){ clearInterval(smTimer); smTimer = null; } }
+      });
+    }, {threshold: 0.15}).observe(mock);
+  } else {
+    smStep(); setInterval(smStep, 2400);
+  }
+})();
+
+/* 问答单开 */
+var qas = document.querySelectorAll('.qa details');
+qas.forEach(function(d){
+  d.addEventListener('toggle', function(){
+    if(d.open){ qas.forEach(function(o){ if(o !== d && o.open) o.open = false; }); }
+  });
+});
+
+/* 彩蛋：连点 Logo */
+window.dshCelebrate = function(msg){
+  var colors = ['#22d3ee','#60a5fa','#a78bfa','#f472b6','#fbbf24','#34d399'];
+  if(!(document.body.animate || Element.prototype.animate)) return;
+  var n = document.body.clientWidth;
+  for(var i=0;i<130;i++){
+    (function(){
+      var c = document.createElement('i');
+      c.style.cssText = 'position:fixed;top:-16px;width:10px;height:14px;border-radius:2px;pointer-events:none;will-change:transform;z-index:1300';
+      c.style.left = (Math.random()*n) + 'px';
+      c.style.background = colors[i % colors.length];
+      if(i % 3 === 0) c.style.borderRadius = '50%';
+      if(i % 4 === 1){ c.style.width = '7px'; c.style.height = '18px'; }
+      document.body.appendChild(c);
+      var anim = c.animate([
+        { transform:'translateY(-24px) rotate(0deg)', opacity:1 },
+        { transform:'translateY('+(window.innerHeight+50)+'px) rotate('+(Math.random()*720-360)+'deg)', opacity:.65 }
+      ], { duration: 2500+Math.random()*1900, delay: Math.random()*750, easing:'cubic-bezier(.2,.6,.4,1)', fill:'forwards' });
+      anim.onfinish = function(){ if(c.parentNode) c.parentNode.removeChild(c); };
+      setTimeout(function(){ if(c.parentNode) c.parentNode.removeChild(c); }, 6000);
+    })();
+  }
+  var t = document.createElement('div');
+  t.style.cssText = 'position:fixed;left:50%;top:70px;transform:translateX(-50%) translateY(-14px);z-index:1350;background:linear-gradient(90deg,rgba(34,211,238,.18),rgba(167,139,250,.18));border:1px solid rgba(130,190,255,.45);color:#fff;font-weight:700;font-size:14.5px;padding:12px 26px;border-radius:14px;backdrop-filter:blur(14px);opacity:0;transition:.5s cubic-bezier(.34,1.56,.64,1);box-shadow:0 18px 55px rgba(0,0,0,.55);pointer-events:none;text-align:center;max-width:86vw';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){ t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(0)'; }); });
+  setTimeout(function(){ t.style.opacity = '0'; t.style.transform = 'translateX(-50%) translateY(-14px)'; setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, 700); }, 3600);
+};
+var brandEl = document.querySelector('#topnav .brand');
+var clicks = 0, clickTimer = null;
+if(brandEl){
+  brandEl.addEventListener('click', function(e){
+    clicks++;
+    if(clickTimer) clearTimeout(clickTimer);
+    clickTimer = setTimeout(function(){ clicks = 0; }, 1800);
+    if(clicks >= 5){
+      clicks = 0;
+      window.dshCelebrate('字幕是做给人看的，工具是省时间用的 —— 祝出片顺利');
+    }
+  });
+}
+})();
+</script>
+</body>
+</html>

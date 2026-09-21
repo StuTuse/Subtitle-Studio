@@ -1,0 +1,220 @@
+"""把耗时操作放到 QThread 里，避免卡住界面。
+
+统一约定：
+* 每个 Worker 都有 ``sig_done(result)`` / ``sig_failed(msg)`` / ``sig_progress(msg, pct)``。
+* ``cancel()`` 只是设标志，由被调方轮询（转写按 segment 轮询；LLM 批次间轮询）。
+"""
+
+from __future__ import annotations
+
+import os
+import traceback
+from typing import Any, Callable, Dict, List, Optional
+
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
+
+from ..core import formats, llm, media, transcriber
+from ..core.config import Config
+from ..core.model import Cue, CueDocument
+
+
+class _BaseWorker(QThread):
+    """QThread 子类：调用方 .start() 即后台执行 run()。
+
+    信号从工作线程发出、在主线程槽里接收（Qt 自动 queued），
+    所以槽函数里可以放心动界面。
+    """
+
+    sig_progress = pyqtSignal(str, float)
+    sig_done = pyqtSignal(object)
+    sig_failed = pyqtSignal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+
+    def cancelled(self) -> bool:
+        return self._cancel
+
+    def _progress(self, msg: str, pct: float = -1.0) -> None:
+        self.sig_progress.emit(msg, float(pct))
+
+
+_pending_reap: set = set()
+
+
+def reap(w: Optional["_BaseWorker"]) -> None:
+    """安全回收 worker：线程没结束前必须保住 Python 引用，
+    否则 GC 会在运行中析构 QThread（Qt 直接 abort）。非阻塞。"""
+    if w is None:
+        return
+    try:
+        if w.isFinished():
+            _pending_reap.discard(w)
+            w.deleteLater()
+            return
+        _pending_reap.add(w)
+
+        def _cleanup(_w=w):
+            _pending_reap.discard(_w)
+            _w.deleteLater()
+
+        w.finished.connect(_cleanup)
+    except RuntimeError:
+        pass
+
+
+class TranscribeWorker(_BaseWorker):
+    """抽音频 -> 转写。一条命令走完整流程，进度统一映射到 0–1。"""
+
+    sig_stage = pyqtSignal(str)
+
+    # 各阶段在总进度条里占的区间
+    EXTRACT_SPAN = (0.02, 0.15)
+    TRANSCRIBE_SPAN = (0.15, 1.0)
+
+    def __init__(self, video_path: str, cfg: Config, keep_audio: bool = False):
+        super().__init__()
+        self.video_path = video_path
+        self.cfg = cfg
+        self.keep_audio = keep_audio
+
+    def run(self) -> None:
+        wav = ""
+        try:
+            self._progress("正在读取媒体信息…", self.EXTRACT_SPAN[0])
+            info = media.probe(self.video_path)
+            if not info.audio_codec and info.duration == 0:
+                self.sig_failed.emit("无法读取这个文件，或文件不含音频。")
+                return
+            lo, hi = self.EXTRACT_SPAN
+
+            def _ext(msg: str, pct: float) -> None:
+                p = lo + (hi - lo) * (0.5 if pct is None or pct < 0 else min(1.0, pct))
+                self._progress(f"① {msg}", p)
+
+            wav = media.extract_audio(self.video_path, progress=_ext,
+                                      cancel=self.cancelled)
+            if self.cancelled():
+                self.sig_failed.emit("已取消。")
+                return
+            self.sig_stage.emit("transcribing")
+            lo2, hi2 = self.TRANSCRIBE_SPAN
+
+            def _tr(msg: str, pct: float) -> None:
+                p = lo2 + (hi2 - lo2) * (0.0 if pct is None or pct < 0 else min(1.0, pct))
+                self._progress(f"② {msg}", p)
+
+            res = transcriber.transcribe(wav, self.cfg, progress=_tr,
+                                         cancel=self.cancelled)
+            doc = CueDocument(source_video=os.path.abspath(self.video_path),
+                              duration=info.duration, language=res.meta.get("language", ""),
+                              cues=res.cues)
+            doc.meta.update(res.meta)
+            # 可选：消除字幕间小空隙（连续说话时防字幕闪断）
+            if getattr(self.cfg, "auto_close_gaps", True) and doc.cues:
+                mg = float(getattr(self.cfg, "gap_max", 0.35) or 0.35)
+                touched, saved = doc.close_gaps(mg)
+                doc.meta["gaps_closed"] = touched
+                doc.meta["gaps_saved"] = round(saved, 1)
+            if self.cancelled():
+                self.sig_failed.emit("已取消。")
+                return
+            self._progress(f"完成：{len(doc.cues)} 条字幕", 1.0)
+            self.sig_done.emit(doc)
+        except Exception as e:
+            tb = traceback.format_exc()
+            self.sig_failed.emit(str(e) or tb.splitlines()[-1])
+        finally:
+            if wav and not self.keep_audio:
+                try:
+                    if os.path.isfile(wav) and "audio" in wav:
+                        os.remove(wav)
+                except OSError:
+                    pass
+
+
+class FixWorker(_BaseWorker):
+    """LLM 批量纠错。"""
+
+    sig_cue = pyqtSignal(int, str)   # row, text
+
+    def __init__(self, cfg: Config, cues: List[Cue]):
+        super().__init__()
+        self.cfg = cfg
+        self.cues = cues
+
+    def run(self) -> None:
+        try:
+            res = llm.fix_document(self.cfg, self.cues, progress=self._progress,
+                                   cancel=self.cancelled, on_cue=self._on_cue)
+            self.sig_done.emit(res)
+        except Exception as e:
+            self.sig_failed.emit(llm._friendly_err(e) if not isinstance(e, ValueError) else str(e))
+
+    def _on_cue(self, row: int, text: str) -> None:
+        self.sig_cue.emit(row, text)
+
+
+class ChatWorker(_BaseWorker):
+    """自由对话 / 自定义提示词处理。"""
+
+    sig_chunk = pyqtSignal(str)
+
+    def __init__(self, prof, system: str, user: str):
+        super().__init__()
+        self.prof = prof
+        self.system = system
+        self.user = user
+
+    def run(self) -> None:
+        try:
+            out = llm.rewrite_with_llm(self.prof, self.system, self.user,
+                                       on_delta=lambda d: self.sig_chunk.emit(d))
+            self.sig_done.emit(out)
+        except Exception as e:
+            self.sig_failed.emit(llm._friendly_err(e))
+
+
+class TestLLMWorker(_BaseWorker):
+    def __init__(self, parent, prof):
+        super().__init__(parent)
+        self.prof = prof
+
+    def run(self) -> None:
+        try:
+            ok, msg, dt = llm.test_connection(self.prof)
+            self.sig_done.emit((ok, msg, dt))
+        except Exception as e:
+            self.sig_failed.emit(llm._friendly_err(e))
+
+
+class ThreadedCall(QThread):
+    """通用：在线程里跑一个函数，把返回值/异常送回主线程。"""
+
+    sig_progress = pyqtSignal(str, float)
+    sig_done = pyqtSignal(object)
+    sig_failed = pyqtSignal(str)
+
+    def __init__(self, fn: Callable[..., Any], *a, **kw):
+        super().__init__()
+        self.fn, self.a, self.kw = fn, a, kw
+
+    def run(self) -> None:
+        try:
+            self.sig_done.emit(self.fn(*self.a, **self.kw))
+        except Exception as e:
+            self.sig_failed.emit(f"{type(e).__name__}: {e}")
+
+
+def start_in_thread(parent: Any, fn: Callable[..., Any], on_done: Callable[[Any], None],
+                    on_fail: Optional[Callable[[str], None]] = None, *a, **kw) -> ThreadedCall:
+    t = ThreadedCall(fn, *a, **kw)
+    t.sig_done.connect(on_done)
+    t.sig_failed.connect(on_fail or (lambda m: None))
+    t.setParent(parent)
+    t.start()
+    return t

@@ -1,0 +1,748 @@
+"""模型设置页：多套 OpenAI 兼容接入点 + 提示词 + 术语表 + 原始稿件。"""
+
+from __future__ import annotations
+
+import json
+import os
+from typing import Optional
+
+from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox, EditableComboBox,
+                            FluentIcon as FIF, InfoBar, InfoBarPosition, LineEdit,
+                            PasswordLineEdit, PrimaryPushButton, PushButton, ScrollArea,
+                            SimpleCardWidget, SpinBox, DoubleSpinBox, StrongBodyLabel,
+                            SubtitleLabel, SwitchButton, TextEdit, TogglePushButton)
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QGuiApplication
+from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QListWidget,
+                             QListWidgetItem, QStackedWidget, QVBoxLayout, QWidget)
+
+from ..core import llm
+from ..core.config import BUILTIN_PRESETS, Config, LLMProfile
+from ..core.transcriber import discover_ct2_models, find_buzz_pt_models, find_buzz_python
+from .workers import TestLLMWorker
+
+
+class SettingsInterface(QWidget):
+    def __init__(self, cfg: Config, main):
+        super().__init__()
+        self.setObjectName("settings")
+        self.setWindowTitle("模型与转写设置")
+        self.cfg = cfg
+        self.main = main
+        self._loading = True
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = ScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{background:transparent;border:none}")
+        outer.addWidget(scroll)
+        host = QWidget(scroll)
+        host.setStyleSheet("background:transparent")
+        scroll.setWidget(host)
+        lay = QVBoxLayout(host)
+        lay.setContentsMargins(28, 18, 32, 28)
+        lay.setSpacing(16)
+
+        lay.addWidget(SubtitleLabel("大模型接入（OpenAI 兼容）", self))
+        lay.addWidget(self._build_llm(host))
+        lay.addWidget(self._build_prompt(host))
+        lay.addWidget(self._build_asr(host))
+        lay.addWidget(self._build_misc(host))
+        lay.addStretch(1)
+
+        bar = QHBoxLayout()
+        bar.addStretch(1)
+        self.btn_save = PrimaryPushButton("保存设置", self)
+        self.btn_save.setIcon(FIF.SAVE)
+        self.btn_save.setMinimumWidth(160)
+        self.btn_save.clicked.connect(self._save)
+        bar.addWidget(self.btn_save)
+        outer.addLayout(bar)
+
+        self._load()
+        self._loading = False
+
+    # ------------------------------------------------------------- 大模型
+    def _build_llm(self, parent) -> CardWidget:
+        card = CardWidget(parent)
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.setSpacing(12)
+
+        hint = CaptionLabel("支持 DeepSeek / OpenAI / Kimi / 通义 / 智谱 / 豆包 / 硅基流动 / "
+                            "OpenRouter / Ollama / LM Studio 等一切 OpenAI 兼容服务。"
+                            "本地服务把 API Key 随便填（如 ollama）。", card)
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+
+        top = QHBoxLayout()
+        top.addWidget(BodyLabel("接入点", card))
+        self.prof_list = QListWidget(card)
+        self.prof_list.setMaximumHeight(132)
+        self.prof_list.currentRowChanged.connect(self._on_prof_row)
+        top.addWidget(self.prof_list, 1)
+        pv = QVBoxLayout()
+        for label, icon, slot in (("新建", FIF.ADD, self._add_prof),
+                                  ("删除", FIF.DELETE, self._del_prof),
+                                  ("测试连接", FIF.SYNC, self._test)):
+            b = PushButton(icon, label, card)
+            b.clicked.connect(slot)
+            pv.addWidget(b)
+        self.preset = ComboBox(card)
+        self.preset.setPlaceholderText("供应商预设…")
+        self.preset.addItems([p["name"] for p in BUILTIN_PRESETS])
+        self.preset.activated.connect(self._apply_preset)
+        pv.addWidget(self.preset)
+        pv.addStretch(1)
+        top.addLayout(pv)
+        v.addLayout(top)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        form.setHorizontalSpacing(14)
+        self.p_name = LineEdit(card)
+        self.p_name.editingFinished.connect(self._rename_prof)
+        self.p_base = LineEdit(card)
+        self.p_base.setPlaceholderText("https://api.deepseek.com/v1")
+        self.p_key = PasswordLineEdit(card)
+        self.p_key.setPlaceholderText("sk-…")
+        self.p_model = LineEdit(card)
+        self.p_model.setPlaceholderText("deepseek-chat")
+        self.p_temp = DoubleSpinBox(card)
+        self.p_temp.setRange(0, 2)
+        self.p_temp.setSingleStep(0.1)
+        self.p_temp.setDecimals(2)
+        self.p_maxtok = SpinBox(card)
+        self.p_maxtok.setRange(256, 128000)
+        self.p_maxtok.setSingleStep(256)
+        self.p_maxtok.setValue(4096)
+        self.p_timeout = SpinBox(card)
+        self.p_timeout.setRange(30, 1800)
+        self.p_timeout.setSingleStep(30)
+        self.p_timeout.setSuffix(" 秒")
+        self.p_timeout.setValue(300)
+        self.p_noreason = SwitchButton(card)
+        self.p_noreason.setChecked(False)
+        self.p_noreason.setOnText("关闭思考")
+        self.p_noreason.setOffText("正常")
+        form.addRow("名称", self.p_name)
+        form.addRow("Base URL", self.p_base)
+        form.addRow("API Key", self.p_key)
+        form.addRow("模型", self.p_model)
+        form.addRow("温度", self.p_temp)
+        form.addRow("最大输出 token", self.p_maxtok)
+        form.addRow("请求超时", self.p_timeout)
+        form.addRow("推理模型", self.p_noreason)
+        v.addLayout(form)
+
+        self.p_adv_hint = CaptionLabel(
+            "「关闭思考」适用于 DeepSeek-R1 / Qwen3 / GLM 思考版等推理模型："
+            "字幕纠错不需要推理，关掉后实测可快 10~100 倍，且不会把 max_tokens "
+            "全部消耗在思考上导致正文为空。并非所有服务都支持该参数——"
+            "程序会在请求后自动验证是否真的生效，关不掉时会在纠错结果里明确告知。", card)
+        self.p_adv_hint.setWordWrap(True)
+        v.addWidget(self.p_adv_hint)
+        self.test_result = BodyLabel("", card)
+        self.test_result.setWordWrap(True)
+        self.test_result.setTextFormat(Qt.RichText)
+        v.addWidget(self.test_result)
+        return card
+
+    # ------------------------------------------------------------- 提示词
+    def _build_prompt(self, parent) -> CardWidget:
+        card = CardWidget(parent)
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.setSpacing(10)
+        v.addWidget(StrongBodyLabel("纠错提示词与参考资料", card))
+        v.addWidget(CaptionLabel(
+            "可用占位符：<code>{payload}</code> 待修正文本、<code>{count}</code> 行数、"
+            "<code>{first}</code>/<code>{last}</code> 编号范围、<code>{glossary_block}</code>、"
+            "<code>{script_block}</code>。", card))
+
+        row = QHBoxLayout()
+        b1 = PushButton("恢复默认模板", card)
+        b1.clicked.connect(lambda: self.prompt.setPlainText(llm.DEFAULT_TEMPLATE))
+        b2 = PushButton("复制系统提示词", card)
+        b2.clicked.connect(lambda: QGuiApplication.clipboard().setText(llm.DEFAULT_SYSTEM))
+        b3 = PushButton("粘贴系统提示词供查看", card)
+        b3.clicked.connect(lambda: self.prompt.setPlainText(
+            llm.DEFAULT_SYSTEM + "\n\n" + "=" * 30 + "\n（以上为系统提示词，仅供参考；"
+            "此处仅编辑用户模板）\n\n" + llm.DEFAULT_TEMPLATE))
+        b4 = PushButton("插入术语表片段", card)
+        b4.clicked.connect(lambda: self.prompt.insert("{glossary_block}"))
+        row.addWidget(b1)
+        row.addWidget(b2)
+        row.addWidget(b3)
+        row.addWidget(b4)
+        row.addStretch(1)
+        v.addLayout(row)
+
+        self.prompt = TextEdit(card)
+        self.prompt.setMinimumHeight(190)
+        self.prompt.setPlaceholderText(llm.DEFAULT_TEMPLATE)
+        v.addWidget(self.prompt)
+
+        v.addWidget(StrongBodyLabel("术语表 / 专有名词（每行一个，或写 错误写法=>正确写法）", card))
+        self.glossary = TextEdit(card)
+        self.glossary.setMaximumHeight(110)
+        self.glossary.setPlaceholderText("OpenChatCut\n达芬奇=>DaVinci Resolve\n剪映=>CapCut")
+        v.addWidget(self.glossary)
+
+        srow = QHBoxLayout()
+        srow.addWidget(StrongBodyLabel("原始稿件 / 背景资料（可选，仅供核对用字）", card))
+        srow.addStretch(1)
+        b_load = PushButton(FIF.FOLDER, "导入文稿…", card)
+        b_load.clicked.connect(self._load_script)
+        b_clip = PushButton(FIF.COPY, "从剪贴板", card)
+        b_clip.clicked.connect(lambda: self.script.setPlainText(
+            QGuiApplication.clipboard().text()))
+        b_clear = PushButton(FIF.DELETE, "清空", card)
+        b_clear.clicked.connect(lambda: self.script.clear())
+        srow.addWidget(b_load)
+        srow.addWidget(b_clip)
+        srow.addWidget(b_clear)
+        v.addLayout(srow)
+        self.script = TextEdit(card)
+        self.script.setMinimumHeight(140)
+        self.script.setPlaceholderText("把讲稿、PPT 文字、产品介绍粘贴进来。模型只会用它统一人名/术语，"
+                                       "不会把内容补进字幕。")
+        v.addWidget(self.script)
+
+        opts = QHBoxLayout()
+        self.strict = SwitchButton(card)
+        self.strict.setOnText("严格模式")
+        self.strict.setOffText("严格模式")
+        self.strict.setChecked(True)
+        opts.addWidget(self.strict)
+        opts.addWidget(CaptionLabel("严格：校验行数/编号/长度，异常自动重试并标红", card))
+        opts.addSpacing(18)
+        self.batch = SpinBox(card)
+        self.batch.setRange(5, 200)
+        self.batch.setValue(30)
+        opts.addWidget(BodyLabel("每批行数", card))
+        opts.addWidget(self.batch)
+        self.conc = SpinBox(card)
+        self.conc.setRange(1, 8)
+        self.conc.setValue(3)
+        opts.addWidget(BodyLabel("并发", card))
+        opts.addWidget(self.conc)
+        self.retry = SpinBox(card)
+        self.retry.setRange(0, 5)
+        self.retry.setValue(2)
+        opts.addWidget(BodyLabel("重试", card))
+        opts.addWidget(self.retry)
+        opts.addStretch(1)
+        v.addLayout(opts)
+        return card
+
+    # ------------------------------------------------------------- 转写
+    def _build_asr(self, parent) -> CardWidget:
+        card = CardWidget(parent)
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.setSpacing(10)
+        v.addWidget(StrongBodyLabel("语音转写引擎", card))
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.engine = ComboBox(card)
+        self.engine.addItem("faster-whisper（本机推理，推荐）", "faster-whisper")
+        self.engine.addItem("调用本机 Buzz 的模型", "buzz")
+        self.engine.addItem("whisper.cpp", "whisper.cpp")
+        self.engine.addItem("云端语音转写 API", "openai_api")
+        self._gate_engines()
+        self.engine.currentIndexChanged.connect(self._engine_changed)
+        form.addRow("引擎", self.engine)
+
+        self.model = EditableComboBox(card)
+        self.model.setMinimumWidth(360)
+        self.model.activated.connect(self._model_picked)
+        form.addRow("模型", self.model)
+
+        self.btn_rescan = PushButton("重新扫描本地模型", card)
+        self.btn_rescan.clicked.connect(self._rescan_models)
+        form.addRow("", self.btn_rescan)
+
+        self.device = ComboBox(card)
+        self.device.addItem("auto（自动选择）", "auto")
+        self.device.addItem("cuda（N 卡加速）", "cuda")
+        self.device.addItem("cpu（纯 CPU）", "cpu")
+        form.addRow("计算设备", self.device)
+
+        self.compute = ComboBox(card)
+        for c in ("auto", "float16", "int8_float16", "int8", "float32"):
+            self.compute.addItem(c, c)
+        form.addRow("量化精度", self.compute)
+
+        self.lang = ComboBox(card)
+        for label, val in (("auto（自动识别）", "auto"), ("zh（中文）", "zh"),
+                           ("en（英语）", "en"), ("ja（日语）", "ja"), ("ko（韩语）", "ko"),
+                           ("yue（粤语）", "yue"), ("fr（法语）", "fr"), ("de（德语）", "de"),
+                           ("translate:zh（其它语言→翻译成中文）", "translate:zh")):
+            self.lang.addItem(label, val)
+        form.addRow("语言", self.lang)
+
+        self.beam = SpinBox(card)
+        self.beam.setRange(1, 10)
+        self.beam.setValue(5)
+        form.addRow("Beam size", self.beam)
+
+        self.vad = SwitchButton(card)
+        self.vad.setChecked(True)
+        form.addRow("VAD 静音过滤", self.vad)
+
+        self.wts = SwitchButton(card)
+        self.wts.setChecked(True)
+        form.addRow("词级时间戳", self.wts)
+
+        self.cpt = SwitchButton(card)
+        self.cpt.setChecked(False)
+        form.addRow("依赖上文（易重复时关闭）", self.cpt)
+
+        self.fallback = SwitchButton(card)
+        self.fallback.setChecked(True)
+        form.addRow("GPU 不可用时自动转 CPU", self.fallback)
+
+        crow = QHBoxLayout()
+        self.cuda_dir = LineEdit(card)
+        self.cuda_dir.setPlaceholderText("含 cublas64_12.dll 的目录（留空=自动探测）")
+        b_probe = PushButton("探测 CUDA", card)
+        b_probe.clicked.connect(self._probe_cuda)
+        crow.addWidget(self.cuda_dir, 1)
+        crow.addWidget(b_probe)
+        form.addRow("CUDA 12 运行库", crow)
+        v.addLayout(form)
+
+        self.asr_hint = BodyLabel("", card)
+        self.asr_hint.setWordWrap(True)
+        self.asr_hint.setTextFormat(Qt.RichText)
+        v.addWidget(self.asr_hint)
+        return card
+
+    def _probe_cuda(self) -> None:
+        from ..core import cuda_rt
+        cuda_rt._result = None
+        extra = self.cuda_dir.text().strip() or None
+        rt = cuda_rt.register(extra)
+        ok = rt.usable and cuda_rt.probe_loadable(rt)
+        if ok:
+            self.asr_hint.setText(
+                (self.asr_hint.text() + "<br>" if self.asr_hint.text() else "")
+                + f"<span style='color:#1a7f37'>✓ CUDA 12 运行库就绪：{rt.cublas_dir}</span>")
+        else:
+            self.asr_hint.setText(
+                (self.asr_hint.text() + "<br>" if self.asr_hint.text() else "")
+                + f"<span style='color:#c42b1c'>✕ {rt.note}</span>")
+
+    # ------------------------------------------------------------- 其它
+    def _build_misc(self, parent) -> CardWidget:
+        card = CardWidget(parent)
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 16, 20, 16)
+        v.addWidget(StrongBodyLabel("其它", card))
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.theme = ComboBox(card)
+        self.theme.addItems(["auto（跟随系统）", "light（浅色）", "dark（深色）"])
+        form.addRow("主题", self.theme)
+        self.ui_scale = DoubleSpinBox(card)
+        self.ui_scale.setRange(0, 3)
+        self.ui_scale.setSingleStep(0.05)
+        self.ui_scale.setDecimals(2)
+        self.ui_scale.setSpecialValueText("跟随系统")
+        self.ui_scale.setSuffix(" ×")
+        self.ui_scale.setToolTip(
+            "界面整体大小倍率，重启后生效。\n\n"
+            "1.00 = 按物理像素 1:1 渲染：最清晰、最紧凑（推荐，"
+            "高缩放屏上不会出现放大发糊）。\n"
+            "1.25 / 1.50 = 想要更大的控件时选这个。\n"
+            "跟随系统 = 交给 Windows 的显示缩放决定（你的屏幕是 150%，"
+            "界面会明显变大）。")
+        form.addRow("界面缩放", self.ui_scale)
+        self.autosave = SwitchButton(card)
+        self.autosave.setChecked(True)
+        form.addRow("自动保存工程", self.autosave)
+        self.keepaudio = SwitchButton(card)
+        self.keepaudio.setChecked(False)
+        form.addRow("保留抽取出的音频", self.keepaudio)
+        self.gap_auto = SwitchButton(card)
+        self.gap_auto.setChecked(True)
+        self.gap_auto.setOnText("衔接")
+        self.gap_auto.setOffText("留缝")
+        self.gap_auto.setToolTip(
+            "连续说话时，字幕之间若只有一两帧的小空隙，播放时字幕会一闪一闪。\n\n"
+            "开启（衔接）：转写完成后自动补上不超过阈值的小空隙——前一条的"
+            "结束时间拉齐到后一条的开始，字幕连续不闪断。\n\n"
+            "以下情况即使是小空隙也会保留（因为往往是真人换句/换人）：\n"
+            "· 前一条以句号、问号、感叹号结尾（一句话说完了）\n"
+            "· 前后两条标了不同的说话人\n"
+            "（省略号结尾表示话没说完，照常衔接。）")
+        form.addRow("字幕空隙", self.gap_auto)
+        self.gap_max = DoubleSpinBox(card)
+        self.gap_max.setRange(0.05, 3.0)
+        self.gap_max.setSingleStep(0.05)
+        self.gap_max.setDecimals(2)
+        self.gap_max.setSuffix(" 秒")
+        self.gap_max.setToolTip("不超过这个时长、且不是句末停顿的空隙会被衔接掉。"
+                                "0.35 秒适合大多数口播；节奏快可调小到 0.2，"
+                                "断得碎可调大到 0.5。")
+        form.addRow("空隙阈值", self.gap_max)
+        v.addLayout(form)
+        return card
+
+    # ------------------------------------------------------------ 载入/保存
+    def _load(self) -> None:
+        cfg = self.cfg
+        self._loading = True
+        self.prof_list.clear()
+        for p in cfg.profiles:
+            self.prof_list.addItem(QListWidgetItem(f"{p.name}  ·  {p.model}"))
+        idx = max(0, next((i for i, p in enumerate(cfg.profiles)
+                           if p.name == cfg.active_profile), 0))
+        self.prof_list.setCurrentRow(idx)
+        self._show_profile(cfg.profiles[idx])
+        self.prompt.setPlainText(cfg.prompt_template or llm.DEFAULT_TEMPLATE)
+        self.glossary.setPlainText(cfg.glossary)
+        self.script.setPlainText(cfg.reference_script)
+        self.strict.setChecked(cfg.strict_mode)
+        self.batch.setValue(cfg.batch_size)
+        self.conc.setValue(cfg.concurrency)
+        self.retry.setValue(cfg.auto_retry)
+        i = self.engine.findData(cfg.asr_engine)
+        self.engine.setCurrentIndex(max(0, i))
+        self.beam.setValue(cfg.beam_size)
+        self.vad.setChecked(cfg.vad)
+        self.wts.setChecked(cfg.word_timestamps)
+        self.cpt.setChecked(cfg.condition_on_previous_text)
+        self.compute.setCurrentText(cfg.whisper_compute)
+        self.theme.setCurrentText({"light": "light（浅色）", "dark": "dark（深色）"}.get(
+            cfg.theme, "auto（跟随系统）"))
+        self.ui_scale.setValue(float(cfg.ui_scale))
+        self._ui_scale_loaded = float(cfg.ui_scale)
+        self.autosave.setChecked(cfg.auto_save)
+        self.keepaudio.setChecked(bool(cfg.keep_audio))
+        self.gap_auto.setChecked(bool(getattr(cfg, "auto_close_gaps", True)))
+        self.gap_max.setValue(float(getattr(cfg, "gap_max", 0.35) or 0.35))
+        self.fallback.setChecked(bool(cfg.auto_cpu_fallback))
+        self.cuda_dir.setText(getattr(cfg, "cuda_rt_dir", "") or "")
+        di = self.device.findData(cfg.whisper_device)
+        self.device.setCurrentIndex(max(0, di))
+        ci = self.compute.findData(cfg.whisper_compute)
+        self.compute.setCurrentIndex(max(0, ci))
+        li = self.lang.findData(cfg.language)
+        self.lang.setCurrentIndex(max(0, li))
+        self._fill_models()
+        self._refresh_asr_hint()
+        self._loading = False
+
+    def _save(self) -> None:
+        self._collect_profile()
+        cfg = self.cfg
+        cfg.prompt_template = self.prompt.toPlainText().strip()
+        if cfg.prompt_template == llm.DEFAULT_TEMPLATE.strip():
+            cfg.prompt_template = ""
+        cfg.glossary = self.glossary.toPlainText().strip()
+        cfg.reference_script = self.script.toPlainText()
+        cfg.strict_mode = self.strict.isChecked()
+        cfg.batch_size = self.batch.value()
+        cfg.concurrency = self.conc.value()
+        cfg.auto_retry = self.retry.value()
+        cfg.asr_engine = self.engine.currentData() or "faster-whisper"
+        cfg.whisper_model = self.model_value()
+        cfg.whisper_device = self.device.currentData() or "auto"
+        cfg.whisper_compute = self.compute.currentData() or "auto"
+        cfg.language = self.lang.currentData() or "auto"
+        cfg.beam_size = self.beam.value()
+        cfg.vad = self.vad.isChecked()
+        cfg.word_timestamps = self.wts.isChecked()
+        cfg.condition_on_previous_text = self.cpt.isChecked()
+        cfg.theme = self.theme.currentText().split("（")[0]
+        scale_changed = abs(float(self.ui_scale.value()) - float(getattr(
+            self, "_ui_scale_loaded", self.ui_scale.value()))) > 1e-6
+        cfg.ui_scale = float(self.ui_scale.value())
+        cfg.auto_save = self.autosave.isChecked()
+        cfg.keep_audio = self.keepaudio.isChecked()
+        cfg.auto_close_gaps = self.gap_auto.isChecked()
+        cfg.gap_max = float(self.gap_max.value())
+        cfg.auto_cpu_fallback = self.fallback.isChecked()
+        cfg.cuda_rt_dir = self.cuda_dir.text().strip()
+        cfg.save()
+        tip = "设置已写入本地配置文件。"
+        if scale_changed:
+            tip += " 界面缩放已更新，重启软件后生效。"
+        if cfg.concurrency > 2:
+            tip += (f" 并发={cfg.concurrency}：若服务商限流（报 429 / 并发已达上限），"
+                    "请调回 1–2。")
+        InfoBar.success("已保存", tip, parent=self.main,
+                        position=InfoBarPosition.TOP, duration=2600)
+        self.main.apply_cfg_theme()
+        # 并发/批量改完立刻反映到「AI 纠错」页的控件，免得两边显示不一致
+        try:
+            self.main.fix.refresh_silent()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------- profile 操作
+    def _show_profile(self, p: LLMProfile) -> None:
+        """把 profile 灌进表单（期间屏蔽写回，避免把空值覆盖进配置）。"""
+        self._loading = True
+        try:
+            self.p_name.setText(p.name)
+            self.p_base.setText(p.base_url)
+            self.p_key.setText(p.api_key)
+            self.p_model.setText(p.model)
+            self.p_temp.setValue(p.temperature)
+            self.p_maxtok.setValue(p.max_tokens)
+            self.p_timeout.setValue(int(getattr(p, "timeout", 300) or 300))
+            self.p_noreason.setChecked(bool(getattr(p, "no_reasoning", False)))
+        finally:
+            self._loading = False
+
+    def _on_prof_row(self, row: int) -> None:
+        if row < 0 or self._loading or row >= len(self.cfg.profiles):
+            return
+        self._collect_profile()
+        self.cfg.active_profile = self.cfg.profiles[row].name
+        self._show_profile(self.cfg.profiles[row])
+
+    def _collect_profile(self) -> None:
+        if self._loading:
+            return
+        row = self.prof_list.currentRow()
+        if row < 0 or row >= len(self.cfg.profiles):
+            return
+        p = self.cfg.profiles[row]
+        p.base_url = self.p_base.text().strip() or p.base_url
+        p.api_key = self.p_key.text().strip()
+        p.model = self.p_model.text().strip() or p.model
+        p.temperature = self.p_temp.value()
+        p.max_tokens = self.p_maxtok.value()
+        p.timeout = float(self.p_timeout.value())
+        p.no_reasoning = self.p_noreason.isChecked()
+        item = self.prof_list.item(row)
+        if item is not None:
+            item.setText(f"{p.name}  ·  {p.model}")
+
+    def _rename_prof(self) -> None:
+        row = self.prof_list.currentRow()
+        if row < 0:
+            return
+        new = self.p_name.text().strip() or f"接入点{row + 1}"
+        if any(p.name == new for i, p in enumerate(self.cfg.profiles) if i != row):
+            new = f"{new}-{row + 1}"
+        self.cfg.profiles[row].name = new
+        self.cfg.active_profile = new
+        self.p_name.setText(new)
+        self.prof_list.item(row).setText(f"{new}  ·  {self.cfg.profiles[row].model}")
+
+    def _add_prof(self) -> None:
+        self._collect_profile()
+        n = len(self.cfg.profiles) + 1
+        p = LLMProfile(name=f"接入点{n}", base_url="https://api.openai.com/v1",
+                       model="gpt-4o-mini")
+        self.cfg.profiles.append(p)
+        self.prof_list.addItem(QListWidgetItem(f"{p.name}  ·  {p.model}"))
+        self.prof_list.setCurrentRow(len(self.cfg.profiles) - 1)
+
+    def _del_prof(self) -> None:
+        row = self.prof_list.currentRow()
+        if row < 0:
+            return
+        if len(self.cfg.profiles) <= 1:
+            InfoBar.warning("无法删除", "至少保留一个接入点。", parent=self.main,
+                            position=InfoBarPosition.TOP, duration=2200)
+            return
+        del self.cfg.profiles[row]
+        self.prof_list.takeItem(row)
+        self.prof_list.setCurrentRow(0)
+
+    def _apply_preset(self, idx: int) -> None:
+        if idx < 0:
+            return
+        pre = BUILTIN_PRESETS[idx]
+        row = self.prof_list.currentRow()
+        if row < 0:
+            return
+        p = self.cfg.profiles[row]
+        p.name = pre["name"]
+        p.base_url = pre["base_url"]
+        p.model = pre["model"]
+        p.api_key = p.api_key or pre.get("api_key", "")
+        p.kind = "ollama" if "127.0.0.1" in pre["base_url"] else "openai"
+        self._show_profile(p)
+        self.prof_list.item(row).setText(f"{p.name}  ·  {p.model}")
+        self.preset.setCurrentIndex(-1)
+
+    def _test(self) -> None:
+        self._collect_profile()
+        from .workers import TestLLMWorker, reap
+        reap(getattr(self, "_test_worker", None))   # 连点测试时安全回收上一个
+        self._test_worker = None
+        p = self.cfg.profile()
+        self.test_result.setText("正在测试连接…")
+        w = TestLLMWorker(self, p)
+        w.sig_done.connect(lambda r: self._test_done(r, w))
+        w.sig_failed.connect(lambda m: self._test_done((False, m, 0.0), w))
+        w.start()
+        self._test_worker = w
+
+    def _test_done(self, res, w) -> None:
+        ok, msg, dt = res
+        if ok:
+            self.test_result.setText(
+                f"<span style='color:#1a7f37'>✓ 连接成功（{dt:.2f}s）</span> 模型回复：{msg}")
+        else:
+            self.test_result.setText(f"<span style='color:#c42b1c'>✕ 失败</span> {msg}")
+
+    # ----------------------------------------------------------- ASR 部分
+    def _rescan_models(self) -> None:
+        """重新扫描本地模型：外部 CLI 扫描有进程内缓存，先清掉再填。"""
+        from ..core.transcriber import ext_cli_cache_reset
+        ext_cli_cache_reset()
+        self._fill_models()
+
+    def _fill_models(self) -> None:
+        typed = (self.model.currentText() or "").strip()
+        self.model.blockSignals(True)
+        self.model.clear()
+        cands = discover_ct2_models()
+        buzz = find_buzz_pt_models() if find_buzz_python() else {}
+        for c in cands:
+            self.model.addItem(f"{c['name']}（{c['size']:.0f} MB）", c["path"])
+        for name, path in buzz.items():
+            self.model.addItem(f"{name}  [Buzz .pt，需 Buzz 引擎]", path)
+        for quick in ("large-v3-turbo", "large-v3", "medium", "small", "base", "tiny"):
+            self.model.addItem(f"⤓ 在线下载 {quick}", quick)
+        cur = self.cfg.whisper_model or typed
+        idx = self.model.findData(cur)
+        if idx < 0 and cur:
+            # 配置里存的可能是自定义路径：作为额外一项插到最前
+            shown = os.path.basename(cur.rstrip("/" + "\\")) or cur
+            self.model.insertItem(0, f"{shown}  [自定义路径]", cur)
+            idx = 0
+        self.model.setCurrentIndex(max(0, idx))
+        if typed and not self.model.currentText():
+            self.model.setCurrentText(typed)
+        self.model.blockSignals(False)
+        self._model_value = self.model.currentData() or cur or "large-v3-turbo"
+        self._refresh_asr_hint()
+
+    def _model_picked(self, idx: int) -> None:
+        data = self.model.itemData(idx)
+        if data:
+            self._model_value = data
+
+    def model_value(self) -> str:
+        """取真正要写进配置的模型标识：手输的路由/名称优先，否则用下拉选中项。"""
+        typed = (self.model.currentText() or "").strip()
+        if typed:
+            # 下拉选中项的显示文本 == 手输文本时，优先用其 data
+            idx = self.model.findText(typed)
+            if idx >= 0 and self.model.itemData(idx):
+                self._model_value = self.model.itemData(idx)
+                return self._model_value
+            if os.path.isdir(typed):
+                return typed
+            low = typed.lower()
+            if " " not in typed and ("whisper" in low or re.match(r"^[a-z0-9._\-/]+$", low)):
+                return typed
+        return self._model_value or "large-v3-turbo"
+
+    def _gate_engines(self) -> None:
+        """把本机明显用不了的引擎置灰，避免用户选了才发现跑不动。"""
+        try:
+            buzz_ok = bool(find_buzz_python())
+            try:
+                from ..core.transcriber import find_external_whisper_cli
+                cpp_ok = bool(find_external_whisper_cli()) or bool(
+                    __import__("shutil").which("whisper-cli"))
+            except Exception:
+                cpp_ok = False
+            for i in range(self.engine.count()):
+                data = self.engine.itemData(i)
+                if data == "buzz":
+                    self.engine.setItemText(i, "调用本机 Buzz 的模型（本机不可独立调用）"
+                                            if not buzz_ok else "调用本机 Buzz 的模型")
+                elif data == "whisper.cpp":
+                    self.engine.setItemText(i, "whisper.cpp（未检测到可执行文件）"
+                                            if not cpp_ok else "whisper.cpp")
+        except Exception:
+            pass
+
+    def _engine_changed(self) -> None:
+        self._refresh_asr_hint()
+
+    def _refresh_asr_hint(self) -> None:
+        eng = self.engine.currentData()
+        cands = discover_ct2_models()
+        parts = []
+        if eng == "faster-whisper":
+            try:
+                import faster_whisper  # noqa
+                parts.append("<span style='color:#1a7f37'>✓ faster-whisper 已安装</span>")
+            except Exception:
+                parts.append("<span style='color:#c42b1c'>✕ 未安装：pip install faster-whisper</span>")
+            from ..core import cuda_rt
+            rt = cuda_rt.register(getattr(self.cfg, "cuda_rt_dir", "") or None)
+            if rt.usable and cuda_rt.probe_loadable(rt):
+                parts.append(f"<span style='color:#1a7f37'>✓ CUDA 12 运行库：{rt.cublas_dir}</span>")
+            else:
+                parts.append(f"<span style='color:#b8860b'>⚠ GPU 不可用（{rt.note}）"
+                             "—— 将自动用 CPU 识别。</span>")
+            if cands:
+                parts.append(f"发现 {len(cands)} 个本地 CT2 模型：" +
+                             "；".join(f"<code>{c['path']}</code>" for c in cands[:3]))
+            else:
+                parts.append("未发现本地 CT2 模型，将在线下载。")
+        elif eng == "buzz":
+            py = find_buzz_python()
+            pt = find_buzz_pt_models()
+            parts.append(("✓ 找到 Buzz 运行环境 <code>%s</code>" % py) if py
+                         else "✕ 未找到 Buzz 的 Python 环境（D:\\Buzz\\_internal\\python.exe）")
+            if pt:
+                parts.append("可用 .pt 权重：" + "、".join(pt.keys()))
+            parts.append("提示：Buzz 只有 .pt 权重，faster-whisper 无法复用；"
+                         "若追求速度请改用 faster-whisper + 卡卡目录里的 CT2 模型。")
+        elif eng == "whisper.cpp":
+            parts.append("需要在 PATH 中提供 whisper-cli / main.exe，并选择 ggml-*.bin 模型。")
+        else:
+            parts.append("调用 OpenAI 兼容的 /v1/audio/transcriptions。"
+                         "模型名可在下方「云端转写模型」中改（如 whisper-1、whisper-large-v3）。")
+        self.asr_hint.setText("<br>".join(parts))
+
+    # ------------------------------------------------------------- 其它
+    def _load_script(self) -> None:
+        fp, _ = QFileDialog.getOpenFileName(self, "导入原始稿件", self.cfg.last_dir or "",
+                                            "文本文档 (*.txt *.md *.srt *.vtt *.json *.docx);;所有文件 (*)")
+        if not fp:
+            return
+        try:
+            if fp.lower().endswith(".docx"):
+                text = _read_docx(fp)
+            else:
+                with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+            self.script.setPlainText(text)
+            self.cfg.last_dir = os.path.dirname(fp)
+            self.cfg.save()
+        except Exception as e:
+            InfoBar.error("读取失败", str(e), parent=self.main,
+                          position=InfoBarPosition.TOP, duration=3500)
+
+
+def _read_docx(fp: str) -> str:
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    with zipfile.ZipFile(fp) as z:
+        xml = z.read("word/document.xml")
+    root = ET.fromstring(xml)
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    lines = []
+    for para in root.iter(f"{ns}p"):
+        txt = "".join(t.text or "" for t in para.iter(f"{ns}t"))
+        if txt.strip():
+            lines.append(txt.strip())
+    return "\n".join(lines)

@@ -1,0 +1,205 @@
+"""CUDA 运行时发现：让 CTranslate2 找得到 ``cublas64_12.dll``。
+
+背景
+----
+CTranslate2 的官方 wheel 是按 **CUDA 12** 编译的，运行时需要 ``cublas64_12.dll``
+与 ``cudart64_12.dll``。但很多人（包括本机）装的是 CUDA 13 的 torch nightly，
+``torch/lib`` 里只有 ``cublas64_13.dll`` —— 于是 ``ctranslate2.get_cuda_device_count()``
+能报出 GPU（它只查驱动），真到推理时却炸：
+
+    RuntimeError: Library cublas64_12.dll is not found or cannot be loaded
+
+本模块按优先级在常见位置寻找 CUDA 12 运行时，找到就 ``os.add_dll_directory``
+注册进当前进程，因此**不需要复制任何大文件**，也不需要重装 torch。
+
+搜索顺序
+--------
+1. 用户在设置里手动指定的目录
+2. ``nvidia-cublas-cu12`` / ``nvidia-cudnn-cu12`` 官方 wheel 的安装位置
+3. 已安装 torch 的 ``torch/lib``
+4. 本机其它软件自带的运行环境（Buzz、卡卡字幕助手等）
+5. PATH 里已有的目录
+"""
+
+from __future__ import annotations
+
+import ctypes
+import os
+import sys
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+_REQUIRED = ("cublas64_12.dll", "cudart64_12.dll")
+_OPTIONAL = ("cudnn64_9.dll", "cudnn_ops64_9.dll")
+
+# 需要同时具备 cublas + cudart 才算一个候选目录
+_NEEDED = _REQUIRED
+
+_registered: List[str] = []
+_result: Optional["CudaRuntime"] = None
+
+
+@dataclass
+class CudaRuntime:
+    usable: bool
+    cublas_dir: str = ""
+    cudart_dir: str = ""
+    cudnn_dir: str = ""
+    searched: List[str] = None      # type: ignore[assignment]
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        if self.searched is None:
+            self.searched = []
+
+
+def _site_packages() -> List[str]:
+    out: List[str] = []
+    for p in sys.path:
+        if p.endswith("site-packages") and os.path.isdir(p):
+            out.append(p)
+    try:
+        import site
+        for p in site.getsitepackages():
+            if p not in out and os.path.isdir(p):
+                out.append(p)
+        ud = site.getusersitepackages()
+        if ud and ud not in out:
+            out.append(ud)
+    except Exception:
+        pass
+    return out
+
+
+def _candidate_dirs(extra: Optional[str] = None) -> List[str]:
+    dirs: List[str] = []
+
+    def add(p: str) -> None:
+        if p and p not in dirs:
+            dirs.append(p)
+
+    if extra:
+        add(os.path.abspath(os.path.expanduser(extra)))
+
+    for sp in _site_packages():
+        # pip 装的 nvidia 官方 wheel
+        add(os.path.join(sp, "nvidia", "cublas", "bin"))
+        add(os.path.join(sp, "nvidia", "cudnn", "bin"))
+        add(os.path.join(sp, "nvidia", "cublas", "lib"))
+        add(os.path.join(sp, "nvidia", "cudart", "bin"))
+        add(os.path.join(sp, "torch", "lib"))
+        add(os.path.join(sp, "ctranslate2", "tools"))
+        add(os.path.join(sp, "ctranslate2"))
+
+    # 本机其它程序自带的 CUDA 12 运行时（零下载复用的关键）
+    env = os.environ
+    known = [
+        env.get("LOCALAPPDATA", "") + r"\Buzz\_internal\torch\lib",
+        r"D:\Buzz\_internal\torch\lib",
+        r"D:\Buzz\Buzz\_internal\torch\lib",
+        r"D:\VideoCaptioner\resource\bin\Faster-Whisper-XXL\_xxl_data\torch\lib",
+        r"D:\VideoCaptioner\_internal\torch\lib",
+        env.get("LOCALAPPDATA", "") + r"\VideoCaptioner\_internal\torch\lib",
+        r"D:\qwen_tts_webui_cuda-licyk-windows-20260907\core\python\Lib\site-packages\torch\lib",
+    ]
+    for k in known:
+        add(k)
+
+    # 标准 CUDA 安装位置
+    for root in (env.get("CUDA_PATH", ""), env.get("CUDA_PATH_V12_0", ""),
+                 r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0",
+                 r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6",
+                 r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"):
+        if root:
+            add(os.path.join(root, "bin"))
+            add(root)
+
+    # PATH
+    for p in os.environ.get("PATH", "").split(os.pathsep):
+        p = p.strip().strip('"')
+        if p and os.path.isdir(p):
+            add(p)
+    return dirs
+
+
+def _find(name: str, dirs: List[str]) -> str:
+    for d in dirs:
+        try:
+            if os.path.isfile(os.path.join(d, name)):
+                return d
+        except OSError:
+            continue
+    return ""
+
+
+def discover(extra_dir: Optional[str] = None) -> CudaRuntime:
+    """定位 cublas64_12.dll / cudart64_12.dll 所在目录（不注册）。"""
+    dirs = _candidate_dirs(extra_dir)
+    cublas_dir = _find("cublas64_12.dll", dirs)
+    cudart_dir = _find("cudart64_12.dll", dirs)
+    cudnn_dir = _find("cudnn64_9.dll", dirs) or _find("cudnn64_8.dll", dirs)
+    usable = bool(cublas_dir) and bool(cudart_dir)
+    note = ""
+    if not usable:
+        have13 = _find("cublas64_13.dll", dirs)
+        if have13:
+            note = (f"只找到 CUDA 13 的 cublas（{have13}），"
+                    "CTranslate2 需要 CUDA 12 版本。")
+        else:
+            note = "未找到 CUDA 12 运行时。"
+        note += (" 解决：pip install nvidia-cublas-cu12 nvidia-cudnn-cu12"
+                 "（或把已装 CUDA 12 的 torch\\lib 目录填到设置里），也可改用 CPU。")
+    return CudaRuntime(usable=usable, cublas_dir=cublas_dir, cudart_dir=cudart_dir,
+                       cudnn_dir=cudnn_dir, searched=dirs[:24], note=note)
+
+
+def register(extra_dir: Optional[str] = None, force: bool = False) -> CudaRuntime:
+    """发现并注册 CUDA 12 运行目录。结果会被缓存。"""
+    global _result
+    if _result is not None and not force:
+        return _result
+
+    rt = discover(extra_dir)
+    if sys.platform == "win32" and rt.usable:
+        for d in {rt.cublas_dir, rt.cudart_dir, rt.cudnn_dir}:
+            if not d or d in _registered:
+                continue
+            try:
+                os.add_dll_directory(d)       # Python 3.8+
+                _registered.append(d)
+            except (AttributeError, OSError):
+                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+                _registered.append(d)
+        # cublasLt 与 cudnn 子依赖可能位于同一目录，再加一次 torch 根目录更稳
+        parent = os.path.dirname(rt.cublas_dir)
+        if parent and parent not in _registered and os.path.isdir(parent):
+            try:
+                os.add_dll_directory(parent)
+                _registered.append(parent)
+            except OSError:
+                pass
+    _result = rt
+    return rt
+
+
+def probe_loadable(rt: CudaRuntime) -> bool:
+    """真正 LoadLibrary 一次，确认能被加载（避免依赖树不全导致的假阳性）。"""
+    if not rt.usable or sys.platform != "win32":
+        return False
+    ok = True
+    for name in _NEEDED:
+        found = _find(name, [rt.cublas_dir, rt.cudart_dir] + _registered)
+        if not found:
+            return False
+        try:
+            ctypes.WinDLL(os.path.join(found, name))
+        except OSError:
+            ok = False
+    return ok
+
+
+def describe(rt: Optional[CudaRuntime] = None) -> str:
+    rt = rt or (_result or discover())
+    if rt.usable:
+        return f"CUDA 12 运行时：{rt.cublas_dir}"
+    return rt.note
