@@ -14,7 +14,5 @@ faster-whisper>=1.0.0             # 内含 ctranslate2 / tokenizers / onnxruntim
 openai>=1.30.0                    # 只用 chat.completions，兼容一切 OpenAI 协议服务
 
 # ---- 说明 ----
-# 1) ffmpeg 不是 pip 依赖。程序会依次尝试：PATH -> 卡卡字幕助手自带的 ffmpeg.exe -> PyAV 解码。
-# 2) 想复用 Buzz 的 .pt 权重：在「设置」里把引擎切成「调用本机 Buzz 的模型」，
-#    程序会自动定位 Buzz 自带的 Python 环境；不需要额外安装 openai-whisper。
-# 3) 打包 exe 另外需要： pip install pyinstaller
+# 1) ffmpeg 不是 pip 依赖。程序会依次尝试：PATH -> PyAV 解码。
+# 2) 打包 exe 另外需要： pip install pyinstaller

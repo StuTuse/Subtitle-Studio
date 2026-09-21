@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLis
 
 from ..core import llm
 from ..core.config import BUILTIN_PRESETS, Config, LLMProfile
-from ..core.transcriber import discover_ct2_models, find_buzz_pt_models, find_buzz_python
+from ..core.transcriber import discover_ct2_models
 from .workers import TestLLMWorker
 
 
@@ -249,7 +249,6 @@ class SettingsInterface(QWidget):
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.engine = ComboBox(card)
         self.engine.addItem("faster-whisper（本机推理，推荐）", "faster-whisper")
-        self.engine.addItem("调用本机 Buzz 的模型", "buzz")
         self.engine.addItem("whisper.cpp", "whisper.cpp")
         self.engine.addItem("云端语音转写 API", "openai_api")
         self._gate_engines()
@@ -608,11 +607,8 @@ class SettingsInterface(QWidget):
         self.model.blockSignals(True)
         self.model.clear()
         cands = discover_ct2_models()
-        buzz = find_buzz_pt_models() if find_buzz_python() else {}
         for c in cands:
             self.model.addItem(f"{c['name']}（{c['size']:.0f} MB）", c["path"])
-        for name, path in buzz.items():
-            self.model.addItem(f"{name}  [Buzz .pt，需 Buzz 引擎]", path)
         for quick in ("large-v3-turbo", "large-v3", "medium", "small", "base", "tiny"):
             self.model.addItem(f"⤓ 在线下载 {quick}", quick)
         cur = self.cfg.whisper_model or typed
@@ -653,7 +649,6 @@ class SettingsInterface(QWidget):
     def _gate_engines(self) -> None:
         """把本机明显用不了的引擎置灰，避免用户选了才发现跑不动。"""
         try:
-            buzz_ok = bool(find_buzz_python())
             try:
                 from ..core.transcriber import find_external_whisper_cli
                 cpp_ok = bool(find_external_whisper_cli()) or bool(
@@ -662,10 +657,7 @@ class SettingsInterface(QWidget):
                 cpp_ok = False
             for i in range(self.engine.count()):
                 data = self.engine.itemData(i)
-                if data == "buzz":
-                    self.engine.setItemText(i, "调用本机 Buzz 的模型（本机不可独立调用）"
-                                            if not buzz_ok else "调用本机 Buzz 的模型")
-                elif data == "whisper.cpp":
+                if data == "whisper.cpp":
                     self.engine.setItemText(i, "whisper.cpp（未检测到可执行文件）"
                                             if not cpp_ok else "whisper.cpp")
         except Exception:
@@ -696,15 +688,6 @@ class SettingsInterface(QWidget):
                              "；".join(f"<code>{c['path']}</code>" for c in cands[:3]))
             else:
                 parts.append("未发现本地 CT2 模型，将在线下载。")
-        elif eng == "buzz":
-            py = find_buzz_python()
-            pt = find_buzz_pt_models()
-            parts.append(("✓ 找到 Buzz 运行环境 <code>%s</code>" % py) if py
-                         else "✕ 未找到 Buzz 的 Python 环境（D:\\Buzz\\_internal\\python.exe）")
-            if pt:
-                parts.append("可用 .pt 权重：" + "、".join(pt.keys()))
-            parts.append("提示：Buzz 只有 .pt 权重，faster-whisper 无法复用；"
-                         "若追求速度请改用 faster-whisper + 卡卡目录里的 CT2 模型。")
         elif eng == "whisper.cpp":
             parts.append("需要在 PATH 中提供 whisper-cli / main.exe，并选择 ggml-*.bin 模型。")
         else:

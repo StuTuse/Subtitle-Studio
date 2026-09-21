@@ -34,7 +34,7 @@ MODELS = transcriber.discover_ct2_models()
 if not HAVE_FW or not MODELS:
     print("跳过：缺少 faster-whisper 或本机没有 CTranslate2 模型。")
     print("  装依赖：pip install faster-whisper")
-    print("  放模型：设置里点「重新扫描本地模型」，或从卡卡/Buzz 目录复用。")
+    print("  放模型：设置里点「重新扫描本地模型」，或联网自动下载。")
     sys.exit(0)
 
 media_path = sys.argv[1] if len(sys.argv) > 1 else next(

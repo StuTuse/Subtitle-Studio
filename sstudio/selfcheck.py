@@ -92,20 +92,12 @@ def run_check() -> int:
         row("PyAV", False, str(e)[:60])
 
     # 模型
-    from sstudio.core.transcriber import discover_ct2_models, find_buzz_pt_models, find_buzz_python
+    from sstudio.core.transcriber import discover_ct2_models
     cands = discover_ct2_models()
     print(f"\n 本地 CTranslate2 模型（faster-whisper 可直接用）：{len(cands)} 个")
     for c in cands:
         print(f"   • {c['name']:<44} {c['size']:>8.0f} MB")
         print(f"     {c['path']}")
-    pt = find_buzz_pt_models()
-    if pt:
-        print(f"\n Buzz 的 openai-whisper 权重（需 Buzz 引擎）：")
-        for k, v in pt.items():
-            print(f"   • {k:<20} {v}")
-    py = find_buzz_python()
-    if py:
-        print(f"   Buzz Python: {py}")
     if not cands:
         print("   （无：首次转写会联网下载模型）")
 

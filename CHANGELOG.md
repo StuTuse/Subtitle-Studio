@@ -1,13 +1,15 @@
 # 更新日志
 
+本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
+版本号唯一真源是根目录的 `VERSION` 文件，发版请用 `python release.py`。
+
 ## [1.2.0] - 2026-09-21
 
 - 暗色模式全面重做：原生输入/表格控件跟随深色，字重与对比度按暗色专门调校，切主题即时生效。
+
 ## [1.1.1] - 2026-09-21
 
 - 无功能变化：验证 发版->打包->快捷方式同步->GitHub 推送 全链自动化。
-本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
-版本号唯一真源是根目录的 `VERSION` 文件，发版请用 `python release.py`。
 
 ## [1.1.0] - 2026-09-21
 
@@ -32,7 +34,7 @@
 首个可用版本。
 
 ### 核心能力
-- **本地转写**：faster-whisper（CUDA/CPU 自适应）+ 自动复用本机已有 CTranslate2 模型（卡卡字幕助手、HuggingFace、ModelScope 缓存目录），零重复下载。
+- **本地转写**：faster-whisper（CUDA/CPU 自适应）+ 自动复用本机已有 CTranslate2 模型（HuggingFace、ModelScope 缓存目录），零重复下载。
 - **AI 只改错别字**：OpenAI 兼容接入点（DeepSeek / Kimi / 通义 / 智谱 / 豆包 / OpenRouter / Ollama / LM Studio / 自建网关），带编号往返协议 + 严格校验，杜绝改写、润色与翻译。
 - **精修工作台**：播放器 + 时间轴 + 字幕表三向联动，逐条编辑 / 拆分 / 合并 / 时间平移 / A-B 循环 / 变速 / 无限撤销重做。
 - **导出**：SRT、VTT、ASS、TXT（纯稿件 / 带时间戳）、JSON（含词级时间戳）、Markdown、HTML、LRC，可批量多选 + 导出前体检。
@@ -40,7 +42,7 @@
 - **无界面批处理**：`python run.py --headless --video a.mp4 --out a.srt`。
 
 ### 稳定性
-- 自动定位 CUDA 12 运行时（`cublas64_12.dll`），复用其它程序自带的运行库，缺失时自动降级 CPU 而非崩溃。
+- 自动定位 CUDA 12 运行时（`cublas64_12.dll`），自动探测 pip 运行库与标准 CUDA 安装，缺失时降级 CPU 而非崩溃。
 - 推理模型专项处理：`content` 被思考耗尽时给出可操作报错，可选关闭思考（实测提速 10~100 倍且不掉准确率）。
 - 网络层：请求超时可配、429 指数退避、失败批次不覆盖原文、随时可中断。
 - 配置目录不可写时自动回退便携模式；亦可用 `SUBTITLE_STUDIO_HOME` 指定数据目录。

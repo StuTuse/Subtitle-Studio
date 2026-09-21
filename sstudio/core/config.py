@@ -175,7 +175,7 @@ BUILTIN_PRESETS: List[Dict[str, str]] = [
 @dataclass
 class Config:
     # ---- 转写
-    asr_engine: str = "faster-whisper"      # faster-whisper | whisper.cpp | buzz | openai_api
+    asr_engine: str = "faster-whisper"      # faster-whisper | whisper.cpp | openai_api
     whisper_model: str = "large-v3-turbo"
     whisper_device: str = "auto"            # auto | cuda | cpu
     whisper_compute: str = "auto"           # auto | float16 | int8_float16 | int8
@@ -190,7 +190,6 @@ class Config:
     model_dir: str = ""                      # 空 = 用默认缓存目录
     cuda_rt_dir: str = ""                    # 手动指定 CUDA12 运行库目录（含 cublas64_12.dll）
     auto_cpu_fallback: bool = True           # GPU 跑不动时自动改用 CPU
-    buzz_cli: str = ""                       # Buzz 可执行文件路径（可选）
     openai_transcribe_model: str = "whisper-1"
 
     # ---- 修正（LLM）
@@ -254,6 +253,10 @@ class Config:
             except (TypeError, ValueError):
                 continue
             setattr(cfg, k, v)
+        # 迁移：历史版本曾支持调用第三方软件自带的转写环境，现已移除；
+        # 老配置里的该值回落到默认引擎，避免设置页下拉框落空。
+        if cfg.asr_engine not in ("faster-whisper", "whisper.cpp", "openai_api"):
+            cfg.asr_engine = "faster-whisper"
         if profs:
             cfg.profiles = [LLMProfile.from_dict(p) for p in profs if isinstance(p, dict)]
         if not cfg.profiles:

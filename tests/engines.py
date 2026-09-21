@@ -20,8 +20,8 @@ check("重复调用走缓存", transcriber.discover_ct2_models() is cands
       or transcriber.discover_ct2_models() == cands)
 
 section("2. 引擎注册表")
-check("四种引擎齐备", set(transcriber.ENGINES) >=
-      {"faster-whisper", "whisper.cpp", "buzz", "openai_api"}, sorted(transcriber.ENGINES))
+check("三种引擎齐备", set(transcriber.ENGINES) >=
+      {"faster-whisper", "whisper.cpp", "openai_api"}, sorted(transcriber.ENGINES))
 from sstudio.core.config import Config  # noqa: E402
 cfg = Config.load()
 for key, cls in transcriber.ENGINES.items():
@@ -34,23 +34,7 @@ cfg.asr_engine = "不存在的引擎"
 check("未知引擎安全回退而非崩溃", transcriber.get_engine(cfg) is not None)
 cfg.asr_engine = saved
 
-section("3. Buzz 引擎的可用性判断")
-py = transcriber.find_buzz_python()
-check("find_buzz_python 有缓存", transcriber.find_buzz_python() is py)
-if not py:
-    from sstudio.core.transcriber import BuzzEngine, TranscribeError
-    try:
-        BuzzEngine(cfg).transcribe("x.wav")
-        check("Buzz 不可调用时给出可读解释", False, "没抛异常")
-    except TranscribeError as e:
-        msg = str(e)
-        check("Buzz 不可调用时给出可读解释", "PyInstaller" in msg or "python" in msg.lower(),
-              msg[:50].replace("\n", " "))
-        check("解释里含替代方案", "CTranslate2" in msg or "设置" in msg)
-else:
-    check("找到 Buzz python.exe", os.path.isfile(py), py)
-
-section("4. ffmpeg 定位有界且不崩")
+section("3. ffmpeg 定位有界且不崩")
 ff = media.find_ffmpeg()
 check("find_ffmpeg 返回可用的东西（或空串走 PyAV）", ff == "" or os.path.isfile(ff), ff)
 check("二次调用命中缓存", media.find_ffmpeg() == ff)
@@ -59,7 +43,7 @@ check("媒体扩展名表齐全", {".mp4", ".mov", ".mkv", ".mp3"} <= set(media.
 check("is_media 判断正确", media.is_media("a.MP4") and media.is_media("a.flac")
       and not media.is_media("a.txt"))
 
-section("5. CUDA 运行时探测")
+section("4. CUDA 运行时探测")
 rt = cuda_rt.register()
 check("返回 CudaRuntime", hasattr(rt, "usable"))
 check("usable 与实际找到的库自洽", (not rt.usable) or (bool(rt.cublas_dir) and bool(rt.cudart_dir)),
@@ -68,7 +52,7 @@ check("不可用时给出可执行建议", rt.usable or ("pip" in rt.note or "CU
       rt.note[:70])
 check("describe 不抛异常", isinstance(cuda_rt.describe(rt), str))
 
-section("6. 工程文件（.ssp）往返")
+section("5. 工程文件（.ssp）往返")
 doc = sample_doc()
 doc.meta["note"] = "测试"
 with TempDir() as d:
@@ -91,7 +75,7 @@ with TempDir() as d:
     check("空文档可往返", len(CueDocument.from_dict(
         json.loads(empty.to_json())).cues) == 0)
 
-section("7. 时间轴清理 normalize_cues")
+section("6. 时间轴清理 normalize_cues")
 from sstudio.core.model import Cue, normalize_cues  # noqa: E402
 d = CueDocument(cues=[Cue(5.0, 6.0, "后"), Cue(0.0, 0.02, "太短"),
                       Cue(1.0, 4.0, "中"), Cue(2.0, 3.0, "被包含")])
@@ -102,13 +86,13 @@ check("过短条目被处理", all(c.end - c.start >= 0.15 for c in d.cues),
 check("无重叠", all(d.cues[i].end <= d.cues[i + 1].start + 1e-6
                 for i in range(len(d.cues) - 1)))
 
-section("8. 重复字幕折叠（Whisper 常见复读）")
+section("7. 重复字幕折叠（Whisper 常见复读）")
 d2 = CueDocument(cues=[Cue(0, 2, "同一句话"), Cue(2, 4, "同一句话"),
                        Cue(4, 6, "同一句话"), Cue(6, 8, "不同的话")])
 n = d2.dedupe_repeats()
 check("连续复读被折叠", n >= 1 and len(d2.cues) == 2, f"{n} -> {len(d2.cues)}")
 
-section("8.5 消除字幕间小空隙 close_gaps（防播放闪断）")
+section("7.5 消除字幕间小空隙 close_gaps（防播放闪断）")
 dg = CueDocument(cues=[Cue(0.0, 1.0, "一"), Cue(1.10, 2.0, "二"),     # 0.1s 小空隙
                        Cue(2.05, 3.0, "三"),                          # 0.05s 小空隙
                        Cue(5.0, 6.0, "四"),                           # 2s 大空隙→保留
@@ -211,6 +195,11 @@ cfg2 = Config.from_dict({"batch_size": "12", "strict_mode": "false",
 check("Config 字符串数字转换", cfg2.batch_size == 12 and isinstance(cfg2.batch_size, int))
 check("Config 整数字段容忍 2.0 写法", cfg2.concurrency == 2)
 check("Config 布尔 'false' 为假", cfg2.strict_mode is False)
+check("已移除的引擎名回落默认",
+      Config.from_dict({"asr_engine": "buzz"}).asr_engine == "faster-whisper",
+      Config.from_dict({"asr_engine": "buzz"}).asr_engine)
+check("合法引擎名原样保留",
+      Config.from_dict({"asr_engine": "openai_api"}).asr_engine == "openai_api")
 
 section("11. 外部 CLI 扫描有界化（启动提速回归）")
 # 回归：曾用 ** 递归 glob 扫 LOCALAPPDATA，实测 7.2s，卡死设置页/启动。

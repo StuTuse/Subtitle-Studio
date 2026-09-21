@@ -12,7 +12,7 @@
 | 环节 | 能力 |
 |---|---|
 | **导入** | 拖拽或选择 mp4/mkv/mov/m4a/mp3… 任意媒体；也可直接导入已有字幕（srt/vtt/ass/lrc/txt/json/md/html） |
-| **转写** | faster-whisper（本地 GPU/CPU）、Buzz 的模型、whisper.cpp、云端 Whisper API 四种后端 |
+| **转写** | faster-whisper（本地 GPU/CPU）、whisper.cpp、云端 Whisper API 三种后端 |
 | **纠错** | OpenAI 兼容接口（DeepSeek / Kimi / 通义 / 智谱 / 豆包 / OpenRouter / Ollama / LM Studio…）<br>可写提示词、贴**原始稿件**、维护术语表；只改错别字，绝不动时间轴 |
 | **精修** | 播放器 + 时间轴 + 字幕表三向联动，逐条编辑 / 拆分 / 合并 / 平移 / A-B 循环 / 变速 / 撤销重做 |
 | **导出** | SRT、VTT、ASS、TXT（纯稿件 / 带时间戳）、JSON（含词级时间戳）、Markdown、HTML、LRC，可批量多选 |
@@ -48,23 +48,14 @@ python run.py
 faster-whisper 需要 **CTranslate2** 格式的模型。本机会自动扫描这些位置：
 
 ```
-D:\VideoCaptioner\AppData\models\faster-whisper-*     ← 卡卡字幕助手
-%LOCALAPPDATA%\VideoCaptioner\models
 %USERPROFILE%\.cache\huggingface\hub
 %USERPROFILE%\.cache\modelscope\hub
+%USERPROFILE%\.cache\whisper
 SSData\models                                          ← 本程序自己的下载目录
 ```
 
-本机现状（已实测）：
-
-| 位置 | 内容 | 能否直接给 faster-whisper 用 |
-|---|---|---|
-| `D:\VideoCaptioner\AppData\models\faster-whisper-large-v3-turbo` | 1.55 GB CT2 | ✅ 推荐，8GB 显存很顺 |
-| `D:\VideoCaptioner\AppData\models\faster-whisper-large-v3` | 2.95 GB CT2 | ✅ 精度更高、更慢 |
-| `D:\VideoCaptioner\AppData\models\faster-whisper-tiny` | 72 MB CT2 | ✅ 快速草稿 |
-| `%LOCALAPPDATA%\Buzz\Buzz\Cache\models\whisper\*.pt` | openai-whisper 权重 | ⚠️ 需走「Buzz」引擎，faster-whisper 不能直接读 `.pt` |
-
-在 **设置 → 语音转写引擎** 里点「重新扫描本地模型」即可看到全部命中项；下拉框里带 `[卡卡字幕助手]` 标记的就是零流量可用的模型。
+在 **设置 → 语音转写引擎** 里点「重新扫描本地模型」即可看到全部命中项；
+也可以在「模型」框里直接粘贴任意 CTranslate2 模型目录的完整路径。
 
 ### GPU 报 `cublas64_12.dll is not found` 怎么办
 
@@ -79,8 +70,7 @@ CUDA 13 的 torch（如 `+cu132` nightly），`torch\lib` 里只有 `cublas64_13
 1. 设置里手动填写的「CUDA 12 运行库」目录
 2. pip 装的 nvidia-cublas-cu12 / nvidia-cudnn-cu12
 3. 已安装 torch 的 torch\lib
-4. 本机其它软件自带的运行环境（Buzz、卡卡字幕助手的 torch\lib）
-5. PATH
+4. 标准 CUDA 安装目录与 PATH
 ```
 
 找不到时会自动降级用 CPU 跑完，并在进度条上说明原因，不会中途崩掉。
@@ -90,13 +80,7 @@ CUDA 13 的 torch（如 `+cu132` nightly），`torch\lib` 里只有 `cublas64_13
 pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-或在设置里点「探测 CUDA」，把目录填成Buzz/卡卡目录下的 `torch\lib`。
-
-本机实测（`python run.py --check` 的输出）：
-
-```
- [✓] GPU 可推理                1 块 GPU，CUDA12 运行库 D:\Buzz\_internal\torch\lib
-```
+或在设置里点「探测 CUDA」，把目录填成任意 CUDA 12 的 `cublas64_12.dll` 所在目录。
 
 ---
 
@@ -105,7 +89,7 @@ pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 -i https://pypi.tuna.tsinghua.e
 | 项目 | 结果 |
 |---|---|
 | 素材 | 8 分 29 秒中文口播配音 |
-| 模型 | `faster-whisper-large-v3-turbo`（复用卡卡字幕助手已有模型，0 下载） |
+| 模型 | `faster-whisper-large-v3-turbo`（本地已有模型，0 下载） |
 | 硬件 | RTX 5060 Laptop 8GB，`cuda` + `float16` |
 | 耗时 | **26.5 秒**（≈19× 实时） |
 | 产出 | 240 条字幕，240/240 带词级时间戳，语言判定 zh（置信 1.00） |
@@ -174,11 +158,10 @@ subtitle-studio/
    │  ├─ model.py             Cue / CueDocument、时间码解析、拆分合并、清理
    │  ├─ formats.py           SRT/VTT/ASS/LRC/TXT/JSON/MD/HTML 读写 + 自动识别
    │  ├─ media.py             时长探测、ffmpeg/PyAV 抽音频
-   │  ├─ transcriber.py       四种转写后端 + 本地模型自动发现
-   │  ├─ cuda_rt.py           自动定位 CUDA 12 运行库（复用他机已有的 cublas64_12）
+   │  ├─ transcriber.py       三种转写后端 + 本地模型自动发现
+   │  ├─ cuda_rt.py           自动定位 CUDA 12 运行库（复用已有的 cublas64_12）
    │  ├─ llm.py               提示词组装、编号往返解析、严格校验、并发批次
    │  ├─ config.py            配置持久化（含便携模式回退）
-   │  └─ _buzz_worker.py      在 Buzz 自带 Python 里跑 openai-whisper 的子进程脚本
    ├─ ui/
    │  ├─ main_window.py       FluentWindow 总控、进度、工程存取、拖拽
    │  ├─ editor_page.py       播放器 + 时间轴 + 字幕表 + 工具条
@@ -221,7 +204,7 @@ python tests\run_all.py --quick    :: 跳过需要模型的转写用例，10 秒
 ## 八、常见问题
 
 **Q：转写报「本地找不到模型，且无法联网下载」**
-设置 → 模型 → 重新扫描本地模型 → 选一个带 `[卡卡字幕助手]` 的项。
+设置 → 模型 → 重新扫描本地模型 → 选一个已下载的模型；或联网状态下选「在线下载」项，首次自动下到 `SSData\models`。
 
 **Q：GPU 跑不动 / 显存爆了**
 设置里把「计算设备」改成 `cpu`，或「量化精度」改成 `int8`；也可换 `large-v3-turbo`（1.5 GB，8GB 显存很稳）。
@@ -298,7 +281,7 @@ pyinstaller build.spec --noconfirm
 
 打包时值得注意的三点，都是踩过坑的：
 
-* **模型不打包**。每个 1.5–3 GB，且你本机已有。程序运行时扫描 `D:\VideoCaptioner\AppData\models` 等位置直接复用，见第三节。
+* **模型不打包**。每个 1.5–3 GB。程序运行时扫描标准缓存目录（HuggingFace/ModelScope）与自家 `SSData\models` 直接复用，见第三节。
 * **`PyQt5.QtXml` 不能排除**。qfluentwidgets 硬依赖它，只有 0.2 MB；误排会让打包版界面直接起不来（自检里会显示 `No module named 'PyQt5.QtXml'`）。
 * **git 调用带 `CREATE_NO_WINDOW`**。打包版是无窗口程序，起子进程会闪黑框；冻结环境直接跳过 git，改读构建期固化的 `BUILDINFO`。
 

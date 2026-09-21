@@ -17,8 +17,7 @@ CTranslate2 的官方 wheel 是按 **CUDA 12** 编译的，运行时需要 ``cub
 1. 用户在设置里手动指定的目录
 2. ``nvidia-cublas-cu12`` / ``nvidia-cudnn-cu12`` 官方 wheel 的安装位置
 3. 已安装 torch 的 ``torch/lib``
-4. 本机其它软件自带的运行环境（Buzz、卡卡字幕助手等）
-5. PATH 里已有的目录
+4. 标准 CUDA 安装与 PATH 里已有的目录
 """
 
 from __future__ import annotations
@@ -91,21 +90,8 @@ def _candidate_dirs(extra: Optional[str] = None) -> List[str]:
         add(os.path.join(sp, "ctranslate2", "tools"))
         add(os.path.join(sp, "ctranslate2"))
 
-    # 本机其它程序自带的 CUDA 12 运行时（零下载复用的关键）
-    env = os.environ
-    known = [
-        env.get("LOCALAPPDATA", "") + r"\Buzz\_internal\torch\lib",
-        r"D:\Buzz\_internal\torch\lib",
-        r"D:\Buzz\Buzz\_internal\torch\lib",
-        r"D:\VideoCaptioner\resource\bin\Faster-Whisper-XXL\_xxl_data\torch\lib",
-        r"D:\VideoCaptioner\_internal\torch\lib",
-        env.get("LOCALAPPDATA", "") + r"\VideoCaptioner\_internal\torch\lib",
-        r"D:\qwen_tts_webui_cuda-licyk-windows-20260907\core\python\Lib\site-packages\torch\lib",
-    ]
-    for k in known:
-        add(k)
-
     # 标准 CUDA 安装位置
+    env = os.environ
     for root in (env.get("CUDA_PATH", ""), env.get("CUDA_PATH_V12_0", ""),
                  r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0",
                  r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6",

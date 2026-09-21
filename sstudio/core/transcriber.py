@@ -3,12 +3,10 @@
 支持的后端
 ----------
 1. ``faster-whisper``：本机 GPU/CPU 推理（默认，推荐）。会自动发现本机已下载的
-   CTranslate2 模型目录（卡卡字幕助手 VideoCaptioner、HF 缓存、ModelScope 等），
+   CTranslate2 模型目录（HuggingFace 缓存、ModelScope、自家模型目录等），
    命中就直接用，不再重复下载。
 2. ``whisper.cpp``：调用本机 ggml 模型可执行文件（可选）。
-3. ``buzz``：调用本机 Buzz 程序（GUI 版本通常无 CLI，则回退到用 Buzz 自带的
-   Python 环境跑 openai-whisper 的 .pt 权重）。
-4. ``openai_api``：调用 OpenAI 兼容的 /v1/audio/transcriptions 接口
+3. ``openai_api``：调用 OpenAI 兼容的 /v1/audio/transcriptions 接口
    （也适用于自建 whisper 服务、Groq、Gemini 兼容层等）。
 
 所有引擎都返回 ``(cues, meta)``，meta 里记录 engine/model/language/耗时。
@@ -58,13 +56,10 @@ class TranscriptResult:
 
 # ---------------------------------------------------------------- 模型发现
 _MODEL_PATTERNS = [
-    # (探测路径, 描述)
-    (os.path.expandvars(r"D:\VideoCaptioner\AppData\models"), "卡卡字幕助手"),
-    (os.path.expandvars(r"%LOCALAPPDATA%\VideoCaptioner\models"), "卡卡字幕助手"),
+    # (探测路径, 描述)——只扫标准缓存位置与自家模型目录
     (os.path.expanduser(r"~\.cache\huggingface\hub"), "HuggingFace 缓存"),
     (os.path.expanduser(r"~\.cache\modelscope\hub"), "ModelScope 缓存"),
     (os.path.expandvars(r"%USERPROFILE%\.cache\whisper"), "openai-whisper"),
-    (os.path.expandvars(r"%LOCALAPPDATA%\Buzz\Buzz\Cache\models"), "Buzz"),
 ]
 
 _CT2_FILES = ("model.bin", "tokenizer.json", "config.json")
@@ -148,60 +143,8 @@ def discover_ggml_models() -> List[Dict[str, str]]:
     return out
 
 
-_BUZZ_PY_CACHE: Dict[str, str] = {}
-
-
-def find_buzz_python() -> str:
-    """Buzz 是 PyInstaller 打包的，_internal 里带着 openai-whisper 依赖。
-
-    结果会缓存：目录遍历在 onedir 打包（内含 torch）下并不便宜，
-    而设置页与引擎可用性检查都会调用它。
-    """
-    if "v" in _BUZZ_PY_CACHE:
-        return _BUZZ_PY_CACHE["v"]
-    found = ""
-    cands = [
-        os.path.expandvars(r"D:\Buzz\_internal\python.exe"),
-        os.path.expandvars(r"D:\Buzz\Buzz\_internal\python.exe"),
-        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Buzz\_internal\python.exe"),
-    ]
-    for c in cands:
-        if os.path.isfile(c):
-            found = c
-            break
-    if not found:
-        # 独立 venv 的 python.exe 一定在环境根部（根目录或 Scripts\），
-        # 因此只扫 3 层即可判定；Buzz 这类 onedir 打包根本不带 python.exe，
-        # 无界遍历（其 _internal 里塞了整个 torch）会卡住界面。
-        for root in (r"D:\Buzz", os.path.expandvars(r"%LOCALAPPDATA%\Buzz")):
-            if not os.path.isdir(root):
-                continue
-            base = root.rstrip("\\/").count(os.sep)
-            for dp, dn, fn in os.walk(root):
-                if dp.count(os.sep) - base >= 3:
-                    dn[:] = []
-                    continue
-                if "python.exe" in fn:
-                    found = os.path.join(dp, "python.exe")
-                    break
-            if found:
-                break
-    _BUZZ_PY_CACHE["v"] = found
-    return found
-
-
-def find_buzz_pt_models() -> Dict[str, str]:
-    d = os.path.expandvars(r"%LOCALAPPDATA%\Buzz\Buzz\Cache\models\whisper")
-    out: Dict[str, str] = {}
-    if os.path.isdir(d):
-        for f in os.listdir(d):
-            if f.endswith(".pt"):
-                out[f[:-3]] = os.path.join(d, f)
-    return out
-
-
 def find_external_whisper_cli() -> List[str]:
-    """卡卡附带的 faster-whisper-xxl.exe 之类的独立 CLI。
+    """找独立版 whisper CLI（whisper-cli.exe / main.exe 之类）。
 
     以前用 ``**`` 递归 glob 直扫 LOCALAPPDATA 整棵树，实测 7 秒多——而且这函数
     被设置页构造调用，直接把启动拖慢一大截。改成限深遍历 + 进程内缓存。
@@ -209,8 +152,7 @@ def find_external_whisper_cli() -> List[str]:
     if _ext_cli_cache is not None:
         return _ext_cli_cache
     out: List[str] = []
-    roots = [r"D:\VideoCaptioner",
-             os.path.expandvars(r"%LOCALAPPDATA%")]
+    roots = [os.path.expandvars(r"%LOCALAPPDATA%")]
     seen_roots = set()
     for root in roots:
         real = os.path.normcase(os.path.abspath(root)) if root else ""
@@ -563,73 +505,6 @@ class WhisperCppEngine:
                                                  "elapsed": round(time.time() - t0, 1)})
 
 
-# -------------------------------------------------------------------- Buzz
-class BuzzEngine:
-    key = "buzz"
-    label = "调用本机 Buzz 的模型（openai-whisper .pt）"
-
-    def __init__(self, cfg: Config):
-        self.cfg = cfg
-
-    @staticmethod
-    def available() -> bool:
-        return bool(find_buzz_python())
-
-    def transcribe(self, audio_path: str, progress: Optional[Progress] = None,
-                   cancel: Optional[Cancel] = None) -> TranscriptResult:
-        exe = find_buzz_python()
-        models = find_buzz_pt_models()
-        if not exe:
-            pt = ", ".join(sorted(models)) or "（无）"
-            raise TranscribeError(
-                "无法调用 Buzz：它被打包成图形程序（PyInstaller onedir），"
-                "目录里只有 python312.dll，没有可独立调用的 python.exe。\n\n"
-                f"Buzz 已下载的 .pt 权重：{pt}\n\n"
-                "这些 .pt 无法被 faster-whisper 直接读取，但**同名模型一般都有 "
-                "CTranslate2 版本**。请在「设置 → 模型」里改选一个带 "
-                "[卡卡字幕助手] 的本地模型，效果等价且速度更快。")
-        name = self.cfg.whisper_model or "large-v3-turbo"
-        for k in models:
-            if name in k:
-                name = k
-                break
-        ckpt = models.get(name) or (next(iter(models.values())) if models else name)
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_buzz_worker.py")
-        cmd = [exe, script, audio_path, ckpt,
-               self.cfg.language if self.cfg.language != "auto" else "auto",
-               "1" if self.cfg.word_timestamps else "0"]
-        if progress:
-            progress(f"Buzz / openai-whisper 识别中（{os.path.basename(ckpt)}）…", -1)
-        t0 = time.time()
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, errors="replace", encoding="utf-8",
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        assert p.stdout is not None
-        payload, err = "", []
-        for line in p.stdout:
-            if cancel and cancel():
-                p.kill()
-                raise TranscribeError("已取消。")
-            line = line.rstrip()
-            if line.startswith("__JSON__"):
-                payload = line[8:]
-            elif line:
-                err.append(line)
-                if progress:
-                    progress(line[-70:], -1)
-        p.wait()
-        if not payload:
-            raise TranscribeError("Buzz 转写失败：\n" + "\n".join(err[-12:]))
-        data = json.loads(payload)
-        cues = [Cue(start=float(s["start"]), end=float(s["end"]),
-                    text=(s.get("text") or "").strip(),
-                    original_text=(s.get("text") or "").strip())
-                for s in data.get("segments", []) if (s.get("text") or "").strip()]
-        return TranscriptResult(cues=cues, meta={
-            "engine": self.key, "model": ckpt, "language": data.get("language", ""),
-            "elapsed": round(time.time() - t0, 1)})
-
-
 # ------------------------------------------------------------ OpenAI 兼容 API
 class OpenAIApiEngine:
     key = "openai_api"
@@ -668,7 +543,6 @@ class OpenAIApiEngine:
 
 ENGINES: Dict[str, Any] = {
     FasterWhisperEngine.key: FasterWhisperEngine,
-    BuzzEngine.key: BuzzEngine,
     WhisperCppEngine.key: WhisperCppEngine,
     OpenAIApiEngine.key: OpenAIApiEngine,
 }

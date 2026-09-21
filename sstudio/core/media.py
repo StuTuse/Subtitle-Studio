@@ -1,7 +1,7 @@
 """音频抽取 + 时长探测。
 
 优先直接解码视频（PyAV 能读 mp4/mkv/mov，无需外部 ffmpeg）；
-若环境里有可用 ffmpeg（系统 PATH 或随卡卡/Buzz 附带的），则用 ffmpeg 抽成
+若环境里有可用 ffmpeg（系统 PATH 等），则用 ffmpeg 抽成
 16kHz 单声道 wav，兼容性最好。
 """
 
@@ -49,11 +49,7 @@ def media_filters() -> str:
 
 
 # ------------------------------------------------------------------ ffmpeg
-_EXTRA_FFMPEG = [
-    r"D:\VideoCaptioner\resource\bin\Faster-Whisper-XXL\ffmpeg.exe",
-    r"D:\VideoCaptioner\ffmpeg.exe",
-    r"D:\VideoCaptioner\bin\ffmpeg.exe",
-]
+_EXTRA_FFMPEG: List[str] = []          # 预留给便携版随附的 ffmpeg
 
 _FFMPEG_CACHE: Optional[str] = None
 
