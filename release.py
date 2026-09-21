@@ -319,6 +319,74 @@ def do_push(tag: str) -> None:
                  f"  报错片段：{err[:300]}")
 
 
+def _gh_token() -> str:
+    """取 GitHub API 令牌：环境变量优先，其次 gh 配置文件里的 oauth_token。"""
+    tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    if tok.strip():
+        return tok.strip()
+    cfg = os.path.join(os.environ.get("USERPROFILE", ""), ".config", "gh", "hosts.yml")
+    try:
+        inside = False
+        for ln in open(cfg, encoding="utf-8"):
+            s = ln.strip()
+            if s.startswith("github.com:"):
+                inside = True
+            elif inside and s.startswith("oauth_token:"):
+                return s.split(":", 1)[1].strip()
+            elif inside and ln and not ln.startswith((" ", "\t")):
+                inside = False       # 出了 github.com 段
+    except OSError:
+        pass
+    return ""
+
+
+def do_release(tag: str, notes: str) -> None:
+    """在 GitHub 发布 Release 并上传本版安装包（gh CLI + 令牌）。
+
+    与 do_installer 同策略：任何前置缺失/失败只警告、不阻断发版链，
+    之后可以手动补挂（网页或重跑本步）。
+    """
+    new = tag[1:] if tag.startswith("v") else tag
+    setup = os.path.join(ROOT, "installer", f"SubtitleStudio-{new}-setup.exe")
+    gh = shutil.which("gh")
+    tok = _gh_token()
+    if not gh or not tok:
+        miss = "gh CLI" if not gh else "GitHub 令牌"
+        print(f"· 缺少 {miss}，跳过 GitHub Release。"
+              f"可在网页手动上传：\n  https://github.com/StuTuse/Subtitle-Studio/releases/new?tag={tag}")
+        return
+    if not os.path.isfile(setup):
+        print("· 未找到本版安装包（--build 会生成），跳过 GitHub Release")
+        return
+    env = dict(os.environ)
+    env["GH_TOKEN"] = tok
+    env.pop("GITHUB_TOKEN", None)
+    print(f"\n· 发布 GitHub Release {tag}（上传安装包，约 1~2 分钟）…")
+    body = (f"**Subtitle Studio {new}**\n\n{notes.strip()}\n\n"
+            "---\n\n下载下方的 **setup.exe** 双击安装即可（免管理员权限，"
+            "约 90 MB）。装完自动启动一次，首次使用会进入「环境体检」，"
+            "缺的组件可一键补装。")
+    r = subprocess.run(
+        [gh, "release", "create", tag, setup, "--title",
+         f"Subtitle Studio {new}", "--notes", body, "--target", "main"],
+        cwd=ROOT, capture_output=True, text=True, env=env)
+    out = (r.stdout or "").strip()
+    if r.returncode == 0 and "releases" in out:
+        print(f"✓ GitHub Release 已发布：{out.splitlines()[-1]}")
+        return
+    err = (r.stderr or out or "").strip()
+    if "already exists" in err:      # Release 已存在：只补传/覆盖安装包文件
+        r2 = subprocess.run(
+            [gh, "release", "upload-file", tag, setup, "--force"],
+            cwd=ROOT, capture_output=True, text=True, env=env)
+        if r2.returncode == 0:
+            print(f"✓ Release {tag} 已存在，安装包已补传/覆盖")
+        else:
+            print(f"· 安装包补传失败（不阻断发版）：{(r2.stderr or '')[:200]}")
+    else:
+        print(f"· GitHub Release 发布失败（不阻断发版，可稍后手动补挂）：{err[:260]}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Subtitle Studio 发版")
     ap.add_argument("version", nargs="?", help="新版本号，如 1.1.0；省略则进入交互模式")
@@ -396,8 +464,9 @@ def main() -> int:
 
     if args.push:
         do_push(tag)
+        do_release(tag, args.notes)
     else:
-        print(f"· 未推送（--push 可在发版后自动推：main + tag {tag}）")
+        print(f"· 未推送（--push 可在发版后自动推：main + tag {tag}，并挂 GitHub Release）")
     return 0
 
 
