@@ -280,6 +280,25 @@ class Config:
         except Exception:
             pass
 
+    # 恢复出厂时保留的字段：
+    #  · profiles / active_profile —— 大模型接入点（API Key、访问地址、模型名）。
+    #    用户明确要求：重置设置绝不能清掉这些，重新填 Key 太折磨人。
+    #  · 其余是窗口位置/最近文件这类"使用痕迹"，不算配置，一并保留。
+    _RESET_KEEP = ("profiles", "active_profile", "window_geometry",
+                   "recent_files", "last_dir", "export_dir",
+                   "player_volume", "editor_hsplit")
+
+    def reset_to_defaults(self) -> None:
+        """一键恢复出厂默认：**大模型接入点（API Key / 访问地址 / 模型名）原样保留**。
+
+        其余全部回到出厂值。调用方负责 ``save()``。
+        """
+        fresh = Config()
+        for f in type(self).__dataclass_fields__:
+            if f in self._RESET_KEEP:
+                continue
+            setattr(self, f, getattr(fresh, f))
+
     # ------------------------------------------------------------ helpers
     def profile(self, name: Optional[str] = None) -> LLMProfile:
         name = name or self.active_profile

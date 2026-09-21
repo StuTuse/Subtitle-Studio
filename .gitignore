@@ -8,6 +8,9 @@ venv/
 # ---- 打包产物 ----
 build/
 dist/
+# 安装包是本地发版产物（单个 90+ MB，且随每版重复堆积）：
+# 不进 Git，需要分发时上传到 GitHub Release
+installer/*.exe
 
 # ---- 运行期数据（绝不入库：含 API Key、最近文件、缓存音频）----
 SSData/

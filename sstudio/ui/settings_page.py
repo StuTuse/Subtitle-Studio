@@ -1,4 +1,4 @@
-﻿"""模型设置页：多套 OpenAI 兼容接入点 + 提示词 + 术语表 + 原始稿件。"""
+"""模型设置页：多套 OpenAI 兼容接入点 + 提示词 + 术语表 + 原始稿件。"""
 
 from __future__ import annotations
 
@@ -56,9 +56,9 @@ class SettingsInterface(QWidget):
         self.btn_defaults = PushButton("恢复默认设置", self)
         self.btn_defaults.setIcon(FIF.SYNC)
         self.btn_defaults.setToolTip(
-            "把所有设置一键恢复到出厂默认值。\n\n"
-            "适合「调乱了但不知道哪里错了」的情况：接入点的地址/密钥/模型名也会"
-            "重置，恢复后请重新填写 API Key。")
+            "把除「大模型接入」外的所有设置恢复到出厂默认值。\n\n"
+            "适合「调乱了但不知道哪里错了」的情况。\n"
+            "你填好的 API Key、访问地址、模型名都会原样保留，不会丢。")
         self.btn_defaults.clicked.connect(self._restore_defaults)
         bar.addWidget(self.btn_defaults)
         bar.addSpacing(12)
@@ -542,29 +542,26 @@ class SettingsInterface(QWidget):
 
     # ------------------------------------------------------- 恢复默认
     def _restore_defaults(self) -> None:
-        """全部设置一键回出厂值（含接入点）。二次确认，保留窗口位置等无关项。"""
-        from qfluentwidgets import MessageBox
-        box = MessageBox(
-            "恢复默认设置？",
-            "所有设置（含大模型接入点的地址/密钥/模型名）将恢复为出厂默认值，"
-            "恢复后需要重新填写 API Key。\n\n工程文件与字幕不受影响。",
-            self.window())
-        if not box.exec_():
+        """恢复出厂设置：**大模型接入点（API Key / 地址 / 模型名）保留不动**。
+
+        确认框用原生 QMessageBox：同步返回、无淡出动画，杜绝
+        qfluentwidgets 弹层偶发的「点了确定没反应」死锁。
+        """
+        from PyQt5.QtWidgets import QMessageBox
+        r = QMessageBox.question(
+            self.window(), "恢复默认设置？",
+            "除「大模型接入」外的所有设置将恢复为出厂默认值。\n\n"
+            "你填好的 API Key、访问地址、模型名都会**原样保留**，不用重新填。\n"
+            "工程文件与字幕不受影响。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if r != QMessageBox.Yes:
             return
-        fresh = Config()
-        keep = {"window_geometry", "recent_files", "last_dir", "export_dir",
-                "player_volume", "editor_hsplit"}
-        for f in type(self.cfg).__dataclass_fields__:
-            if f in keep:
-                continue
-            setattr(self.cfg, f, getattr(fresh, f))
-        self.cfg.profiles = fresh.profiles     # 全新默认接入点
+        self.cfg.reset_to_defaults()
         self.cfg.save()
         self._load()
         InfoBar.success("已恢复默认",
-                        "全部设置已重置。请到「大模型接入」重新填写 API Key，"
-                        "确认无误后点「保存设置」。",
-                        parent=self.main, position=InfoBarPosition.TOP, duration=5000)
+                        "除大模型接入点外的设置已重置；API Key 与地址均已保留。",
+                        parent=self.main, position=InfoBarPosition.TOP, duration=4000)
         try:
             self.main.apply_cfg_theme()
             self.main.fix.refresh_silent()
