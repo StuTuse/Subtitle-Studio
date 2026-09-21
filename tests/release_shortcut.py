@@ -108,5 +108,6 @@ r = __import__("subprocess").run(
     capture_output=True, text=True, encoding="utf-8", errors="replace")
 check("--sync-shortcut 已出现在 --help", "--sync-shortcut" in (r.stdout or ""), r.returncode)
 check("--bump 已出现在 --help", "--bump" in (r.stdout or ""))
+check("--push 已出现在 --help", "--push" in (r.stdout or ""))
 
 sys.exit(finish())

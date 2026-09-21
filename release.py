@@ -14,6 +14,8 @@
 ----
 * 版本号真源是根目录 ``VERSION``（语义化版本 MAJOR.MINOR.PATCH）。
 * 发布 = 提交 VERSION+CHANGELOG -> 打 ``vX.Y.Z`` tag -> （可选）PyInstaller。
+* 加 --push 时发版完成后自动推送 main+tag 到 GitHub（推送结果以远端
+  ls-remote 复核为准，不确认不算成功）。
 * 每次打包完成会自动同步桌面快捷方式指向新产物（找不到就新建）。
 * git 身份用仓库级配置；未配置时脚本会停下来提醒，不会替你乱填。
 """
@@ -229,6 +231,33 @@ def _bump_version(old: str, kind: str) -> str:
     sys.exit(f"未知档位：{kind}（可选 major/minor/patch）")
 
 
+# ------------------------------------------------------------ GitHub 推送
+def _has_remote() -> bool:
+    r = subprocess.run(["git", "remote", "get-url", "origin"],
+                       cwd=ROOT, capture_output=True, text=True)
+    return r.returncode == 0 and (r.stdout or "").strip() != ""
+
+
+def do_push(tag: str) -> None:
+    """推送 main 与发版 tag 到 GitHub。失败给出可执行的补救命令，不吞错。"""
+    if not _has_remote():
+        print("· 未配置 origin 远端，跳过推送。"
+              "配置后手动推：git remote add origin git@github.com:StuTuse/Subtitle-Studio.git")
+        return
+    print("\n· 推送到 GitHub（main + tag）…")
+    run(["git", "push", "origin", "main", tag], check=False, capture=True)
+    # 复核：远端引用里能看到刚发的 tag 才算成功
+    r = subprocess.run(["git", "ls-remote", "--tags", "origin", tag],
+                       cwd=ROOT, capture_output=True, text=True)
+    if tag in (r.stdout or ""):
+        print(f"✓ 已同步到 GitHub：main + {tag}")
+    else:
+        err = ((r.stderr or "") + (r.stdout or "")).strip()
+        sys.exit(f"× 推送未确认（tag {tag} 不在远端）。稍后手动重试：\n"
+                 f"    git push origin main {tag}\n"
+                 f"  报错片段：{err[:300]}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Subtitle Studio 发版")
     ap.add_argument("version", nargs="?", help="新版本号，如 1.1.0；省略则进入交互模式")
@@ -239,6 +268,8 @@ def main() -> int:
     ap.add_argument("--build-only", action="store_true", help="不发版，仅打包")
     ap.add_argument("--sync-shortcut", action="store_true",
                     help="不发版不打包：只把桌面快捷方式同步到 dist 产物")
+    ap.add_argument("--push", action="store_true",
+                    help="发版完成后自动推送 main + tag 到 GitHub（默认不推）")
     ap.add_argument("--dry-run", action="store_true", help="只演练不写入")
     args = ap.parse_args()
 
@@ -288,7 +319,8 @@ def main() -> int:
 
     if args.dry_run:
         print(f"  (dry-run) 将写入 VERSION={new}、更新 CHANGELOG、"
-              f"提交并打 tag {tag}" + ("、执行打包" if args.build else ""))
+              f"提交并打 tag {tag}" + ("、执行打包" if args.build else "")
+              + ("、推送到 GitHub" if args.push else ""))
         return 0
 
     write_version(new)
@@ -296,10 +328,15 @@ def main() -> int:
     git("add", "VERSION", "CHANGELOG.md")
     git("commit", "-m", f"release: v{new}")
     git("tag", "-a", tag, "-m", f"v{new}")
-    print(f"✓ 已提交并打 tag {tag}（未推送；需要时 git push && git push origin {tag}）")
+    print(f"✓ 已提交并打 tag {tag}")
 
     if args.build:
         do_build()
+
+    if args.push:
+        do_push(tag)
+    else:
+        print(f"· 未推送（--push 可在发版后自动推：main + tag {tag}）")
     return 0
 
 
