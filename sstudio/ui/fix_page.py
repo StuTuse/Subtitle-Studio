@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QProgressBar
 
 from ..core import llm
 from ..core.config import Config
+from .safe_spin import SafeSpinBox
 from .workers import FixWorker
 
 
@@ -121,12 +122,18 @@ class FixInterface(QWidget):
         self.btn_switch = PushButton("切换/编辑接入点", right)
         self.btn_switch.clicked.connect(lambda: self.main.switch_to("settings"))
         form.addRow("", self.btn_switch)
-        self.batch = SpinBox(right)
+        self.batch = SafeSpinBox(right)
         self.batch.setRange(5, 200)
+        self.batch.set_choices([(5, "5 行"), (10, "10 行"), (15, "15 行"),
+                                (20, "20 行"), (30, "30 行（推荐）"),
+                                (40, "40 行"), (50, "50 行"), (80, "80 行"),
+                                (120, "120 行"), (200, "200 行")])
         form.addRow("每批行数", self.batch)
-        self.conc = SpinBox(right)
+        self.conc = SafeSpinBox(right)
         self.conc.setRange(1, 8)
         self.conc.setValue(3)
+        self.conc.set_choices([(1, "1（最稳）"), (2, "2"), (3, "3（推荐）"),
+                               (4, "4"), (6, "6"), (8, "8（易限流）")])
         self.btn_apply_tp = PushButton("应用", right)
         self.btn_apply_tp.setToolTip("立即保存「每批行数 / 并发请求」，下一次点开始纠错就按新值执行；"
                                      "正在运行的批次不受影响。")

@@ -295,6 +295,22 @@ st._probe_cuda()
 pump()
 check("探测后给出提示文本", len(st.asr_hint.text()) > 0, st.asr_hint.text()[:60])
 
+section("8b. 数值控件防误触 + 恢复默认")
+from PyQt5.QtCore import QPoint, Qt as _Qt  # noqa: E402
+from PyQt5.QtGui import QWheelEvent  # noqa: E402
+_v0 = st.batch.value()
+st.batch.wheelEvent(QWheelEvent(QPoint(5, 5), QPoint(5, 5), QPoint(0, 120),
+                                QPoint(0, 0), 120, _Qt.Vertical,
+                                _Qt.NoButton, _Qt.NoModifier))
+check("滚轮不改数值", st.batch.value() == _v0, st.batch.value())
+check("控件有点开候选列表", bool(st.batch._choices()), st.batch._choices()[:3])
+check("设置页有恢复默认按钮", st.btn_defaults.text() == "恢复默认设置",
+      st.btn_defaults.text())
+check("接入点参数也是防误触控件",
+      all(hasattr(getattr(st, a), "_choices") for a in
+          ("p_temp", "p_maxtok", "p_timeout", "batch", "conc", "retry",
+           "beam", "ui_scale", "gap_max")))
+
 section("9. 工程保存/载入")
 with TempDir() as d:
     p = os.path.join(d, "t.ssp")

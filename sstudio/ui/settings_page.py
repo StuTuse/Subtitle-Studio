@@ -1,4 +1,4 @@
-"""模型设置页：多套 OpenAI 兼容接入点 + 提示词 + 术语表 + 原始稿件。"""
+﻿"""模型设置页：多套 OpenAI 兼容接入点 + 提示词 + 术语表 + 原始稿件。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLis
 from ..core import llm
 from ..core.config import BUILTIN_PRESETS, Config, LLMProfile
 from ..core.transcriber import discover_ct2_models
+from .safe_spin import SafeDoubleSpinBox, SafeSpinBox
 from .workers import TestLLMWorker
 
 
@@ -52,6 +53,15 @@ class SettingsInterface(QWidget):
         lay.addStretch(1)
 
         bar = QHBoxLayout()
+        self.btn_defaults = PushButton("恢复默认设置", self)
+        self.btn_defaults.setIcon(FIF.SYNC)
+        self.btn_defaults.setToolTip(
+            "把所有设置一键恢复到出厂默认值。\n\n"
+            "适合「调乱了但不知道哪里错了」的情况：接入点的地址/密钥/模型名也会"
+            "重置，恢复后请重新填写 API Key。")
+        self.btn_defaults.clicked.connect(self._restore_defaults)
+        bar.addWidget(self.btn_defaults)
+        bar.addSpacing(12)
         bar.addStretch(1)
         self.btn_save = PrimaryPushButton("保存设置", self)
         self.btn_save.setIcon(FIF.SAVE)
@@ -110,19 +120,22 @@ class SettingsInterface(QWidget):
         self.p_key.setPlaceholderText("sk-…")
         self.p_model = LineEdit(card)
         self.p_model.setPlaceholderText("deepseek-chat")
-        self.p_temp = DoubleSpinBox(card)
+        self.p_temp = SafeDoubleSpinBox(card)
         self.p_temp.setRange(0, 2)
         self.p_temp.setSingleStep(0.1)
         self.p_temp.setDecimals(2)
-        self.p_maxtok = SpinBox(card)
+        self.p_temp.set_choices()
+        self.p_maxtok = SafeSpinBox(card)
         self.p_maxtok.setRange(256, 128000)
         self.p_maxtok.setSingleStep(256)
         self.p_maxtok.setValue(4096)
-        self.p_timeout = SpinBox(card)
+        self.p_maxtok.set_choices()
+        self.p_timeout = SafeSpinBox(card)
         self.p_timeout.setRange(30, 1800)
         self.p_timeout.setSingleStep(30)
         self.p_timeout.setSuffix(" 秒")
         self.p_timeout.setValue(300)
+        self.p_timeout.set_choices()
         self.p_noreason = SwitchButton(card)
         self.p_noreason.setChecked(False)
         self.p_noreason.setOnText("关闭思考")
@@ -219,19 +232,27 @@ class SettingsInterface(QWidget):
         opts.addWidget(self.strict)
         opts.addWidget(CaptionLabel("严格：校验行数/编号/长度，异常自动重试并标红", card))
         opts.addSpacing(18)
-        self.batch = SpinBox(card)
+        self.batch = SafeSpinBox(card)
         self.batch.setRange(5, 200)
         self.batch.setValue(30)
+        self.batch.set_choices([(5, "5 行"), (10, "10 行"), (15, "15 行"),
+                               (20, "20 行"), (30, "30 行（推荐）"),
+                               (40, "40 行"), (50, "50 行"), (80, "80 行"),
+                               (120, "120 行"), (200, "200 行")])
         opts.addWidget(BodyLabel("每批行数", card))
         opts.addWidget(self.batch)
-        self.conc = SpinBox(card)
+        self.conc = SafeSpinBox(card)
         self.conc.setRange(1, 8)
         self.conc.setValue(3)
+        self.conc.set_choices([(1, "1（最稳）"), (2, "2"), (3, "3（推荐）"),
+                              (4, "4"), (6, "6"), (8, "8（易限流）")])
         opts.addWidget(BodyLabel("并发", card))
         opts.addWidget(self.conc)
-        self.retry = SpinBox(card)
+        self.retry = SafeSpinBox(card)
         self.retry.setRange(0, 5)
         self.retry.setValue(2)
+        self.retry.set_choices([(0, "0（不重试）"), (1, "1"), (2, "2（推荐）"),
+                               (3, "3"), (4, "4"), (5, "5（最多）")])
         opts.addWidget(BodyLabel("重试", card))
         opts.addWidget(self.retry)
         opts.addStretch(1)
@@ -284,9 +305,11 @@ class SettingsInterface(QWidget):
             self.lang.addItem(label, val)
         form.addRow("语言", self.lang)
 
-        self.beam = SpinBox(card)
+        self.beam = SafeSpinBox(card)
         self.beam.setRange(1, 10)
         self.beam.setValue(5)
+        self.beam.set_choices([(1, "1（贪心，最快）"), (2, "2"), (3, "3"),
+                              (5, "5（推荐）"), (8, "8"), (10, "10")])
         form.addRow("Beam size", self.beam)
 
         self.vad = SwitchButton(card)
@@ -347,12 +370,15 @@ class SettingsInterface(QWidget):
         self.theme = ComboBox(card)
         self.theme.addItems(["auto（跟随系统）", "light（浅色）", "dark（深色）"])
         form.addRow("主题", self.theme)
-        self.ui_scale = DoubleSpinBox(card)
+        self.ui_scale = SafeDoubleSpinBox(card)
         self.ui_scale.setRange(0, 3)
         self.ui_scale.setSingleStep(0.05)
         self.ui_scale.setDecimals(2)
         self.ui_scale.setSpecialValueText("跟随系统")
         self.ui_scale.setSuffix(" ×")
+        self.ui_scale.set_choices([(0, "跟随系统"), (1.0, "1.00 ×（推荐）"),
+                                  (1.25, "1.25 ×"), (1.5, "1.50 ×"),
+                                  (1.75, "1.75 ×"), (2.0, "2.00 ×")])
         self.ui_scale.setToolTip(
             "界面整体大小倍率，重启后生效。\n\n"
             "1.00 = 按物理像素 1:1 渲染：最清晰、最紧凑（推荐，"
@@ -380,11 +406,15 @@ class SettingsInterface(QWidget):
             "· 前后两条标了不同的说话人\n"
             "（省略号结尾表示话没说完，照常衔接。）")
         form.addRow("字幕空隙", self.gap_auto)
-        self.gap_max = DoubleSpinBox(card)
+        self.gap_max = SafeDoubleSpinBox(card)
         self.gap_max.setRange(0.05, 3.0)
         self.gap_max.setSingleStep(0.05)
         self.gap_max.setDecimals(2)
         self.gap_max.setSuffix(" 秒")
+        self.gap_max.set_choices([(0.1, "0.10 秒"), (0.2, "0.20 秒"),
+                                 (0.35, "0.35 秒（推荐）"), (0.5, "0.50 秒"),
+                                 (0.8, "0.80 秒"), (1.0, "1.00 秒"),
+                                 (1.5, "1.50 秒"), (3.0, "3.00 秒")])
         self.gap_max.setToolTip("不超过这个时长、且不是句末停顿的空隙会被衔接掉。"
                                 "0.35 秒适合大多数口播；节奏快可调小到 0.2，"
                                 "断得碎可调大到 0.5。")
@@ -506,6 +536,37 @@ class SettingsInterface(QWidget):
         self.main.apply_cfg_theme()
         # 并发/批量改完立刻反映到「AI 纠错」页的控件，免得两边显示不一致
         try:
+            self.main.fix.refresh_silent()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------- 恢复默认
+    def _restore_defaults(self) -> None:
+        """全部设置一键回出厂值（含接入点）。二次确认，保留窗口位置等无关项。"""
+        from qfluentwidgets import MessageBox
+        box = MessageBox(
+            "恢复默认设置？",
+            "所有设置（含大模型接入点的地址/密钥/模型名）将恢复为出厂默认值，"
+            "恢复后需要重新填写 API Key。\n\n工程文件与字幕不受影响。",
+            self.window())
+        if not box.exec_():
+            return
+        fresh = Config()
+        keep = {"window_geometry", "recent_files", "last_dir", "export_dir",
+                "player_volume", "editor_hsplit"}
+        for f in type(self.cfg).__dataclass_fields__:
+            if f in keep:
+                continue
+            setattr(self.cfg, f, getattr(fresh, f))
+        self.cfg.profiles = fresh.profiles     # 全新默认接入点
+        self.cfg.save()
+        self._load()
+        InfoBar.success("已恢复默认",
+                        "全部设置已重置。请到「大模型接入」重新填写 API Key，"
+                        "确认无误后点「保存设置」。",
+                        parent=self.main, position=InfoBarPosition.TOP, duration=5000)
+        try:
+            self.main.apply_cfg_theme()
             self.main.fix.refresh_silent()
         except Exception:
             pass
