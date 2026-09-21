@@ -1,5 +1,8 @@
 # 更新日志
 
+## [1.1.1] - 2026-09-21
+
+- 无功能变化：验证 发版->打包->快捷方式同步->GitHub 推送 全链自动化。
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
 版本号唯一真源是根目录的 `VERSION` 文件，发版请用 `python release.py`。
 
