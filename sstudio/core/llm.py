@@ -426,6 +426,7 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     result = FixResult(texts=[c.display_text for c in cues])
     done = 0
     lock = __import__("threading").Lock()
+    _abort_on_conn_error: List[Optional[str]] = [None]   # 首个连接错误：全局止损
 
     def one(idx: int, batch: List[Cue], attempt: int = 0) -> Optional[Dict[int, str]]:
         msg = bundle.render(batch, idx, glossary, script)
@@ -473,6 +474,14 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                 err = _friendly_err(e)
                 if "API Key" in err or "模型名不存在" in err:
                     return idx, None, err          # 参数错误，重试无意义
+                low = err.lower()
+                if ("connection" in low or "connect" in low or "unreachable" in low
+                        or "dns" in low or "网络不通" in err or "超时" in err):
+                    # 连不上服务：立刻放弃本批并全局止损——网关没开时，
+                    # 每批都重试 5 次 × 12 批能把几分钟变成十几分钟白等
+                    if _abort_on_conn_error[0] is None:
+                        _abort_on_conn_error[0] = err
+                    return idx, None, err
                 if cancel and cancel():
                     return idx, None, "已取消"
         return idx, None, err
@@ -487,6 +496,15 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                 if progress:
                     progress(f"已修正 {done}/{len(batches)} 批", done / max(1, len(batches)))
             if err:
+                # 服务连不上：把剩余未开跑的批次全部取消，别让它们继续排队白等
+                if _abort_on_conn_error[0] is not None:
+                    for f2 in futures:
+                        f2.cancel()
+                    if done == 1:
+                        raise LLMError(
+                            "连不上模型服务，已停止全部批次。\n\n" + err
+                            + "\n\n请检查：模型服务是否启动（本地网关要先开）、"
+                              "地址是否正确、网络/代理是否正常。")
                 result.failures.append(f"第 {idx + 1} 行起：{err}")
                 continue
             assert got is not None

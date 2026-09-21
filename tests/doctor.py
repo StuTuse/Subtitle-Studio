@@ -20,6 +20,11 @@ for it in items:
     check(f"「{it.id}」级别合法", it.level in ("required", "recommend", "optional"), it.level)
     check(f"「{it.id}」ok 与 fixable 自洽",
           (not it.ok) or (not it.fixable), (it.id, it.ok, it.fix_pkgs))
+    if it.id == "cuda12" and it.fix_pkgs:
+        # GPU 修复包必须是真实存在的 PyPI 包名（nvidia-cudart-cu12 并不存在）
+        check("cuda 修复包含 cuda-runtime 而非不存在的 cudart 包",
+              "nvidia-cuda-runtime-cu12" in it.fix_pkgs
+              and "nvidia-cudart-cu12" not in it.fix_pkgs, it.fix_pkgs)
 required = [i for i in items if i.level == "required"]
 check("存在 required 项且当前全部通过",
       required and all(i.ok for i in required), [i.id for i in required if not i.ok])

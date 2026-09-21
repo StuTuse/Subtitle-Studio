@@ -228,7 +228,7 @@ def check_all() -> List[CheckItem]:
                 level="optional", ok=ok,
                 detail=(rt.cublas_dir if ok else rt.note) or "未找到",
                 fix_pkgs=[] if ok else
-                ["nvidia-cublas-cu12", "nvidia-cudnn-cu12", "nvidia-cudart-cu12"],
+                ["nvidia-cublas-cu12", "nvidia-cudnn-cu12", "nvidia-cuda-runtime-cu12"],
                 fix_note="" if ok else "安装（约 700 MB，装完即用 GPU）"))
         else:
             items.append(CheckItem(

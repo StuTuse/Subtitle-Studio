@@ -105,17 +105,36 @@ def dead(prof, messages, on_delta=None, **kw):
     raise RuntimeError("connection reset by peer")
 
 
-llm.chat = dead
+# 连接类错误现在会全局止损并抛 LLMError（服务没开时不再白等几分钟重试）；
+# 非连接类错误（如 reset）仍走逐批失败清单，保证单批失败不炸整个流程。
+def dead_nonconn(prof, messages, on_delta=None, **kw):
+    raise RuntimeError("server exploded with code 500")
+
+
+llm.chat = dead_nonconn
 cues4 = make_cues()
 try:
     res4 = llm.fix_document(make_cfg(), cues4, progress=None)
     check("服务全挂时返回失败清单而不是抛异常", len(res4.failures) >= 3,
           len(res4.failures))
     check("失败时字幕文本原样保留", res4.texts == BASE)
-    check("失败原因可读", any("网络" in f or "超时" in f or "reset" in f
+    check("失败原因可读", any("500" in f or "reset" in f
                           for f in res4.failures), res4.failures[:1])
 except Exception as e:
     check("服务全挂时返回失败清单而不是抛异常", False, e)
+
+section("4b. 连接错误全局止损（服务没开时秒级失败而非重试风暴）")
+llm.chat = dead          # "connection reset" 归入连接类
+cues4b = make_cues()
+t_dead = __import__("time").time()
+try:
+    llm.fix_document(make_cfg(retry=5), cues4b, progress=None)
+    check("连接错误快速止损", False, "没抛异常")
+except llm.LLMError as e:
+    dt = __import__("time").time() - t_dead
+    check("连接错误快速止损", dt < 30 and "连不上" in str(e), "%.1fs %s" % (dt, str(e)[:40]))
+except Exception as e:
+    check("连接错误快速止损", False, e)
 
 section("5. 取消与无 Key")
 llm.chat = good_chat

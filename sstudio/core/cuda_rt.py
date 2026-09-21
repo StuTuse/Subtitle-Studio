@@ -81,11 +81,13 @@ def _candidate_dirs(extra: Optional[str] = None) -> List[str]:
         add(os.path.abspath(os.path.expanduser(extra)))
 
     for sp in _site_packages():
-        # pip 装的 nvidia 官方 wheel
+        # pip 装的 nvidia 官方 wheel（新版包名是 cuda_runtime，旧版是 cudart）
         add(os.path.join(sp, "nvidia", "cublas", "bin"))
-        add(os.path.join(sp, "nvidia", "cudnn", "bin"))
         add(os.path.join(sp, "nvidia", "cublas", "lib"))
+        add(os.path.join(sp, "nvidia", "cudnn", "bin"))
+        add(os.path.join(sp, "nvidia", "cuda_runtime", "bin"))
         add(os.path.join(sp, "nvidia", "cudart", "bin"))
+        add(os.path.join(sp, "nvidia", "cuda_nvrtc", "bin"))
         add(os.path.join(sp, "torch", "lib"))
         add(os.path.join(sp, "ctranslate2", "tools"))
         add(os.path.join(sp, "ctranslate2"))
