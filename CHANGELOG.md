@@ -1,5 +1,8 @@
 # 更新日志
 
+## [1.3.0] - 2026-09-21
+
+- 剔除对第三方转写软件的一切探测与借用：模型只从标准缓存目录与自家 SSData\\models 发现，ffmpeg/CUDA 只认标准位置；老配置里已移除的引擎名自动回落 faster-whisper。
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
 版本号唯一真源是根目录的 `VERSION` 文件，发版请用 `python release.py`。
 
