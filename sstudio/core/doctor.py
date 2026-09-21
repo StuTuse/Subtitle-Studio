@@ -39,7 +39,15 @@ PIP_TIMEOUT = 1200             # 大 wheel（torch 系列 ~2.5GB）留足时间
 
 
 def _pip_base_args() -> List[str]:
-    """python -m pip 是最稳的调用方式（不依赖 PATH 里有 pip.exe）。"""
+    """python -m pip 是最稳的调用方式（不依赖 PATH 里有 pip.exe）。
+
+    打包版里 ``sys.executable`` 是软件自身的 exe，不认识 ``-m pip`` ——
+    必须找到机器上真实的 python.exe。找不到就返回空，由 pip_install 报告。
+    """
+    if getattr(sys, "frozen", False):
+        from . import cuda_rt
+        pys = cuda_rt.system_pythons()
+        return [pys[0], "-m", "pip"] if pys else []
     return [sys.executable, "-m", "pip"]
 
 
@@ -89,6 +97,13 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
     env.update(_sys_proxy_env())
     env.setdefault("PYTHONIOENCODING", "utf-8")
     errs: List[str] = []
+    base = _pip_base_args()
+    if not base:
+        msg = ("本机没有找到可用的 Python 环境，无法自动安装。\n"
+               "请先安装 Python 3.10+（勾选 Add to PATH），再打开体检窗口重试。")
+        if log:
+            log(msg)
+        return False, msg
     for i, (name, idx) in enumerate(PIP_INDEXES):
         if cancel and cancel():
             return False, "已取消。"

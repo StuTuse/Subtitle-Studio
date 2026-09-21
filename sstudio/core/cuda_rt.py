@@ -67,7 +67,82 @@ def _site_packages() -> List[str]:
             out.append(ud)
     except Exception:
         pass
+    # 打包版没有 site-packages 概念，但体检向导的"一键修复"会把 CUDA wheel
+    # 装进系统 Python —— 那里正是打包版最该去找的地方。扫一遍常见安装位置。
+    if getattr(sys, "frozen", False):
+        for base in (os.environ.get("LOCALAPPDATA", ""),
+                     os.environ.get("PROGRAMFILES", ""),
+                     os.environ.get("PROGRAMFILES(X86)", ""),
+                     os.path.expanduser("~")):
+            if not base:
+                continue
+            for ver in ("310", "311", "312", "313", ""):
+                root = os.path.join(base, "Programs", "Python",
+                                    f"Python{ver}" if ver else "Python") \
+                    if base.endswith("local") or "localappdata" in base.lower() \
+                    else os.path.join(base, f"Python{ver}" if ver else "Python")
+                sp = os.path.join(root, "Lib", "site-packages")
+                if os.path.isdir(sp) and sp not in out:
+                    out.append(sp)
+        # py launcher 找到的解释器也顺带查一遍
+        for py in _system_pythons():
+            try:
+                import subprocess as _sp
+                r = _sp.run([py, "-c",
+                             "import sys;print(sys.prefix)"],
+                            capture_output=True, text=True, timeout=10,
+                            creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0))
+                if r.returncode == 0 and r.stdout.strip():
+                    sp = os.path.join(r.stdout.strip(), "Lib", "site-packages")
+                    if os.path.isdir(sp) and sp not in out:
+                        out.append(sp)
+            except Exception:
+                continue
     return out
+
+
+def _system_pythons() -> List[str]:
+    """找机器上真实存在的 python.exe（打包版修复用；找不到返回空列表）。
+
+    注意过滤 WindowsApps 里的微软商店占位符 python3.exe —— 那不是真解释器，
+    调它会弹商店页面。顺手验证每个候选能真的执行 -c（再挡掉损坏安装）。
+    """
+    import shutil as _sh
+    import subprocess as _sp
+    flags = getattr(_sp, "CREATE_NO_WINDOW", 0)
+    out: List[str] = []
+
+    def _works(p: str) -> bool:
+        try:
+            r = _sp.run([p, "-c", "import sys;print(sys.version_info[:2])"],
+                        capture_output=True, text=True, timeout=10,
+                        creationflags=flags)
+            return r.returncode == 0 and "(3" in (r.stdout or "")
+        except Exception:
+            return False
+
+    for name in ("python.exe", "python3.exe"):
+        p = _sh.which(name)
+        if p and "windowsapps" not in p.lower() and p not in out:
+            out.append(p)
+    try:
+        r = _sp.run(["py", "-3", "-c", "import sys;print(sys.executable)"],
+                    capture_output=True, text=True, timeout=10,
+                    creationflags=flags)
+        if r.returncode == 0 and r.stdout.strip():
+            p = r.stdout.strip()
+            if os.path.isfile(p) and p not in out:
+                out.append(p)
+    except Exception:
+        pass
+    if os.name == "nt":
+        la = os.environ.get("LOCALAPPDATA", "")
+        for ver in ("310", "311", "312", "313"):
+            cand = os.path.join(la, "Programs", "Python", f"Python{ver}",
+                                "python.exe")
+            if os.path.isfile(cand) and cand not in out:
+                out.append(cand)
+    return [p for p in out if _works(p)]
 
 
 def _candidate_dirs(extra: Optional[str] = None) -> List[str]:
@@ -191,3 +266,8 @@ def describe(rt: Optional[CudaRuntime] = None) -> str:
     if rt.usable:
         return f"CUDA 12 运行时：{rt.cublas_dir}"
     return rt.note
+
+
+def system_pythons() -> List[str]:
+    """对外暴露：机器上真实存在的 python.exe 列表（体检修复用）。"""
+    return _system_pythons()
