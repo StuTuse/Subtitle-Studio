@@ -257,4 +257,29 @@ while time.time() - _t0 < 2.0 and not _fired:
     time.sleep(0.02)
 check("唤醒回调被触发（第二实例会把主窗拉到前台）", bool(_fired))
 
+
+section("14. 导出文件名：{ext} 占位符 + 路径穿越防护 + 回落")
+from sstudio.ui.export_page import ExportInterface
+
+
+class _FakeMain:
+    doc = CueDocument(source_video=r"D:\v\我的视频.mp4", path="")
+
+
+_exp = ExportInterface(Config(), _FakeMain())
+_doc_nl = CueDocument(source_video="", path="", language="zh")
+_doc_e = CueDocument(source_video="", path="")
+n1 = _exp._file_name("{name}_{lang}", "vid", _doc_nl, ".srt")
+check("{name}/{lang} 正常替换并补扩展名", n1 == "vid_zh.srt", n1)
+n2 = _exp._file_name("字幕{ext}", "vid", _doc_e, ".vtt")
+check("{ext} 占位符按格式展开", n2 == "字幕.vtt", n2)
+n3 = _exp._file_name(r"..\..\Windows\x", "vid", _doc_e, ".srt")
+check("路径穿越被剥成纯文件名", "\\" not in n3 and "/" not in n3 and ".." not in n3, n3)
+n4 = _exp._file_name('a:b*c?"d', "vid", _doc_e, ".srt")
+check("Windows 非法字符被替换", all(ch not in n4 for ch in '<>:"|?'), n4)
+n5 = _exp._file_name("   ", "vid", _doc_e, ".srt")
+check("空模板兜底 subtitle", n5 == "subtitle.srt", n5)
+check("未保存工程回落视频名而非 subtitle",
+      _exp._base_name() == "我的视频", _exp._base_name())
+
 raise SystemExit(finish())

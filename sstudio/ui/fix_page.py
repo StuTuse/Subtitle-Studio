@@ -215,8 +215,12 @@ class FixInterface(QWidget):
             return
         self.btn_run.setEnabled(self.worker is None)
         st = doc.stats()
-        self.log.append(f"就绪：{st['count']} 条 / {st['duration']:.0f}s / "
-                        f"预计 {max(1, -(-st['count'] // self.batch.value()))} 批")
+        line = (f"就绪：{st['count']} 条 / {st['duration']:.0f}s / "
+                f"预计 {max(1, -(-st['count'] // self.batch.value()))} 批")
+        # 每次切页都会 refresh：内容没变就不重复 append，日志不再无限增长
+        cur = self.log.toPlainText().splitlines()
+        if not cur or cur[-1] != line:
+            self.log.append(line)
 
     # ------------------------------------------------------------ 执行
     def _apply_throughput(self) -> None:

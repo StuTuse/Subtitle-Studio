@@ -353,7 +353,7 @@ class EditorInterface(QWidget):
         # 主题切换（light/dark/auto）后重染表格状态色、重绘时间轴
         self._last_dark = None
         self._theme_timer = QTimer(self)
-        self._theme_timer.setInterval(400)
+        self._theme_timer.setInterval(1500)   # 400ms 纯浪费：切主题 1.5s 内跟上无感
         self._theme_timer.timeout.connect(self._watch_theme)
         self._theme_timer.start()
         # Enter 保存并下一条；Shift+Enter 换行（在 eventFilter 里拦截）
@@ -367,11 +367,14 @@ class EditorInterface(QWidget):
                 self._apply_inline()
                 return True
             if event.type() == QEvent.FocusOut:
-                # 离开编辑区先落盘：否则改了字直接点别处，改动会被无声丢掉
-                if self.edit_area.toPlainText() != (
-                        self.doc.cues[self._editing_row].display_text
-                        if self.doc and 0 <= self._editing_row < len(self.doc.cues)
-                        else None):
+                # 离开编辑区先落盘：否则改了字直接点别处，改动会被无声丢掉。
+                # 两边都去掉首尾换行再比：toPlainText() 常带一个尾随 \n，
+                # 直接比会让"没动过的行"每次都判定有改动、反复走保存路径。
+                cur = (self.doc.cues[self._editing_row].display_text
+                       if self.doc and 0 <= self._editing_row < len(self.doc.cues)
+                       else None)
+                if self.edit_area.toPlainText().strip("\n") != (
+                        cur.strip("\n") if cur is not None else None):
                     self._apply_inline_silent()
         return False
 
@@ -491,6 +494,7 @@ class EditorInterface(QWidget):
 
     def set_document(self, doc: Optional[CueDocument], reset_history: bool = True) -> None:
         self.doc = doc
+        self._last_dark = None      # 空态期间主题可能已变过：强制下一拍重染一次
         if reset_history:
             self._undo, self._redo = [], []
         self.table.render(doc.cues if doc else [])
@@ -773,7 +777,10 @@ class EditorInterface(QWidget):
             self.table.scrollToItem(self.table.item(row, 5), QAbstractItemView.PositionAtCenter)
             self.table.blockSignals(False)
             self._editing_row = row
-            if not self.edit_area.hasFocus() and self.doc and 0 <= row < len(self.doc.cues):
+            # 无条件刷新编辑缓冲：刚才若落了盘，缓冲已被消费，刷成新行是安全的；
+            # 若带着焦点跳过这步，缓冲里还是旧行文本，用户接着打字按 Enter
+            # 就会把"旧行内容+新字"整体覆盖到新行。
+            if self.doc and 0 <= row < len(self.doc.cues):
                 self.edit_area.setPlainText(self.doc.cues[row].display_text)
 
     def _on_duration(self, sec: float) -> None:
@@ -854,6 +861,18 @@ class EditorInterface(QWidget):
             shown += 1 if ok else 0
         total = self.table.rowCount()
         self.stat_label.setText(f"显示 {shown} / {total} 条" if (text or only_bad) else f"共 {total} 条")
+        # "#12" 是跳转指令（placeholder 就这么承诺的）：选中并滚过去，
+        # 而不是把其它行过滤掉后停在原地；跳完清空，恢复完整列表。
+        import re as _re2
+        m = _re2.fullmatch(r"#(\d{1,7})", text) if text else None
+        if m:
+            n = int(m.group(1)) - 1
+            if 0 <= n < total:
+                self.search.blockSignals(True)
+                self.search.clear()
+                self.search.blockSignals(False)
+                self._filter(self.search.text())
+                self._select_row(n)
 
     # ------------------------------------------------------------ 文件
     def _open_project(self) -> None:
@@ -888,9 +907,9 @@ class EditorInterface(QWidget):
         normalize_cues(self.doc)
         self.doc.meta["imported_from"] = fp
         self.doc.meta["imported_format"] = fmt
-        self.table.render(cues)
-        self.timeline.set_document(self.doc)
-        self._refresh_enabled()
+        # 必须走 set_document 全套：空态下 split 是隐藏的，只手动 table.render
+        # 会把表格渲染进不可见区域、hero 仍显示"拖入视频"，看着像导入没生效。
+        self.set_document(self.doc, reset_history=False)
         self.main.mark_dirty()
         self._say(f"已按 {fmt} 格式导入 {len(cues)} 条字幕。", 4000)
         self.main.switch_to("editor")

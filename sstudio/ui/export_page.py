@@ -15,6 +15,24 @@ from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLis
 from ..core import formats
 from ..core.config import Config
 from .theme import open_path
+from .workers import ThreadedCall
+
+
+def _write_exports(pairs, out_dir, enc):
+    """后台线程里跑：试探编码 → 写盘。pairs 是主线程渲染好的 [(名字, 文本)]，
+    线程不碰 doc——导出期间用户还能在编辑页改字幕，跨线程读会读到半截。"""
+    written, errors = [], []
+    for name, text in pairs:
+        try:
+            fp = os.path.join(out_dir, name)
+            with open(fp, "w", encoding=_safe_enc(enc, text), newline="") as f:
+                f.write(text)
+            written.append(fp)
+        except Exception as e:
+            errors.append((name, str(e)))
+    if not written:
+        raise OSError("；".join(f"{n}: {e}" for n, e in errors) or "没有写出任何文件")
+    return written, errors
 
 
 class ExportInterface(QWidget):
@@ -120,6 +138,7 @@ class ExportInterface(QWidget):
         lay.addLayout(bar)
 
         self._last_files: List[str] = []
+        self._worker = None
 
     # ------------------------------------------------------------ 逻辑
     def refresh(self) -> None:
@@ -176,16 +195,35 @@ class ExportInterface(QWidget):
         if d:
             return d
         doc = self.main.doc
-        if doc and doc.source_video:
+        if doc is not None and doc.source_video:   # 空字幕文档布尔为 False，用 is not None
             return os.path.dirname(doc.source_video)
         return self.cfg.last_dir or os.path.expanduser("~")
 
     def _base_name(self) -> str:
+        # 注意：CueDocument 定义了 __len__，空字幕文档布尔值是 False，
+        # 判空一律用 is not None，否则刚导入还没转写时这里会错退 "subtitle"。
         doc = self.main.doc
-        if self.chk_video_name.isChecked() and doc and doc.source_video:
+        if doc is None:
+            return "subtitle"
+        if self.chk_video_name.isChecked() and doc.source_video:
             return os.path.splitext(os.path.basename(doc.source_video))[0]
-        return (os.path.splitext(os.path.basename(doc.path))[0]
-                if doc and doc.path else "subtitle")
+        if doc.path:
+            return os.path.splitext(os.path.basename(doc.path))[0]
+        # 工程还没存过：退到视频名，别再一律叫 subtitle——多格式导出会互相覆盖
+        if doc.source_video:
+            return os.path.splitext(os.path.basename(doc.source_video))[0]
+        return "subtitle"
+
+    def _file_name(self, tpl: str, base: str, doc, ext: str) -> str:
+        """套文件名模板。模板是用户输入的：占位符补全后必须剥掉目录、
+        换掉 Windows 非法字符，否则一句 ..\\x 就能写到输出目录外面去。"""
+        lang = doc.language if doc is not None else ""
+        stem = tpl.replace("{name}", base).replace("{lang}", lang or "")
+        stem = stem.replace("{ext}", "")            # 扩展名统一在下面补
+        for ch in '<>:"|?*':
+            stem = stem.replace(ch, "_")
+        stem = os.path.basename(stem.replace("\\", "/")).strip()
+        return (stem or "subtitle") + ext
 
     def _enc(self) -> str:
         return ["utf-8-sig", "utf-8", "gbk"][self.enc.currentIndex()]
@@ -208,39 +246,63 @@ class ExportInterface(QWidget):
             InfoBar.error("目录不可写", str(e), parent=self.main,
                           position=InfoBarPosition.TOP, duration=4000)
             return
+        if getattr(self, "_worker", None) is not None:
+            return                      # 上一次导出还没落地
         base = self._base_name()
         enc = self._enc()
-        written = []
+        tpl = self.name_tpl.text()
+        # 渲染留在主线程：纯内存操作、快，而且避免后台线程读 doc 与用户
+        # 编辑竞态。真正慢的写盘（网络盘/编码试探）才丢给线程。
+        pairs, render_errors = [], []
         for key in keys:
             spec = formats.FORMATS[key]
             try:
-                text = formats.export_text(doc, key)
+                pairs.append((self._file_name(tpl, base, doc, spec.ext),
+                              formats.export_text(doc, key)))
             except Exception as e:
-                InfoBar.error("导出失败", f"{spec.label}: {e}", parent=self.main,
-                              position=InfoBarPosition.TOP, duration=4000)
-                continue
-            name = self.name_tpl.text().replace("{name}", base).replace(
-                "{lang}", doc.language or "") + spec.ext
-            fp = os.path.join(out_dir, name)
-            try:
-                with open(fp, "w", encoding=_safe_enc(enc, text), newline="") as f:
-                    f.write(text)
-                written.append(fp)
-            except Exception as e:
-                InfoBar.error("写入失败", f"{name}: {e}", parent=self.main,
-                              position=InfoBarPosition.TOP, duration=4000)
-        if written:
-            self.cfg.export_encoding = enc
-            self.cfg.export_dir = self.out_dir.text().strip()
-            self.cfg.last_dir = out_dir
-            self.cfg.save()
-            self._last_files = written
-            InfoBar.success("导出完成",
-                            "\n".join(os.path.basename(p) for p in written),
-                            parent=self.main, position=InfoBarPosition.TOP, duration=4500)
-            if self.chk_burn.isChecked():
-                open_path(os.path.dirname(written[0]))
-            self.main.editor.status.setText(f"已导出 {len(written)} 个文件 → {out_dir}")
+                render_errors.append((spec.label, str(e)))
+        for label, err in render_errors:
+            InfoBar.error("导出失败", f"{label}: {err}", parent=self.main,
+                          position=InfoBarPosition.TOP, duration=4000)
+        if not pairs:
+            return
+        self.btn_export.setEnabled(False)
+        self._worker = ThreadedCall(_write_exports, pairs, out_dir, enc)
+        self._worker.sig_done.connect(self._on_export_done)
+        self._worker.sig_failed.connect(self._on_export_failed)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.start()
+
+    def _finish_export(self) -> None:
+        self._worker = None
+        self.btn_export.setEnabled(bool(self.main.doc and self.main.doc.cues))
+
+    def _on_export_failed(self, msg: str) -> None:
+        self._finish_export()
+        InfoBar.error("导出失败", msg, parent=self.main,
+                      position=InfoBarPosition.TOP, duration=4000)
+
+    def _on_export_done(self, outcome) -> None:
+        self._finish_export()
+        written, errors = outcome
+        for name, err in errors:
+            InfoBar.error("写入失败", f"{name}: {err}", parent=self.main,
+                          position=InfoBarPosition.TOP, duration=4000)
+        if not written:
+            return
+        enc = self._enc()
+        out_dir = os.path.dirname(written[0])
+        self.cfg.export_encoding = enc
+        self.cfg.export_dir = self.out_dir.text().strip()
+        self.cfg.last_dir = out_dir
+        self.cfg.save()
+        self._last_files = written
+        InfoBar.success("导出完成",
+                        "\n".join(os.path.basename(p) for p in written),
+                        parent=self.main, position=InfoBarPosition.TOP, duration=4500)
+        if self.chk_burn.isChecked():
+            open_path(os.path.dirname(written[0]))
+        self.main.editor.status.setText(f"已导出 {len(written)} 个文件 → {out_dir}")
 
     def _preview(self) -> None:
         doc = self.main.doc

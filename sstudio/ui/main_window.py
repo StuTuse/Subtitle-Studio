@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import time
 from typing import Optional
 
 from qfluentwidgets import (FluentIcon as FIF, FluentWindow, InfoBar, InfoBarPosition,
@@ -53,6 +55,10 @@ class MainWindow(FluentWindow):
         self._worker: Optional[TranscribeWorker] = None
         self._closing = False          # 已进入关闭流程（不再弹"退出前保存"）
         self._close_box = None         # 退出确认框（信号模式，须保引用）
+        self._prog_pending = None      # 进度节流：被丢弃的最新一帧
+        self._prog_timer = QTimer(self)   # 转写进度节流定时器
+        self._prog_timer.setSingleShot(True)
+        self._prog_timer.timeout.connect(self._flush_progress)
 
         self.setWindowTitle(f"Subtitle Studio · 视频字幕工坊  v{__version__}")
         self.setWindowIcon(FIF.CAPTION_TEXT.icon() if hasattr(FIF, "CAPTION_TEXT")
@@ -261,8 +267,7 @@ class MainWindow(FluentWindow):
             if not path.lower().endswith(".ssp"):
                 path += ".ssp"
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(self.doc.to_json())
+            _atomic_write_text(path, self.doc.to_json())
         except OSError as e:
             self._warn("保存失败", str(e))
             return False
@@ -309,8 +314,7 @@ class MainWindow(FluentWindow):
     def _auto_save(self) -> None:
         if self._dirty and self.doc and self.doc.path:
             try:
-                with open(self.doc.path, "w", encoding="utf-8") as f:
-                    f.write(self.doc.to_json())
+                _atomic_write_text(self.doc.path, self.doc.to_json())
                 self._dirty = False
                 self._update_title()
             except OSError:
@@ -386,6 +390,25 @@ class MainWindow(FluentWindow):
     def _on_progress(self, gen: int, msg: str, pct: float) -> None:
         if self._stale(gen):
             return
+        # whisper 每个 segment 都发一次进度，一路刷三处控件（adjustSize 还会
+        # 触发布局）。节流到 ~8 帧/秒：中间帧丢弃、最新状态存着由定时器补画，
+        # 收尾帧（>=1.0 或 <0）立即上屏，不会停在半截。
+        now = time.monotonic()
+        final = pct is not None and (pct >= 1.0 or pct < 0)
+        self._prog_pending = (msg, pct)
+        if final or now - getattr(self, "_prog_ts", 0.0) >= 0.125:
+            self._flush_progress()
+        elif not self._prog_timer.isActive():
+            self._prog_timer.start(130)
+
+    def _flush_progress(self) -> None:
+        self._prog_timer.stop()
+        pend = getattr(self, "_prog_pending", None)
+        if pend is None:
+            return
+        self._prog_pending = None
+        self._prog_ts = time.monotonic()
+        msg, pct = pend
         self.progressLabel.setText(msg)
         self.progressLabel.adjustSize()
         self._place_progress_label()
@@ -457,6 +480,8 @@ class MainWindow(FluentWindow):
         QTimer.singleShot(0, self.update)
 
     def _end_progress(self) -> None:
+        self._prog_pending = None
+        self._prog_timer.stop()
         self.progress.setVisible(False)
         self.progress.setRange(0, 0)
         self.progressLabel.setVisible(False)
@@ -554,11 +579,12 @@ class MainWindow(FluentWindow):
             self.cfg.save()
         except Exception:
             pass
+        stragglers = False
         if self._worker:
             self._worker.cancel()
             # 退出时不能把还在跑的线程丢给 GC：等它自己收尾（最多 5s）
             try:
-                self._worker.wait(5000)
+                stragglers = not self._worker.wait(5000)
             except RuntimeError:
                 pass
         # AI 纠错线程同样要等：否则关窗后它还在往已销毁的页面发信号、
@@ -567,10 +593,30 @@ class MainWindow(FluentWindow):
             fw = getattr(self.fix, "worker", None)
             if fw is not None:
                 fw.cancel()
-                fw.wait(5000)
+                if not fw.wait(5000):
+                    stragglers = True
+        except RuntimeError:
+            pass
+        # 导出线程可能正在网络盘上写文件：给它同样的收尾窗口
+        try:
+            ew = getattr(self.export, "_worker", None)
+            if ew is not None and ew.isRunning():
+                if not ew.wait(5000):
+                    stragglers = True
         except RuntimeError:
             pass
         super().closeEvent(e)
+        if stragglers:
+            # cancel 是协作式的：在途 HTTP 要等超时才返回，线程池线程又不是
+            # daemon——解释器拆机会 join 它们，表现为"窗口关了进程还挂几分钟"，
+            # 期间线程再碰已销毁的 Qt 对象就是随机 0xC0000005。
+            # 此刻配置已保存、播放器已拆、窗口已关，强杀进程不丢任何东西。
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            except Exception:
+                pass
+            os._exit(0)
 
     def _close_save_quit(self) -> None:
         """「保存并退出」：保存成功才走关闭流程；取消保存则留在软件里。"""
@@ -584,6 +630,16 @@ class MainWindow(FluentWindow):
         self._close_box = None
         self._closing = True
         self.close()
+
+
+def _atomic_write_text(path: str, text: str) -> None:
+    """写临时文件再 os.replace：与 config.save 同款，避免写一半崩溃留下损坏工程。"""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 def _fmt(sec: float) -> str:

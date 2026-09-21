@@ -211,12 +211,3 @@ class ThreadedCall(QThread):
         except Exception as e:
             self.sig_failed.emit(f"{type(e).__name__}: {e}")
 
-
-def start_in_thread(parent: Any, fn: Callable[..., Any], on_done: Callable[[Any], None],
-                    on_fail: Optional[Callable[[str], None]] = None, *a, **kw) -> ThreadedCall:
-    t = ThreadedCall(fn, *a, **kw)
-    t.sig_done.connect(on_done)
-    t.sig_failed.connect(on_fail or (lambda m: None))
-    t.setParent(parent)
-    t.start()
-    return t

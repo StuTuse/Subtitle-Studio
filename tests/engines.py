@@ -212,7 +212,15 @@ check("扫描 < 1.5s（旧实现 7s+）", cost < 1.5, f"{cost * 1000:.0f}ms")
 check("命中都是存在的 exe", all(os.path.isfile(f) for f in hits), hits[:2])
 t0 = time.perf_counter()
 hits2 = transcriber.find_external_whisper_cli()
-check("第二次走缓存（<50ms）", (time.perf_counter() - t0) < 0.05 and hits2 == hits)
+cost2 = time.perf_counter() - t0
+# 新语义：扫描被 6000 条上限截断过时**不缓存**（残缺结果会被当成完整答案，
+# 之后再装 whisper 就永远发现不了）。所以第二次调用要么命中缓存（<50ms），
+# 要么是截断态下的完整重扫——两种都必须远快于旧的 7s。
+if transcriber._ext_cli_cache is not None:
+    check("第二次走缓存（<50ms）", cost2 < 0.05 and hits2 == hits, f"{cost2 * 1000:.0f}ms")
+else:
+    check("截断态不缓存残缺结果：重扫仍 <1.5s 且结果一致",
+          cost2 < 1.5 and hits2 == hits, f"{cost2 * 1000:.0f}ms")
 transcriber.ext_cli_cache_reset()
 t0 = time.perf_counter()
 check("清缓存后可重扫", transcriber.find_external_whisper_cli() == hits
