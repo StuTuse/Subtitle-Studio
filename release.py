@@ -320,10 +320,15 @@ def do_push(tag: str) -> None:
 
 
 def _gh_token() -> str:
-    """取 GitHub API 令牌：环境变量优先，其次 gh 配置文件里的 oauth_token。"""
-    tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
-    if tok.strip():
-        return tok.strip()
+    """取 GitHub API 令牌：环境变量优先，其次 gh 配置文件里的 oauth_token。
+
+    环境变量若是被外部脚本拼脏的（比如把多行匹配拼成 "ghp_a ghp_b"），
+    只取第一个空白分隔的 token——宁可试错也不能带拼接串去请求（必 401）。
+    """
+    raw = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    parts = raw.split()
+    if parts:
+        return parts[0]
     cfg = os.path.join(os.environ.get("USERPROFILE", ""), ".config", "gh", "hosts.yml")
     try:
         inside = False
