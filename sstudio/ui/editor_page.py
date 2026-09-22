@@ -22,7 +22,7 @@ from ..core.config import Config
 from ..core.model import Cue, CueDocument, normalize_cues, sec_to_ts, ts_to_sec
 from .cue_table import COL_S, CueTable
 from .player import PlayerWidget
-from .theme import human_time, is_dark
+from .theme import err_span, human_time, is_dark
 from .timeline import Timeline
 
 
@@ -924,7 +924,7 @@ class EditorInterface(QWidget):
                f"均 {st['avg_cps']:.0f} 字/条 · {st['chars_per_sec']:.1f} 字/秒 · "
                f"已修正 {st['changed']}")
         if rev:
-            msg += f" · <span style='color:#c42b1c'>待复查 {rev}</span>"
+            msg += f" · {err_span(f'待复查 {rev}')}"
         self.status.setText(msg)
         self.doc_changed.emit()
 

@@ -44,6 +44,7 @@ except Exception:  # pragma: no cover
 
 from ..core import doctor
 from ..core.config import Config
+from .theme import status_hex
 from .workers import ThreadedCall, reap
 
 _LEVEL_TAG = {"required": "必需", "recommend": "建议", "optional": "可选"}
@@ -128,8 +129,8 @@ class FirstRunDialog(QDialog):
         h.setSpacing(10)
         mark = QLabel("✓" if it.ok else ("✕" if it.level == "required" else "⚠"), card)
         f = mark.font(); f.setBold(True); f.setPointSize(12); mark.setFont(f)
-        mark.setStyleSheet("color:#1a7f37" if it.ok else
-                           ("color:#c42b1c" if it.level == "required" else "color:#b8860b"))
+        mk = 'ok' if it.ok else ('err' if it.level == "required" else 'warn')
+        mark.setStyleSheet(f"color:{status_hex(mk)}")
         mark.setFixedWidth(18)
         h.addWidget(mark)
 

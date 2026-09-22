@@ -20,6 +20,7 @@ from ..core import llm
 from ..core.config import BUILTIN_PRESETS, Config, LLMProfile
 from ..core.transcriber import discover_ct2_models
 from .safe_spin import SafeDoubleSpinBox, SafeSpinBox
+from .theme import err_span, ok_span, warn_span
 from .workers import TestLLMWorker
 
 
@@ -353,11 +354,11 @@ class SettingsInterface(QWidget):
         if ok:
             self.asr_hint.setText(
                 (self.asr_hint.text() + "<br>" if self.asr_hint.text() else "")
-                + f"<span style='color:#1a7f37'>✓ CUDA 12 运行库就绪：{rt.cublas_dir}</span>")
+                + ok_span(f"✓ CUDA 12 运行库就绪：{rt.cublas_dir}"))
         else:
             self.asr_hint.setText(
                 (self.asr_hint.text() + "<br>" if self.asr_hint.text() else "")
-                + f"<span style='color:#c42b1c'>✕ {rt.note}</span>")
+                + err_span(f"✕ {rt.note}"))
 
     # ------------------------------------------------------------- 其它
     def _build_misc(self, parent) -> CardWidget:
@@ -676,9 +677,9 @@ class SettingsInterface(QWidget):
         ok, msg, dt = res
         if ok:
             self.test_result.setText(
-                f"<span style='color:#1a7f37'>✓ 连接成功（{dt:.2f}s）</span> 模型回复：{msg}")
+                f"{ok_span(f'✓ 连接成功（{dt:.2f}s）')} 模型回复：{msg}")
         else:
-            self.test_result.setText(f"<span style='color:#c42b1c'>✕ 失败</span> {msg}")
+            self.test_result.setText(f"{err_span('✕ 失败')} {msg}")
 
     # ----------------------------------------------------------- ASR 部分
     def _rescan_models(self) -> None:
@@ -758,16 +759,16 @@ class SettingsInterface(QWidget):
         if eng == "faster-whisper":
             try:
                 import faster_whisper  # noqa
-                parts.append("<span style='color:#1a7f37'>✓ faster-whisper 已安装</span>")
+                parts.append(ok_span("✓ faster-whisper 已安装"))
             except Exception:
-                parts.append("<span style='color:#c42b1c'>✕ 未安装：pip install faster-whisper</span>")
+                parts.append(err_span("✕ 未安装：pip install faster-whisper"))
             from ..core import cuda_rt
             rt = cuda_rt.register(getattr(self.cfg, "cuda_rt_dir", "") or None)
             if rt.usable and cuda_rt.probe_loadable(rt):
-                parts.append(f"<span style='color:#1a7f37'>✓ CUDA 12 运行库：{rt.cublas_dir}</span>")
+                parts.append(ok_span(f"✓ CUDA 12 运行库：{rt.cublas_dir}"))
             else:
-                parts.append(f"<span style='color:#b8860b'>⚠ GPU 不可用（{rt.note}）"
-                             "—— 将自动用 CPU 识别。</span>")
+                parts.append(warn_span(f"⚠ GPU 不可用（{rt.note}）"
+                                       "—— 将自动用 CPU 识别。"))
             if cands:
                 parts.append(f"发现 {len(cands)} 个本地 CT2 模型：" +
                              "；".join(f"<code>{c['path']}</code>" for c in cands[:3]))

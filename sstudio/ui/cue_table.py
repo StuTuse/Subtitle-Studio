@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu
                              QTextEdit)
 
 from ..core.model import Cue, sec_to_ts
-from .theme import _crisp, is_dark, monospace, state_color, state_text
+from .theme import _crisp, is_dark, monospace, state_color, state_text, status_hex
 
 COL_NO, COL_S, COL_E, COL_D, COL_STATE, COL_TEXT = range(6)
 
@@ -131,7 +131,7 @@ class CueTable(QTableWidget):
                 tx.setBackground(QBrush(col))
             if c.state == "review":
                 # 待复查：暗色亮红 / 浅色深红，两种皮肤都保持高对比
-                tx.setForeground(QBrush(QColor("#ff8a8a") if dark else QColor("#c42b1c")))
+                tx.setForeground(QBrush(QColor(status_hex("err"))))
                 f2 = QFont(tx.font()); _crisp(f2); tx.setFont(f2)
             self.setItem(r, COL_TEXT, tx)
 

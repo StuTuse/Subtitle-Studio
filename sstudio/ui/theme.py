@@ -146,6 +146,43 @@ def state_text(state: str) -> str:
             "confirmed": "已确认"}.get(state, state or "")
 
 
+# 语义状态色：同一个色值不可能在深浅两种底上都达标（实测 #1a7f37 浅底
+# 5.08:1 但深底只有 3.39:1，红 #c42b1c 同理），所以按主题各取一档，
+# 让"成功/失败/警告"在两种皮肤下都达到 WCAG AA。
+_STATE_HEX = {
+    "ok":   ("#1a7f37", "#4ac26b"),   # 浅底 / 深底
+    "err":  ("#c42b1c", "#ff8a8a"),
+    "warn": ("#b8860b", "#e0a83c"),
+    "dim":  ("#8a8a8a", "#9a9a9a"),
+}
+
+
+def status_hex(kind: str = "ok") -> str:
+    """取当前主题下对比度达标的状态色 hex（供 setStyleSheet 用）。"""
+    pair = _STATE_HEX.get(kind, _STATE_HEX["dim"])
+    return pair[1] if is_dark() else pair[0]
+
+
+def _span(kind: str, text: str) -> str:
+    return f"<span style='color:{status_hex(kind)}'>{text}</span>"
+
+
+def ok_span(text: str) -> str:
+    return _span("ok", text)
+
+
+def err_span(text: str) -> str:
+    return _span("err", text)
+
+
+def warn_span(text: str) -> str:
+    return _span("warn", text)
+
+
+def dim_span(text: str) -> str:
+    return _span("dim", text)
+
+
 def is_dark() -> bool:
     try:
         from qfluentwidgets import isDarkTheme

@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLis
 
 from ..core import formats
 from ..core.config import Config
-from .theme import open_path
+from .theme import err_span, ok_span, open_path
 from .workers import ThreadedCall
 
 
@@ -170,9 +170,9 @@ class ExportInterface(QWidget):
         html = (f"共 <b>{st['count']}</b> 条 · 总时长 <b>{st['duration']:.1f}s</b> · "
                 f"平均 <b>{st['avg_cps']:.1f}</b> 字/条 · 已修正 <b>{st['changed']}</b> 条")
         if problems:
-            html += "<br><span style='color:#c42b1c'>⚠ " + "；".join(problems) + "</span>"
+            html += "<br>" + err_span("⚠ " + "；".join(problems))
         else:
-            html += "<br><span style='color:#1a7f37'>✓ 未发现明显问题</span>"
+            html += "<br>" + ok_span("✓ 未发现明显问题")
         self.precheck.setText(html)
 
     def _check_all(self, state) -> None:
