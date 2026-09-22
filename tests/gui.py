@@ -313,26 +313,44 @@ check("接入点参数也是防误触控件",
 
 section("8c. 欢迎向导（首启配置流程）")
 from sstudio.ui.welcome_wizard import WelcomeWizard  # noqa: E402
+from PyQt5.QtCore import QEventLoop, QTimer  # noqa: E402
+
+
+def _pump(ms: int) -> None:
+    """事件循环等待：页面切换动画（约 480ms）要真跑完才能点下一步。"""
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec_()
+
+
 wz = WelcomeWizard(win.cfg, parent=win)
 pump()
 check("五个页面齐全", len(wz.pages) == 5, len(wz.pages))
 check("初始在第 1 页（欢迎）", wz._idx == 0)
 check("第一页不显示上一步", not wz.btn_back.isVisibleTo(wz))
 wz._go_next()
+_pump(520)                     # 等推入动画结束、_anim_lock 释放
 check("外观页出现", wz._idx == 1)
 wz.pages[1]._pick("dark")
 wz._go_next()
+_pump(520)
 check("模型页出现且预填预设", wz._idx == 2 and
       "deepseek" in wz.pages[2].p_base.text().lower(),
       wz.pages[2].p_base.text())
 wz.pages[2]._skip()
 check("跳过模型后可通过", wz.pages[2].is_valid())
 wz._go_next()
+_pump(520)
 check("体检页出现", wz._idx == 3)
 wz.pages[3]._items = []       # 模拟体检完成
 wz._go_next()
+_pump(520)
 check("完成页出现", wz._idx == 4)
-wz._finish()
+wz._finish()                  # 完成仪式：遮罩三幕，最后才 accept
+_pump(400)                    # 遮罩扩张中
+check("仪式进行中尚未关闭", wz.result() == 0)
+_pump(2800)                   # 等三幕全部走完
+check("仪式结束后 accept", wz.result() == 1, wz.result())
 check("完成后写 setup_done", win.cfg.setup_done is True)
 check("外观选择已生效", win.cfg.theme == "dark", win.cfg.theme)
 win.cfg.setup_done = False    # 还原，别影响后面依赖默认配置的段落

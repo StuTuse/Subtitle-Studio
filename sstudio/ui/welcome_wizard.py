@@ -50,6 +50,7 @@ from ..core.config import BUILTIN_PRESETS, Config, LLMProfile
 from .first_run_dialog import FirstRunDialog
 from .splash import app_icon
 from .theme import dim_span, is_dark, status_hex
+from . import wizard_fx
 
 
 # ==================================================================== 页面基类
@@ -520,6 +521,7 @@ class WelcomeWizard(QDialog):
             self.stack.addWidget(pg)
             self.pages.append(pg)
         self._idx = 0
+        self._anim_lock = False
 
         # 底部导航
         nav = QHBoxLayout()
@@ -543,31 +545,46 @@ class WelcomeWizard(QDialog):
         self._show_page(0)
 
     # ------------------------------------------------------------ 导航
-    def _show_page(self, idx: int) -> None:
+    def _show_page(self, idx: int, direction: int = 0) -> None:
+        """切页。direction: +1 前进 / -1 后退 / 0 首次进入（无动画）。"""
+        prev = self.pages[self._idx] if hasattr(self, "_idx") else None
         self._idx = idx
+        cur = self.pages[idx]
         for i, pg in enumerate(self.pages):
             pg.setVisible(i == idx)
-        for i, d in enumerate(self.dot_labels):
-            done = i < idx
-            cur = i == idx
-            bg = ("#2f6db3" if cur else "#8fb8e0" if done else "#c0c0c0")
-            if is_dark():
-                bg = {"cur": "#4a90d9", "done": "#2f5f8a", "todo": "#3a3a3a"}[
-                    "cur" if cur else ("done" if done else "todo")]
-            d.setStyleSheet(f"border-radius:5px;background:{bg};")
-        pg = self.pages[idx]
+        self._paint_dots(idx)
         is_first = idx == 0
         is_last = idx == len(self.pages) - 1
         self.btn_back.setVisible(not is_first)
         self.btn_next.setVisible(not is_last)
         self.btn_finish.setVisible(is_last)
         if not is_last:
-            self.btn_next.setText("开始使用" if False else
-                                  ("下一步" if idx < len(self.pages) - 2 else "去体检"))
-        pg.on_enter()
+            self.btn_next.setText("下一步" if idx < len(self.pages) - 2
+                                  else "去体检")
+        cur.on_enter()
         self.update_nav()
         if is_last and hasattr(self.pages[-1], "refresh_summary"):
             self.pages[-1].refresh_summary(self.cfg, self.pages[3]._items)
+        # ---- 动效 ----
+        if direction and prev is not None and prev is not cur:
+            # 旧页滑出 → 新页从另一侧推入（macOS 前进右推/后退左推）
+            wizard_fx.page_in(cur, direction)
+        elif not direction:
+            # 首次进入：整页淡入 + 内容级联
+            wizard_fx.pop_in(cur)
+
+    def _paint_dots(self, idx: int) -> None:
+        """进度点：当前 = 实心蓝胶囊，已过 = 浅蓝，未到 = 灰。"""
+        for i, d in enumerate(self.dot_labels):
+            done = i < idx
+            cur = i == idx
+            if is_dark():
+                bg = ("#4a90d9" if cur else "#2f5f8a" if done else "#3a3a3a")
+            else:
+                bg = ("#2f6db3" if cur else "#8fb8e0" if done else "#c0c0c0")
+            d.setStyleSheet(f"border-radius:5px;background:{bg};")
+            if cur:
+                d._from_w = d.width()
 
     def update_nav(self) -> None:
         pg = self.pages[self._idx]
@@ -579,22 +596,71 @@ class WelcomeWizard(QDialog):
 
     def _go_next(self) -> None:
         pg = self.pages[self._idx]
-        if not pg.is_valid():
+        if not pg.is_valid() or self._anim_lock:
             return
         if isinstance(pg, _ModelPage):
             pg.apply(self.cfg)
-        self._show_page(min(self._idx + 1, len(self.pages) - 1))
+        nxt = min(self._idx + 1, len(self.pages) - 1)
+        if nxt == self._idx:
+            return
+        self._anim_lock = True
+        out = self.pages[self._idx]
+        wizard_fx.page_out(out, +1,
+                           on_done=lambda: (wizard_fx.clear_effect(out),
+                                            out.setVisible(False)))
+        # 不等退出走完就开始推入（重叠节奏更像 macOS），退出动画自己会收尾
+        self._show_page(nxt, +1)
+        QTimer.singleShot(wizard_fx._PAGE_MS + 60,
+                          lambda: setattr(self, "_anim_lock", False))
 
     def _go_back(self) -> None:
-        self._show_page(max(self._idx - 1, 0))
+        if self._anim_lock:
+            return
+        prev = max(self._idx - 1, 0)
+        if prev == self._idx:
+            return
+        self._anim_lock = True
+        out = self.pages[self._idx]
+        wizard_fx.page_out(out, -1,
+                           on_done=lambda: (wizard_fx.clear_effect(out),
+                                            out.setVisible(False)))
+        self._show_page(prev, -1)
+        QTimer.singleShot(wizard_fx._PAGE_MS + 60,
+                          lambda: setattr(self, "_anim_lock", False))
 
     def _finish(self) -> None:
+        """完成仪式：按钮扩张铺满 → 文案级联 → 模糊消散露出主窗。"""
+        if self._anim_lock:
+            return
+        self._anim_lock = True
         app_pg = self.pages[1]
         if isinstance(app_pg, _AppearancePage):
             app_pg.apply(self.cfg)
         self.cfg.setup_done = True
         self.cfg.save()
-        self.accept()
+        # 仪式文案：应用名 + "一切就绪"，盖在遮罩上
+        logo = QLabel(self)
+        logo.setPixmap(app_icon().pixmap(64, 64))
+        logo.setFixedSize(64, 64)
+        name = QLabel("Subtitle Studio", self)
+        f = name.font()
+        f.setPointSize(24)
+        f.setBold(True)
+        name.setFont(f)
+        name.setStyleSheet("color:#ffffff;background:transparent;")
+        name.adjustSize()
+        sub = QLabel("开始制作你的第一条字幕", self)
+        sf = sub.font()
+        sf.setPointSize(11)
+        sub.setFont(sf)
+        sub.setStyleSheet("color:rgba(255,255,255,200);background:transparent;")
+        sub.adjustSize()
+        for w in (name, sub):
+            w.setVisible(False)
+        wizard_fx.finish_reveal(
+            self.btn_finish, self, logo_widget=logo,
+            text_widgets=[name, sub],
+            on_done=self.accept)
 
 
 def maybe_show_welcome(cfg: Config, parent=None) -> bool:
