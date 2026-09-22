@@ -44,7 +44,7 @@ except Exception:  # pragma: no cover
 
 from ..core import doctor
 from ..core.config import Config
-from .theme import status_hex
+from .theme import dim_span, status_hex
 from .workers import ThreadedCall, reap
 
 _LEVEL_TAG = {"required": "必需", "recommend": "建议", "optional": "可选"}
@@ -139,7 +139,7 @@ class FirstRunDialog(QDialog):
         name = BodyLabel(f"{it.title}（{_LEVEL_TAG.get(it.level, it.level)}）", card)
         mid.addWidget(name)
         det = it.detail or ""
-        line2 = it.why + (f"　<span style='color:#888'>{det}</span>" if det else "")
+        line2 = it.why + (f"　{dim_span(det)}" if det else "")
         sub = CaptionLabel(line2, card)
         sub.setWordWrap(True)
         try:
