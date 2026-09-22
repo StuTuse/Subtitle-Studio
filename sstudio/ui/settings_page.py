@@ -271,9 +271,9 @@ class SettingsInterface(QWidget):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.engine = ComboBox(card)
-        self.engine.addItem("faster-whisper（本机推理，推荐）", "faster-whisper")
-        self.engine.addItem("whisper.cpp", "whisper.cpp")
-        self.engine.addItem("云端语音转写 API", "openai_api")
+        self.engine.addItem("faster-whisper（本机推理，推荐）", userData="faster-whisper")
+        self.engine.addItem("whisper.cpp", userData="whisper.cpp")
+        self.engine.addItem("云端语音转写 API", userData="openai_api")
         self._gate_engines()
         self.engine.currentIndexChanged.connect(self._engine_changed)
         form.addRow("引擎", self.engine)
@@ -288,14 +288,14 @@ class SettingsInterface(QWidget):
         form.addRow("", self.btn_rescan)
 
         self.device = ComboBox(card)
-        self.device.addItem("auto（自动选择）", "auto")
-        self.device.addItem("cuda（N 卡加速）", "cuda")
-        self.device.addItem("cpu（纯 CPU）", "cpu")
+        self.device.addItem("auto（自动选择）", userData="auto")
+        self.device.addItem("cuda（N 卡加速）", userData="cuda")
+        self.device.addItem("cpu（纯 CPU）", userData="cpu")
         form.addRow("计算设备", self.device)
 
         self.compute = ComboBox(card)
         for c in ("auto", "float16", "int8_float16", "int8", "float32"):
-            self.compute.addItem(c, c)
+            self.compute.addItem(c, userData=c)
         form.addRow("量化精度", self.compute)
 
         self.lang = ComboBox(card)
@@ -303,7 +303,7 @@ class SettingsInterface(QWidget):
                            ("en（英语）", "en"), ("ja（日语）", "ja"), ("ko（韩语）", "ko"),
                            ("yue（粤语）", "yue"), ("fr（法语）", "fr"), ("de（德语）", "de"),
                            ("translate:zh（其它语言→翻译成中文）", "translate:zh")):
-            self.lang.addItem(label, val)
+            self.lang.addItem(label, userData=val)
         form.addRow("语言", self.lang)
 
         self.beam = SafeSpinBox(card)
@@ -333,7 +333,7 @@ class SettingsInterface(QWidget):
         for label, val in (("ModelScope（国内最快，推荐）", "modelscope"),
                            ("hf-mirror（HuggingFace 国内镜像）", "hf-mirror"),
                            ("huggingface.co（官方，需科学上网）", "official")):
-            self.mirror.addItem(label, val)
+            self.mirror.addItem(label, userData=val)
         self.mirror.setToolTip(
             "本地没有模型、需要在线下载时的来源。\n\n"
             "ModelScope：阿里国内 CDN，实测 18MB/s，下载 1.5GB 模型约 2 分钟；\n"
@@ -709,15 +709,15 @@ class SettingsInterface(QWidget):
         self.model.clear()
         cands = discover_ct2_models()
         for c in cands:
-            self.model.addItem(f"{c['name']}（{c['size']:.0f} MB）", c["path"])
+            self.model.addItem(f"{c['name']}（{c['size']:.0f} MB）", userData=c["path"])
         for quick in ("large-v3-turbo", "large-v3", "medium", "small", "base", "tiny"):
-            self.model.addItem(f"⤓ 在线下载 {quick}", quick)
+            self.model.addItem(f"⤓ 在线下载 {quick}", userData=quick)
         cur = self.cfg.whisper_model or typed
         idx = self.model.findData(cur)
         if idx < 0 and cur:
             # 配置里存的可能是自定义路径：作为额外一项插到最前
             shown = os.path.basename(cur.rstrip("/" + "\\")) or cur
-            self.model.insertItem(0, f"{shown}  [自定义路径]", cur)
+            self.model.insertItem(0, f"{shown}  [自定义路径]", userData=cur)
             idx = 0
         self.model.setCurrentIndex(max(0, idx))
         if typed and not self.model.currentText():

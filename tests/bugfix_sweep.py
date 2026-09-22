@@ -421,4 +421,29 @@ try:
 finally:
     _tr.discover_ct2_models = _orig_disc
 
+
+section("18. 设置页下拉 userData 真实落地（qfluentwidgets 第二位置参数是图标！）")
+# qfluentwidgets.ComboBox.addItem(text, icon, userData)：按 QComboBox 习惯
+# 写 addItem(text, "value") 会把值塞进 icon 参数，itemData 永远 None，
+# 保存时全走 or 兜底——引擎/设备/精度/语言/模型五个下拉等于全部失效。
+from PyQt5.QtWidgets import QApplication as _QA
+_qa = _QA.instance() or _QA([])
+from qfluentwidgets import ComboBox as _QFCombo
+_probe_c = _QFCombo()
+_probe_c.addItem("甲", "a")
+check("位置参数写法确实丢数据（钉死这个库的坑）", _probe_c.itemData(0) is None)
+_probe_c2 = _QFCombo()
+_probe_c2.addItem("甲", userData="a")
+check("userData= 关键字才有效", _probe_c2.itemData(0) == "a")
+
+import sstudio.ui.settings_page as _sp
+_fake_main = type("M", (), {"doc": None})
+_dlg = _sp.SettingsInterface(_sp.Config(), _fake_main)
+for _nm in ("engine", "device", "compute", "lang", "mirror"):
+    _c = getattr(_dlg, _nm)
+    check(f"{_nm} 当前项 userData 非空", _c.currentData() not in (None, ""),
+          _c.currentData())
+check("模型下拉 userData 非空（选了本地模型必须真的存路径，不是显示文本）",
+      _dlg.model.currentData() not in (None, ""), _dlg.model.currentData())
+
 raise SystemExit(finish())
