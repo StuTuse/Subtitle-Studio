@@ -13,6 +13,15 @@ faster-whisper>=1.0.0             # 内含 ctranslate2 / tokenizers / onnxruntim
 # ---- 大模型纠错 ----
 openai>=1.30.0                    # 只用 chat.completions，兼容一切 OpenAI 协议服务
 
+# ---- 视频解码兜底 ----
+av>=12.0.0                        # PyAV：ffmpeg 不在 PATH 时的解码后备，缺了读不了视频
+
+# ---- NVIDIA GPU 推理（可选，有 N 卡才装；程序自己扫 site-packages\nvidia 找 DLL）----
+# nvidia-cublas-cu12
+# nvidia-cudnn-cu12
+# nvidia-cuda-runtime-cu12
+
 # ---- 说明 ----
-# 1) ffmpeg 不是 pip 依赖。程序会依次尝试：PATH -> PyAV 解码。
+# 1) ffmpeg 不是 pip 依赖。程序会依次尝试：PATH -> PyAV（上面的 av）解码。
 # 2) 打包 exe 另外需要： pip install pyinstaller
+# 3) 不需要装 CUDA Toolkit，也不需要 torch。

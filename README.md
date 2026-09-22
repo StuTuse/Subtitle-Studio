@@ -298,6 +298,100 @@ pyinstaller build.spec --noconfirm
 
 ---
 
+## 九·五、换电脑继续开发
+
+代码、tag、GitHub Release 都在 GitHub 上，**仓库本身不用拷**。要手工搬的只有三样：凭据、模型（其实也不用，见第 5 步）、可选的本地配置。
+
+### 1. 新机器装什么
+
+| 必装 | 说明 |
+| --- | --- |
+| Git for Windows | 克隆、发版打 tag |
+| Python 3.10 x64 | 本机是 3.10.11，其他版本没验证过 |
+| Visual Studio 2015–2022 可再发行组件（vc_redist.x64） | PyQt5 / ctranslate2 缺 MSVC 运行时会在 import 时才炸，报错还看不懂 |
+
+然后装依赖（国内走清华源）：
+
+```bat
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install pyinstaller pyflakes -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+按需再装：
+
+* **Inno Setup 6** — 发版脚本靠它出安装包。没装会温和跳过（只产出 `dist\`），脚本自动搜 `Program Files`、`Program Files (x86)`、`%LOCALAPPDATA%\Programs` 三处。
+* **GitHub CLI** — 发布 Release 传附件用，没有就去网页手动传。
+* **ffmpeg** — 可选。不在 PATH 时程序自动改用 PyAV 解码（`av` 随 requirements 一起装），不装也跑得通全流程。
+
+> `torch` 不在依赖里，代码没有任何地方 import 它，别装（十几 GB 白搭）。
+
+### 2. 拉代码、配提交身份
+
+```bat
+git clone git@github.com:StuTuse/Subtitle-Studio.git
+cd Subtitle-Studio
+git config user.name  "StuTuse"
+git config user.email "StuTuse@users.noreply.github.com"
+```
+
+`release.py` 开工就先查提交身份，没配会直接停下而不是硬来。嫌 `.git` 大（452 MB，历史里躺着旧安装包二进制）可以 `git clone --depth 1`，但发版要打 tag，正式开发还是完整克隆。
+
+### 3. 凭据（不进仓库）
+
+```bat
+gh auth login
+```
+
+发版脚本从 `%USERPROFILE%\.config\gh\hosts.yml` 读 `oauth_token`，`gh auth login` 之后自动可用。把旧机器那份 hosts.yml 整个拷过来也一样能用（里面是明文 PAT）。
+
+LLM 的 API Key / Base URL 在 `%APPDATA%\SubtitleStudio\config.json`，明文——要么新机器设置页重填，要么整份配置拷过来。注意「恢复默认」不会清掉这两项（`Config._RESET_KEEP` 专门保住了它们）。
+
+### 4. GPU 加速：不用装 CUDA Toolkit
+
+运行时用的是 pip 装的 nvidia 官方 wheel：
+
+```bat
+pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12 -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+程序启动时会自己扫 `site-packages\nvidia\**\bin`，把 `cublas64_12.dll` 注册进 DLL 搜索路径（`sstudio/core/cuda_rt.py`）；真报 cublas 缺失，设置页的体检向导有一键修复。所以新机器**只要显卡驱动够新（支持 CUDA 12.9）就行，别装 CUDA Toolkit**。
+
+### 5. 转写模型：什么都不用拷
+
+1.5 GB 的模型 `.gitignore` 掉了。v1.12.0 起首次转写会自动从 ModelScope 下载（实测 18~23 MB/s，约 1 分钟，带进度和断点续传），落到 `%LOCALAPPDATA%\SubtitleStudio\models\`，之后永久复用。赶时间也可以直接拷这个目录，保持内部结构不变就能被自动发现。
+
+### 6. 验证环境齐不齐
+
+```bat
+python tests\doctor.py              :: 体检：python/pyqt5/faster_whisper/pyav/ffmpeg/cuda12
+python -m compileall -q sstudio tests
+set QT_QPA_PLATFORM=offscreen
+python tests\run_all.py --quick     :: 不碰 GPU 的快速套件
+python tests\run_all.py             :: 全量（含真实 GPU 转写，首次会触发模型下载）
+```
+
+`tests\transcribe.py` 用的测试素材是本机私人素材，新机器上不存在时该套件自己打印「跳过」，不算故障。
+
+### 7. 顺带一提
+
+`release_shortcut.py`（发版脚本的快捷方式同步测试）全在临时目录里跑，新机器直接就是绿的，不用拷旧快捷方式。真要用软件，跑一次 `release.py --build` 时它会自动把桌面快捷方式指到新的 `dist\` 产物。
+
+### 8. 别拷的
+
+`dist\`、`build\`、`installer\*.exe` 都是可再生的产物，几百 MB。
+
+### 9. 迁移完自查一遍
+
+```bat
+python tests\doctor.py
+python tests\run_all.py
+python -X utf8 release.py --dry-run
+```
+
+三条都干净（体检无 required 缺失、全量测试通过、发版演练不报错），就可以在新机器上照常开发和发版了。
+
+---
+
 ## 十、技术选型
 
 * **PyQt5 + PyQt-Fluent-Widgets** — 原生桌面体验，Win11 风格，离线可用。
