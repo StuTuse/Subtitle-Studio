@@ -223,6 +223,7 @@ class Config:
     auto_close_gaps: bool = True             # 转写后自动消除字幕间小空隙（防闪烁）
     gap_max: float = 0.35                    # 小于该秒数且不是句末停顿的空隙才衔接
     player_volume: int = 80
+    setup_done: bool = False                 # 欢迎向导完成标记（首启配置流程）
 
     # ------------------------------------------------------------ I/O
     def to_dict(self) -> Dict[str, Any]:

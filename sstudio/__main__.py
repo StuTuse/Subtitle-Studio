@@ -174,22 +174,30 @@ def main(argv=None) -> int:
     app.processEvents()
     splash.finish()
 
-    # 首次使用：弹环境体检（检查必要组件，缺啥可一键补装）。只在首启自动弹。
+    # 首次使用：欢迎向导（选外观 → 连模型 → 环境体检），完成写 setup_done=1。
+    # 之后启动直接进主界面；体检可从设置页随时重开。
     # 返回 False = 必需组件缺失且用户点了"退出程序"，此时不能再进主界面。
     try:
-        from sstudio.ui.first_run_dialog import maybe_show_first_run
-        if not maybe_show_first_run(cfg, parent=win):
+        from sstudio.ui.welcome_wizard import maybe_show_welcome
+        if not maybe_show_welcome(cfg, parent=win):
             win.hide()
             return 0
     except Exception:
-        # 向导自身崩了不能连累主程序，但也不能一点线索都不留
+        # 向导自身崩了不能连累主程序，退回旧的纯体检窗口，仍留线索
         try:
             import traceback
             from sstudio.core.config import data_dir
             with open(os.path.join(data_dir(), "crash.log"), "a",
                       encoding="utf-8") as f:
-                f.write("\n# 首启体检窗口异常\n")
+                f.write("\n# 欢迎向导异常\n")
                 traceback.print_exc(file=f)
+        except Exception:
+            pass
+        try:
+            from sstudio.ui.first_run_dialog import maybe_show_first_run
+            if not maybe_show_first_run(cfg, parent=win):
+                win.hide()
+                return 0
         except Exception:
             pass
 

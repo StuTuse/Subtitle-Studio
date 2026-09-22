@@ -311,6 +311,32 @@ check("接入点参数也是防误触控件",
           ("p_temp", "p_maxtok", "p_timeout", "batch", "conc", "retry",
            "beam", "ui_scale", "gap_max")))
 
+section("8c. 欢迎向导（首启配置流程）")
+from sstudio.ui.welcome_wizard import WelcomeWizard  # noqa: E402
+wz = WelcomeWizard(win.cfg, parent=win)
+pump()
+check("五个页面齐全", len(wz.pages) == 5, len(wz.pages))
+check("初始在第 1 页（欢迎）", wz._idx == 0)
+check("第一页不显示上一步", not wz.btn_back.isVisibleTo(wz))
+wz._go_next()
+check("外观页出现", wz._idx == 1)
+wz.pages[1]._pick("dark")
+wz._go_next()
+check("模型页出现且预填预设", wz._idx == 2 and
+      "deepseek" in wz.pages[2].p_base.text().lower(),
+      wz.pages[2].p_base.text())
+wz.pages[2]._skip()
+check("跳过模型后可通过", wz.pages[2].is_valid())
+wz._go_next()
+check("体检页出现", wz._idx == 3)
+wz.pages[3]._items = []       # 模拟体检完成
+wz._go_next()
+check("完成页出现", wz._idx == 4)
+wz._finish()
+check("完成后写 setup_done", win.cfg.setup_done is True)
+check("外观选择已生效", win.cfg.theme == "dark", win.cfg.theme)
+win.cfg.setup_done = False    # 还原，别影响后面依赖默认配置的段落
+
 section("9. 工程保存/载入")
 with TempDir() as d:
     p = os.path.join(d, "t.ssp")
