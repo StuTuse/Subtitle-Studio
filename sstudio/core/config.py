@@ -169,6 +169,8 @@ BUILTIN_PRESETS: List[Dict[str, str]] = [
     {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "model": "deepseek/deepseek-chat"},
     {"name": "Ollama (本地)", "base_url": "http://127.0.0.1:11434/v1", "model": "qwen2.5:14b", "api_key": "ollama"},
     {"name": "LM Studio (本地)", "base_url": "http://127.0.0.1:1234/v1", "model": "local-model", "api_key": "lm-studio"},
+    {"name": "UJN 中转 (本地)", "base_url": "http://127.0.0.1:8790/v1", "model": "deepseek-v41-flash",
+     "api_key": "ujn", "no_reasoning": True},
 ]
 
 
