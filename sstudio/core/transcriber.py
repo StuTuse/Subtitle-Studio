@@ -48,6 +48,183 @@ class TranscribeError(RuntimeError):
     pass
 
 
+# ---------------------------------------------------------------- 模型下载
+HF_MIRROR = "https://hf-mirror.com"
+MODELSCOPE = "https://modelscope.cn"
+
+# 模块导入即设默认镜像：huggingface_hub 在第一次被 import 时就把 HF_ENDPOINT
+# 读进 constants，晚设无效。本模块先于 doctor/faster_whisper 的任何导入路径
+# 加载（settings_page、workers 都在模块层 import 本文件），所以放这里最稳。
+# 真正的下载地址在每次转写前按设置再校准一次（_apply_download_source）。
+os.environ.setdefault("HF_ENDPOINT", HF_MIRROR)
+
+
+def _ensure_hf_endpoint() -> None:
+    """惰性兜底：即使别处抢先 import 了 hub 库，至少把环境变量摆正。"""
+    os.environ.setdefault("HF_ENDPOINT", HF_MIRROR)
+
+
+def _is_net_error(msg: str) -> bool:
+    low = msg.lower()
+    return any(k in low for k in (
+        "network", "resolve", "offline", "hf client", "connecttimeout",
+        "timeout", "timed out", "10060", "getaddrinfo", "connection error",
+        "readtimeout", "ssl", "proxy"))
+
+
+# faster-whisper 认的模型名 -> ModelScope 上对应仓库（内容即 CT2 格式，可直接用）。
+_MS_REPOS = {n: f"pengzhendong/faster-whisper-{n}" for n in (
+    "tiny", "base", "small", "medium", "large-v1", "large-v2",
+    "large-v3", "large-v3-turbo")}
+_MODEL_ALIASES = {"large": "large-v3", "turbo": "large-v3-turbo"}
+
+
+def _model_key(s: str) -> str:
+    """把 'faster-whisper-large-v3-turbo'/'turbo'/路径末段归一成同一个键。"""
+    s = (s or "").strip().lower().replace("models--", "")
+    s = os.path.basename(s.rstrip("/\\")).replace("--", "-")
+    if s.startswith("faster-whisper-"):
+        s = s[len("faster-whisper-"):]
+    return _MODEL_ALIASES.get(s, s)
+
+
+def _ms_repo_for(model: str) -> str:
+    """把 'large-v3-turbo'/'large'/'turbo' 等映射到 ModelScope 仓库名。"""
+    return _MS_REPOS.get(_model_key(model), "")
+
+
+def _apply_hf_mirror(enabled: bool) -> str:
+    """（兼容旧入口）True=走 hf-mirror，False=官方。新代码请用 _apply_download_source。"""
+    return _apply_download_source("hf-mirror" if enabled else "official")
+
+
+def _apply_download_source(source: str) -> str:
+    """按设置切换 HuggingFace 侧的下载地址，返回生效的 endpoint。
+
+    环境变量 HF_ENDPOINT 只对「还没 import 过 hub 库」的进程有效；库已
+    加载时直接改 constants（snapshot_download 的 endpoint 默认取自这里），
+    两条路都堵上。
+
+    走镜像时还要关掉 Xet 存储：新 huggingface_hub 优先用 Xet 协议下载，
+    它固定连 cas-server.xethub.hf.co —— 镜像不代理这个域名，结果是
+    「镜像明明通了却报 401」（实测）。关掉后退回普通 HTTP 分片下载。
+    """
+    ep = {"hf-mirror": HF_MIRROR, "modelscope": HF_MIRROR}.get(
+        source, "https://huggingface.co")
+    disable_xet = ep != "https://huggingface.co"
+    os.environ["HF_ENDPOINT"] = ep
+    os.environ["HF_HUB_DISABLE_XET"] = "1" if disable_xet else "0"
+    try:
+        import huggingface_hub
+        consts = getattr(huggingface_hub, "constants", None)
+        if consts is not None:
+            if getattr(consts, "ENDPOINT", "") != ep:
+                consts.ENDPOINT = ep
+                if hasattr(consts, "HUGGINGFACE_CO_URL_TEMPLATE"):
+                    consts.HUGGINGFACE_CO_URL_TEMPLATE = \
+                        ep + "/{repo_id}/resolve/{revision}/{filename}"
+            consts.HF_HUB_DISABLE_XET = disable_xet
+    except Exception:
+        pass
+    return ep
+
+
+def _download_from_modelscope(model: str, dest_root: str,
+                              progress: Optional[Progress] = None,
+                              cancel: Optional[Cancel] = None) -> str:
+    """从 ModelScope 拉取 CT2 模型目录，返回可直接喂给 faster-whisper 的路径。
+
+    为什么自己写：国内网络下 huggingface.co 直连超时、hf-mirror 大文件只有
+    ~0.3MB/s（实测 1.6GB 要 90 分钟，且 hub 下载器会直接卡死），而 ModelScope
+    同一个模型实测 18MB/s。用它的 HTTP 直链 + 标准 HF 缓存目录结构落地，
+    discover_ct2_models 之后就能照常发现，与 HF 下载的模型完全等价。
+    """
+    import httpx
+
+    repo = _ms_repo_for(model)
+    if not repo:
+        raise TranscribeError(
+            f"「{model}」不在内置下载列表里。\n"
+            "请改用 tiny/base/small/medium/large-v3/large-v3-turbo 之一，"
+            "或在「设置 → 模型」里直接填本地模型目录。")
+    files = list(_CT2_FILES) + ["preprocessor_config.json", "vocabulary.json"]
+    cache_root = os.path.join(dest_root, "models--" + repo.replace("/", "--"))
+    # 快照目录名用仓库名而不是随意字符串：discover/resolve 靠路径末段匹配
+    # 模型名，叫 "modelscope" 会让下次 resolve 认不出来、又下一遍 1.5GB。
+    snap = os.path.join(cache_root, "snapshots", repo.split("/")[-1])
+    os.makedirs(snap, exist_ok=True)
+    total_bytes = 0.0
+    done_bytes = 0.0
+    try:
+        with httpx.Client(timeout=httpx.Timeout(30.0, read=120.0),
+                          follow_redirects=True) as cli:
+            sizes = {}
+            for fn in files:
+                u = f"{MODELSCOPE}/models/{repo}/resolve/master/{fn}"
+                try:
+                    with cli.stream("GET", u) as r:
+                        if r.status_code == 200:
+                            sizes[fn] = int(r.headers.get("content-length") or 0)
+                        elif r.status_code == 404:
+                            sizes[fn] = 0       # 该仓库没这个文件：可选，跳过
+                except Exception:
+                    sizes[fn] = 0
+            total_bytes = float(sum(sizes.values())) or 1.0
+            for fn in files:
+                if cancel and cancel():
+                    raise TranscribeError("已取消。")
+                target = os.path.join(snap, fn)
+                expect = sizes.get(fn, 0)
+                if expect and os.path.isfile(target) and os.path.getsize(target) == expect:
+                    done_bytes += expect       # 已在本地：断点续传的核心
+                    continue
+                if not expect:
+                    continue
+                url = f"{MODELSCOPE}/models/{repo}/resolve/master/{fn}"
+                tmp = target + ".part"
+                pos = os.path.getsize(tmp) if os.path.isfile(tmp) else 0
+                hdr = {"Range": f"bytes={pos}-"} if pos else {}
+                with cli.stream("GET", url, headers=hdr) as r:
+                    if r.status_code not in (200, 206):
+                        raise TranscribeError(
+                            f"ModelScope 下载失败（HTTP {r.status_code}）：{url}")
+                    if pos and r.status_code == 200:
+                        pos = 0              # 服务器不认 Range，重来
+                    mode = "ab" if (pos and r.status_code == 206) else "wb"
+                    got = pos
+                    last_ui = 0.0
+                    with open(tmp, mode) as fh:
+                        for chunk in r.iter_bytes(1024 * 512):
+                            if cancel and cancel():
+                                raise TranscribeError("已取消。")
+                            fh.write(chunk)
+                            got += len(chunk)
+                            done_bytes += len(chunk)
+                            now = time.perf_counter()
+                            if progress and now - last_ui > 0.25:
+                                last_ui = now
+                                mb = got / 1048576.0
+                                progress(
+                                    f"下载模型 {fn} {mb:.0f}/{expect/1048576:.0f} MB"
+                                    f"（合计约 {done_bytes/1048576:.0f}/"
+                                    f"{total_bytes/1048576:.0f} MB，完成后永久复用）", -1)
+                os.replace(tmp, target)
+    except TranscribeError:
+        raise
+    except ImportError as e:
+        raise TranscribeError(f"缺少 httpx 依赖，无法下载模型：{e}") from e
+    except Exception as e:
+        if _is_net_error(str(e)):
+            raise TranscribeError(
+                f"从 ModelScope 下载「{model}」失败：网络不通。\n"
+                "可换「设置 → 模型下载源」为 hf-mirror，或手动下载模型目录后在设置里填路径。") from e
+        raise TranscribeError(f"从 ModelScope 下载失败：{e}") from e
+    if not all(os.path.isfile(os.path.join(snap, f)) for f in _CT2_FILES):
+        raise TranscribeError(
+            f"ModelScope 仓库 {repo} 缺少 CT2 必需文件，换其它模型或下载源试试。")
+    return snap
+
+
 @dataclass
 class TranscriptResult:
     cues: List[Cue]
@@ -233,16 +410,16 @@ class FasterWhisperEngine:
             return "large-v3-turbo"
         if os.path.isdir(m):
             return m
-        key = m.lower()
-        # 先精确匹配，再退子串：光用子串会让 "large-v3" 静默命中
-        # faster-whisper-large-v3-turbo 目录——用户以为跑的是满血 v3。
+        key = _model_key(m)
         cands = discover_ct2_models()
+        # 必须按归一化后的「全名」相等来配：老写法先精确比 basename 再退
+        # 子串，导致用户选 large-v3 时子串命中 large-v3-turbo 目录——
+        # 以为在用满血 v3，实际跑的是 turbo。宁可回退下载也不能认错。
+        # 名字要同时看 path 末段和发现项名称：HF 官方缓存的 path 末段是
+        # revision 哈希，光比 path 会把本机已有的模型认不出来、重复下载。
         for cand in cands:
-            base = os.path.basename(cand["path"]).lower()
-            if base == key or base == f"faster-whisper-{key}":
-                return cand["path"]
-        for cand in cands:
-            if key in os.path.basename(cand["path"]).lower():
+            label = (cand.get("name") or "").split()[0]
+            if key in (_model_key(cand["path"]), _model_key(label)):
                 return cand["path"]
         return m
 
@@ -258,10 +435,26 @@ class FasterWhisperEngine:
         from . import cuda_rt
 
         cfg = self.cfg
+        source = str(getattr(cfg, "model_source", "modelscope") or "modelscope")
+        ep = _apply_download_source(source)
         model_path = self.resolve_model(cfg.whisper_model)
         device, compute = _pick_device(cfg, progress)
+        if not os.path.isdir(model_path):
+            # 本地没有：按设置从 ModelScope / hf-mirror / 官方下载
+            if source == "modelscope" and _ms_repo_for(cfg.whisper_model):
+                if progress:
+                    progress("本地未找到模型，正在从 ModelScope 下载"
+                             "（首次约 1.5 GB，完成后永久复用）…", -1)
+                model_path = _download_from_modelscope(
+                    cfg.whisper_model,
+                    getattr(cfg, "model_dir", "") or models_dir(),
+                    progress=progress, cancel=cancel)
+            elif progress:
+                progress(f"本地未找到模型，正在从 {ep.replace('https://', '')} 下载"
+                         "（首次约 1.5 GB，完成后永久复用）…", -1)
         if progress:
-            progress(f"加载模型 {os.path.basename(str(model_path))}（{device}/{compute}）…", -1)
+            if os.path.isdir(model_path):
+                progress(f"加载模型 {os.path.basename(str(model_path))}（{device}/{compute}）…", -1)
         t0 = time.time()
         try:
             model, device, compute, note = _load_model(
@@ -278,10 +471,11 @@ class FasterWhisperEngine:
                     "GPU 推理失败：缺少 CUDA 12 运行时（cublas64_12.dll）。\n\n"
                     f"{cuda_rt.describe()}\n\n"
                     "临时办法：在「设置 → 计算设备」改成 cpu 先跑通。") from e
-            if "network" in low or "resolve" in low or "offline" in low or "hf client" in low:
+            if _is_net_error(msg):
+                hint = ("请检查网络，或在「设置 → 模型下载源」换一项"
+                        f"（当前：{source}），也可改选已下载的本地模型。")
                 raise TranscribeError(
-                    f"本地找不到模型「{cfg.whisper_model}」，且无法联网下载。\n"
-                    "请到「设置 → 转写」里改选一个已下载的本地模型。") from e
+                    f"本地找不到模型「{cfg.whisper_model}」，且无法联网下载。\n{hint}") from e
             raise TranscribeError(f"模型加载失败：{msg}") from e
 
         prompt = (cfg.initial_prompt or "").strip()

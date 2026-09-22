@@ -282,4 +282,143 @@ check("空模板兜底 subtitle", n5 == "subtitle.srt", n5)
 check("未保存工程回落视频名而非 subtitle",
       _exp._base_name() == "我的视频", _exp._base_name())
 
+
+section("15. 模型下载走国内镜像 + 禁用 Xet（转写卡死/401 的根因）")
+from sstudio.core import transcriber as _tr
+
+# 模块导入即应设好镜像默认值（hub 库 import 时就固化 endpoint，晚设无效）
+check("import transcriber 后默认走镜像",
+      os.environ.get("HF_ENDPOINT") == _tr.HF_MIRROR,
+      os.environ.get("HF_ENDPOINT"))
+_ep_on = _tr._apply_hf_mirror(True)
+import huggingface_hub.constants as _hc
+check("开镜像：endpoint 指向 hf-mirror", _ep_on == _hc.ENDPOINT == _tr.HF_MIRROR,
+      f"{_ep_on} vs {_hc.ENDPOINT}")
+check("开镜像：Xet 必须禁用（镜像不代理 xethub 域名）",
+      _hc.HF_HUB_DISABLE_XET is True and os.environ.get("HF_HUB_DISABLE_XET") == "1",
+      f"{_hc.HF_HUB_DISABLE_XET}/{os.environ.get('HF_HUB_DISABLE_XET')}")
+_tr._apply_hf_mirror(False)
+check("关镜像：恢复官方地址并放行 Xet",
+      _hc.ENDPOINT == "https://huggingface.co" and _hc.HF_HUB_DISABLE_XET is False)
+check("URL 模板跟随 endpoint", _hc.HUGGINGFACE_CO_URL_TEMPLATE.startswith(
+    "https://huggingface.co"), _hc.HUGGINGFACE_CO_URL_TEMPLATE)
+_tr._apply_download_source("modelscope")      # 复原默认
+check("网络类异常识别覆盖 timeout/10060（旧文案只查 4 个词漏掉超时）",
+      _tr._is_net_error("ConnectTimeout: [WinError 10060] ...")
+      and _tr._is_net_error("The read operation timed out")
+      and not _tr._is_net_error("cublas64_12.dll is not found"))
+check("配置默认 ModelScope 源且能往返保存",
+      Config().model_source == "modelscope" and "model_source" in Config().to_dict())
+check("模型名映射 ModelScope 仓库（含 large/turbo 别名）",
+      _tr._ms_repo_for("large-v3-turbo") == "pengzhendong/faster-whisper-large-v3-turbo"
+      and _tr._ms_repo_for("large") == "pengzhendong/faster-whisper-large-v3"
+      and _tr._ms_repo_for("turbo") == "pengzhendong/faster-whisper-large-v3-turbo"
+      and _tr._ms_repo_for("faster-whisper-small") == "pengzhendong/faster-whisper-small"
+      and _tr._ms_repo_for("不存在的模型") == "")
+
+
+section("16. ModelScope 下载器：布局/完整性/断点续传（离线仿真）")
+import httpx as _httpx
+
+_STORE = {
+    "model.bin": b"M" * 3000,
+    "tokenizer.json": b"T" * 1200,
+    "config.json": b"C" * 300,
+    "preprocessor_config.json": b"P" * 100,
+    "vocabulary.json": b"V" * 800,
+}
+_ranges: list = []
+
+
+class _FakeResp:
+    def __init__(self, data, status=200):
+        self._data = data
+        self.status_code = status
+        self.headers = {"content-length": str(len(data))}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def iter_bytes(self, n):
+        for i in range(0, len(self._data), n):
+            yield self._data[i:i + n]
+
+
+class _FakeClient:
+    def __init__(self, *a, **k):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def stream(self, method, url, headers=None):
+        fn = url.rsplit("/", 1)[-1]
+        data = _STORE.get(fn)
+        if data is None:
+            return _FakeResp(b"", 404)
+        rng = (headers or {}).get("Range")
+        if rng:
+            _ranges.append(rng)
+            start = int(rng.split("=")[1].split("-")[0])
+            return _FakeResp(data[start:], 206)
+        return _FakeResp(data, 200)
+
+
+_httpx.Client = _FakeClient          # 只在本测试进程内生效
+with TempDir() as td:
+    snap = _tr._download_from_modelscope("large-v3-turbo", td, progress=None)
+    need = {"model.bin", "tokenizer.json", "config.json"}
+    check("下载后快照目录含 CT2 必需三件套", need <= set(os.listdir(snap)),
+          sorted(os.listdir(snap)))
+    check("文件内容逐字节完整",
+          open(os.path.join(snap, "model.bin"), "rb").read() == _STORE["model.bin"])
+    check("标准 HF 缓存布局可被自动发现",
+          os.path.basename(os.path.dirname(os.path.dirname(snap)))
+          == "models--pengzhendong--faster-whisper-large-v3-turbo", snap)
+    check("快照目录名==仓库名，resolve_model 能认回本地（防重复下载 1.5GB）",
+          _tr._model_key(snap) == "large-v3-turbo", snap)
+    with open(os.path.join(snap, "tokenizer.json"), "wb") as f:
+        f.write(_STORE["tokenizer.json"][:700])       # 模拟上次中断的半截文件
+    os.replace(os.path.join(snap, "tokenizer.json"),
+               os.path.join(snap, "tokenizer.json.part"))
+    _tr._download_from_modelscope("large-v3-turbo", td, progress=None)
+    check("半截 .part 走 Range 续传", "bytes=700-" in _ranges, _ranges)
+    check("续传拼出的文件与原件一致",
+          open(os.path.join(snap, "tokenizer.json"), "rb").read()
+          == _STORE["tokenizer.json"])
+
+
+section("17. 模型名解析：别名归一、拒绝张冠李戴、认得 HF 哈希目录")
+_c_turbo = {"name": "faster-whisper-large-v3-turbo  [本地]",
+            "path": os.path.join("C:", "m", "models--p--faster-whisper-large-v3-turbo",
+                                 "snapshots", "faster-whisper-large-v3-turbo")}
+_c_v3hash = {"name": "faster-whisper-large-v3  [HuggingFace 缓存]",
+             "path": os.path.join("C:", "m", "models--Systran--faster-whisper-large-v3",
+                                  "snapshots", "0a363e9")}
+check("别名 large→large-v3 / turbo→large-v3-turbo",
+      _tr._model_key("large") == "large-v3" and _tr._model_key("turbo") == "large-v3-turbo")
+check("路径末段/仓库名/前缀都能归一",
+      _tr._model_key(_c_turbo["path"]) == "large-v3-turbo"
+      and _tr._model_key("faster-whisper-medium") == "medium")
+check("revision 哈希末段不误判为模型名（resolve 靠 name 兜底）",
+      _tr._model_key(_c_v3hash["path"]) == "0a363e9")
+_orig_disc = _tr.discover_ct2_models
+_tr.discover_ct2_models = lambda: [_c_turbo, _c_v3hash]
+try:
+    _eng = _tr.FasterWhisperEngine(Config())
+    check("large-v3 绝不命中 turbo 目录（宁可重下也不张冠李戴）",
+          "turbo" not in _eng.resolve_model("large-v3"),
+          _eng.resolve_model("large-v3"))
+    check("large 命中 v3（path 末段是哈希时靠发现项名称认出）",
+          _eng.resolve_model("large") == _c_v3hash["path"], _eng.resolve_model("large"))
+    check("turbo 命中 turbo 目录", _eng.resolve_model("turbo") == _c_turbo["path"])
+finally:
+    _tr.discover_ct2_models = _orig_disc
+
 raise SystemExit(finish())

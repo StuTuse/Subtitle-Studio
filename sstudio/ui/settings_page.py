@@ -329,6 +329,18 @@ class SettingsInterface(QWidget):
         self.fallback.setChecked(True)
         form.addRow("GPU 不可用时自动转 CPU", self.fallback)
 
+        self.mirror = ComboBox(card)
+        for label, val in (("ModelScope（国内最快，推荐）", "modelscope"),
+                           ("hf-mirror（HuggingFace 国内镜像）", "hf-mirror"),
+                           ("huggingface.co（官方，需科学上网）", "official")):
+            self.mirror.addItem(label, val)
+        self.mirror.setToolTip(
+            "本地没有模型、需要在线下载时的来源。\n\n"
+            "ModelScope：阿里国内 CDN，实测 18MB/s，下载 1.5GB 模型约 2 分钟；\n"
+            "hf-mirror：HuggingFace 国内镜像，部分大文件很慢；\n"
+            "官方地址：国内直连通常超时，仅海外/有代理时选用。")
+        form.addRow("模型下载源", self.mirror)
+
         crow = QHBoxLayout()
         self.cuda_dir = LineEdit(card)
         self.cuda_dir.setPlaceholderText("含 cublas64_12.dll 的目录（留空=自动探测）")
@@ -483,6 +495,8 @@ class SettingsInterface(QWidget):
         self.gap_auto.setChecked(bool(getattr(cfg, "auto_close_gaps", True)))
         self.gap_max.setValue(float(getattr(cfg, "gap_max", 0.35) or 0.35))
         self.fallback.setChecked(bool(cfg.auto_cpu_fallback))
+        mi = self.mirror.findData(getattr(cfg, "model_source", "modelscope") or "modelscope")
+        self.mirror.setCurrentIndex(max(0, mi))
         self.cuda_dir.setText(getattr(cfg, "cuda_rt_dir", "") or "")
         di = self.device.findData(cfg.whisper_device)
         self.device.setCurrentIndex(max(0, di))
@@ -524,6 +538,7 @@ class SettingsInterface(QWidget):
         cfg.auto_close_gaps = self.gap_auto.isChecked()
         cfg.gap_max = float(self.gap_max.value())
         cfg.auto_cpu_fallback = self.fallback.isChecked()
+        cfg.model_source = self.mirror.currentData() or "modelscope"
         cfg.cuda_rt_dir = self.cuda_dir.text().strip()
         cfg.save()
         tip = "设置已写入本地配置文件。"

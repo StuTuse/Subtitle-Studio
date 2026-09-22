@@ -188,6 +188,7 @@ class Config:
     condition_on_previous_text: bool = False
     no_speech_threshold: float = 0.6
     model_dir: str = ""                      # 空 = 用默认缓存目录
+    model_source: str = "modelscope"         # 在线下载源：modelscope | hf-mirror | official
     cuda_rt_dir: str = ""                    # 手动指定 CUDA12 运行库目录（含 cublas64_12.dll）
     auto_cpu_fallback: bool = True           # GPU 跑不动时自动改用 CPU
     openai_transcribe_model: str = "whisper-1"
