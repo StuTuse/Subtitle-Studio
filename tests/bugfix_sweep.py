@@ -1735,4 +1735,17 @@ check("失败路径 reap 防 GC abort", "reap(w)" in _src124d)
 _src124e = _insp124.getsource(_mw124.MainWindow.cancel_transcribe)
 check("取消后回 ready 态", "_set_flow(\"ready\"" in _src124e)
 
+section("106. 编辑页文档挂载与流程面板（第 125 轮钉子）")
+import inspect as _insp125  # noqa: E402
+from sstudio.ui.editor_page import EditorInterface as _ED125  # noqa: E402
+_src125 = _insp125.getsource(_ED125.set_document)
+check("空 doc 用 is not None 判（__len__ 坑）", "doc is not None and doc.cues" in _src125)
+check("reset_history 可保留撤销栈", "if reset_history:" in _src125)
+_src125b = _insp125.getsource(_ED125._apply_inline_silent)
+check("失焦落盘只写回不跳行", "_on_text_changed(row, self.edit_area.toPlainText().strip(\"\\n\"))" in _src125b)
+_src125c = _insp125.getsource(_ED125.set_flow_progress)
+check("非 busy 态忽略进度", "if self._flow != \"busy\":" in _src125c)
+_src125d = _insp125.getsource(_ED125.transport_key)
+check("shift 微调 1s 否则 5s", "nudge(-1 if shift else -5)" in _src125d)
+
 raise SystemExit(finish())
