@@ -1061,4 +1061,21 @@ check("sstudio 源文件已扫描", _n_files >= 20, str(_n_files))
 check("无 TODO/FIXME 残留", not _n_todo, repr(_n_todo[:5]))
 check("无裸 except", not _n_bare, repr(_n_bare[:5]))
 
+section("53. 结构编辑边界（第 65 轮钉子）")
+_d65 = CueDocument(cues=[Cue(0, 1, "甲"), Cue(2, 3, "乙")])
+_d65.insert(99, Cue(3.2, 4, "新"))
+check("insert 超界钳到末尾",
+      [(c.start, c.text) for c in _d65.cues] == [(0, "甲"), (2, "乙"), (3.2, "新")])
+_d65.insert(-5, Cue(-1, -0.5, "头"))
+check("insert 负行号钳到头部", _d65.cues[0].text == "头")
+_d65b = CueDocument(cues=[Cue(0, 5, "甲"), Cue(1, 2, "乙"), Cue(3, 6, "丙")])
+from sstudio.core.model import normalize_cues as _nc65  # noqa: E402
+_nc65(_d65b)
+check("全重叠输入归一化不崩且 end>start",
+      all(c.end > c.start for c in _d65b.cues))
+_d65c = CueDocument(cues=[Cue(5, 5, "零时长")])
+check("split_long 零时长原样保留", len(_d65c.cues) == 1 and _d65c.cues[0].text == "零时长")
+_d65d = CueDocument(cues=[Cue(0, 1, "唯一")])
+check("merge 单行返回 None", _d65d.merge([0]) is None and len(_d65d.cues) == 1)
+
 raise SystemExit(finish())
