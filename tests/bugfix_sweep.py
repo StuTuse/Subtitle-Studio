@@ -1620,4 +1620,16 @@ _d115 = _CD115(cues=[_Cue115(start=0, end=1, text="甲"), _Cue115(start=0.5, end
 _d115.sorted()
 check("sorted 压重叠不丢条", len(_d115.cues) == 2 and _d115.cues[0].end <= _d115.cues[1].start + 1e-6)
 
+section("97. 发版脚本推送与发布语义（第 116 轮钉子）")
+import inspect as _insp116  # noqa: E402
+import release as _rl116  # noqa: E402
+_src116 = _insp116.getsource(_rl116.do_push)
+check("push 后 ls-remote 复核 tag", "git\", \"ls-remote\", \"--tags\"" in _src116)
+_src116b = _insp116.getsource(_rl116.do_release)
+check("release 已存在走 upload --clobber", "release\", \"upload\", tag, setup, \"--clobber\"" in _src116b)
+check("缺组件只警告不阻断", "跳过 GitHub Release" in _src116b)
+_src116c = _insp116.getsource(_rl116._gh_token)
+check("token 拼接串取首段", "parts[0]" in _src116c)
+check("bump patch 档位", _rl116._bump_version("1.17.122", "patch") == "1.17.123")
+
 raise SystemExit(finish())
