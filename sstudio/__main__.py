@@ -234,8 +234,12 @@ def main(argv=None) -> int:
             pass
 
     def _hook(etype, value, tb):
-        import traceback
-        traceback.print_exception(etype, value, tb)
+        try:
+            # pythonw/windowed 下 stderr 可能为 None：print_exception 抛
+            # AttributeError 会把 _hook 本身变成二次异常、丢掉落盘和弹窗
+            traceback.print_exception(etype, value, tb)
+        except Exception:
+            pass
         try:
             _append_crash("运行期异常", traceback.format_exc())
             try:

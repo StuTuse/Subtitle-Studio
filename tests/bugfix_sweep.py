@@ -1448,4 +1448,13 @@ _src103b = _insp103.getsource(_ED103.apply_llm_text)
 check("LLM 空文本不写（防清空）", "if not text or text == c.display_text:" in _src103b)
 check("original_text 只在首次落底", "if c.original_text == \"\":" in _src103b)
 
+section("84. 运行期钩子健壮性（第 104 轮钉子）")
+import inspect as _insp104  # noqa: E402
+import sstudio.__main__ as _sm104  # noqa: E402
+_src104 = _insp104.getsource(_sm104.main)
+check("excepthook 打印失败不丢落盘", "traceback.print_exception(etype, value, tb)" in _src104)
+check("Qt DEBUG 级不落盘（r59）", "if int(mode) <= 0:" in _src104)
+check("unraisablehook 析构期异常落盘", "_append_crash(\"析构期异常\"" in _src104)
+check("headless 拼错参数当场报错", "headless 模式不认识的参数" in _src104)
+
 raise SystemExit(finish())
