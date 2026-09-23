@@ -2281,6 +2281,37 @@ _d154["concurrency"] = "3.0"
 _c154e = _CfgB154.from_dict(_d154)
 check("from_dict 字符串数值容错", int(_c154e.batch_size) == 12
       and int(_c154e.concurrency) == 3)
-os.environ["APPDATA"] = "" if _os154.environ.get("APPDATA_WAS") else ""
+
+section("136. 导入端容错实测（第 155 轮钉子）")
+_srt155 = ("1\n00:00:01,000 --> 00:00:02,000\n你好\n\n"
+           "2\n00:00:02,500 --> 00:00:04,000\n世界\n")
+_c155, _f155 = _fm147.import_text(_srt155, "a.srt")
+check("正常 SRT 两条", len(_c155) == 2 and _f155 == "srt")
+check("BOM 前缀容错", len(_fm147.import_text("\ufeff" + _srt155, "a.srt")[0]) == 2)
+check("CRLF 容错", len(_fm147.import_text(_srt155.replace("\n", "\r\n"), "a.srt")[0]) == 2)
+check("点号毫秒容错", len(_fm147.import_text(
+    "1\n00:00:01.000 --> 00:00:02.000\n点号\n", "a.srt")[0]) >= 1)
+try:
+    _c155b, _ = _fm147.import_text("00:00:01,000 --> 00:00:02,000\n缺序号\n", "a.srt")
+    check("坏 SRT 不抛", isinstance(_c155b, list))
+except Exception:
+    check("坏 SRT 不抛", False)
+try:
+    _c155c, _ = _fm147.import_text("普通文本不是字幕\n第二行", "a.txt")
+    check("普通文本不抛", isinstance(_c155c, list))
+except Exception:
+    check("普通文本不抛", False)
+try:
+    _c155d, _ = _fm147.import_text("", "a.srt")
+    check("空输入不抛", isinstance(_c155d, list))
+except Exception:
+    check("空输入不抛", False)
+_c155e, _ = _fm147.import_text(
+    "WEBVTT\n\nNOTE 注释块\n\n1\n00:00:01.000 --> 00:00:02.000\nVTT 内容\n", "a.vtt")
+check("VTT NOTE 块容错", isinstance(_c155e, list))
+_c155f, _ = _fm147.import_text(
+    "1\n00:00:01,000 --> 00:00:02,000\n第一行\n第二行\n", "a.srt")
+check("多行文本保留", len(_c155f) == 1 and "第一行" in _c155f[0].text
+      and "第二行" in _c155f[0].text)
 
 raise SystemExit(finish())
