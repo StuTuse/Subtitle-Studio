@@ -887,4 +887,16 @@ check("零", _ht37(0) == "0:00.00")
 check("负值钳 0", _ht37(-5) == "0:00.00")
 check("小时位", _ht37(3661.5) == "1:01:01.50")
 
+section("38. cuda_rt discover/register 缓存语义（第 41 轮钉子）")
+from sstudio.core import cuda_rt as _cr38  # noqa: E402
+_rt38 = _cr38.discover()
+check("discover 返回 usable 布尔", isinstance(_rt38.usable, bool))
+check("usable 时 cublas/cudart 目录齐备",
+      (not _rt38.usable) or (_rt38.cublas_dir and _rt38.cudart_dir))
+_r1 = _cr38.register()
+_r2 = _cr38.register()
+check("同参调用命中缓存（同一对象）", _r1 is _r2)
+_r3 = _cr38.register(force=True)
+check("force 跳过缓存重探测", _r3 is not None)
+
 raise SystemExit(finish())
