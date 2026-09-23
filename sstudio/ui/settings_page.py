@@ -956,8 +956,12 @@ def _read_docx(fp: str) -> str:
     import zipfile
     from xml.etree import ElementTree as ET
 
-    with zipfile.ZipFile(fp) as z:
-        xml = z.read("word/document.xml")
+    try:
+        with zipfile.ZipFile(fp) as z:
+            xml = z.read("word/document.xml")
+    except KeyError:
+        # 扩展名是 .docx 但不是 Word 包（或已损坏）：KeyError 文案用户看不懂
+        raise ValueError("这不是有效的 Word 文档（缺 word/document.xml），请另存为 .docx 再导入")
     root = ET.fromstring(xml)
     ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     lines = []
