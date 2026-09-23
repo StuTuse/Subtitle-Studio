@@ -800,4 +800,38 @@ _lrc31 = _to_lrc31(_doc31)
 check("LRC 时间码钳 0", _lrc31.startswith("[00:00.00]"), _lrc31)
 check("正常时间不受影响", _at31(3661.5) == "1:01:01.50")
 
+section("32. 时间轴命中长字幕：end 早于点击点才退出回看（第 29 轮修复钉子）")
+import bisect as _bisect32  # noqa: E402
+from sstudio.ui.timeline import Timeline as _TL32  # noqa: E402
+_doc32 = _CD(cues=[
+    _Cue(0, 120, "长字幕", state="asr"),
+    _Cue(121, 122, "短", state="asr"),
+])
+_tl32 = _TL32()
+_tl32.set_document(_doc32)
+_tl32.resize(800, _TL32.HEIGHT)
+
+
+def _hit_at(widget, sec):
+    # 直接用 _hit 的算法路径：把秒换算成 x 坐标
+    w = widget.width()
+    return widget._hit(int(sec / max(1.0, widget.duration) * w))
+
+
+check("点击长字幕中段 90s 命中", _hit_at(_tl32, 90.0) == 0,
+      repr(_hit_at(_tl32, 90.0)))
+check("点击长字幕前段 50s 命中", _hit_at(_tl32, 50.0) == 0)
+check("点击空隙 120.5s 不误命中", _hit_at(_tl32, 120.5) is None)
+check("点击短字幕 121.5s 命中", _hit_at(_tl32, 121.5) == 1)
+_doc32b = _CD(cues=[_Cue(i * 1.0, i * 1.0 + 0.8, f"第{i}") for i in range(5000)])
+_tl32b = _TL32()
+_tl32b.set_document(_doc32b)
+_tl32b.resize(800, _TL32.HEIGHT)
+import time as _t32  # noqa: E402
+_t0 = _t32.perf_counter()
+for k in range(200):
+    _hit_at(_tl32b, k * 0.37)
+_cost = (_t32.perf_counter() - _t0) / 200 * 1000
+check("5000 条命中仍为对数量级", _cost < 0.5, f"{_cost:.3f}ms/次")
+
 raise SystemExit(finish())

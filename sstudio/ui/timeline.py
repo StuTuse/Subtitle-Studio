@@ -215,8 +215,12 @@ class Timeline(QWidget):
         """点击处命中的字幕行。
 
         cues 按 start 有序（normalize_cues 保证）：先按 start 二分找插入点，
-        再往回看几个候选——end 可能跨过前一条 start（短字幕嵌在长字幕里的
-        情况极少，回看 16 个足够覆盖），从 5000 条 O(N) 降到 O(log N)。
+        再往回看候选——end 可能跨过前一条 start（短字幕嵌在长字幕里）。
+        回看终止条件是「当前候选的 end 早于点击点」：一旦某条的 end < t，
+        更早的候选 end 只会更小，全部不可能命中，此时才安全退出——
+        旧版按固定 60s 窗口回看，会把跨时长字幕（如 0-120s）在 90s 处
+        的点击漏判成空白。病态无界长字幕由 bisect 插入点本身兜底，
+        最坏退化为线性，但真实字幕极少超过几分钟。
         """
         if not self.doc:
             return None
@@ -224,8 +228,11 @@ class Timeline(QWidget):
         cues = self.doc.cues
         i = bisect.bisect_right(cues, t, key=lambda c: c.start) - 1
         j = i
-        while j >= 0 and t - cues[j].start <= 60.0:      # 回看上限兜底防病态数据
-            if cues[j].start <= t <= cues[j].end:
+        while j >= 0:
+            c = cues[j]
+            if c.end < t:
+                break                       # 这条都在点击点之前结束，更早的更不可能
+            if c.start <= t <= c.end:
                 return j
             j -= 1
         return None
