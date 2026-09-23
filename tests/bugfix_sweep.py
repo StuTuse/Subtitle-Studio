@@ -1340,4 +1340,15 @@ _src94c = _insp94.getsource(_pd94)
 check("手动 cuda 保留选择报可读错误", "if dev == \"cuda\":\n                    # 用户手动指定" in _src94c)
 check("cuda compute auto 默认 float16", "compute = \"float16\"" in _src94c)
 
+section("75. 播放器静音/循环闭环（第 95 轮钉子）")
+import inspect as _insp95  # noqa: E402
+from sstudio.ui.player import PlayerWidget as _PW95, SPEEDS as _SP95  # noqa: E402
+_src95 = _insp95.getsource(_PW95.toggle_mute)
+check("静音前记忆音量", "self._last_volume = self._volume" in _src95)
+_src95b = _insp95.getsource(_PW95.set_loop_a)
+check("B<A 时先清 B 防抖动", "self._loop_b = None" in _src95b)
+_src95c = _insp95.getsource(_PW95.load)
+check("换媒体清 A/B 循环", "self._loop_a = self._loop_b = None" in _src95c)
+check("SPEEDS 全档在 0.1-4.0 内", all(0.1 <= s <= 4.0 for s in _SP95))
+
 raise SystemExit(finish())
