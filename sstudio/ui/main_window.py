@@ -200,7 +200,9 @@ class MainWindow(FluentWindow):
             self._warn("文件不存在", path)
             return
         if self.doc and self.doc.cues and self._dirty:
-            box = MessageBox("当前工程未保存", "打开新视频会替换当前字幕。要先保存吗？\n"
+            # 用无动画的 _CloseAskBox：裸 MessageBox 的淡出动画对象无父级，
+            # 被 GC 后 done() 永不执行——表现是"点保存/不保存都没反应"
+            box = _CloseAskBox("当前工程未保存", "打开新视频会替换当前字幕。要先保存吗？\n"
                                               "（选择「取消」则直接打开）", self)
             box.yesButton.setText("保存并打开")
             box.cancelButton.setText("直接打开")
@@ -342,7 +344,8 @@ class MainWindow(FluentWindow):
 
         from ..core.transcriber import FasterWhisperEngine
         if self.cfg.asr_engine == "faster-whisper" and not FasterWhisperEngine.available():
-            box = MessageBox("缺少 faster-whisper",
+            # 同 open_media：裸 MessageBox 的动画被 GC 会"点了没反应"
+            box = _CloseAskBox("缺少 faster-whisper",
                              "还没安装 faster-whisper。\n\n"
                              "在终端运行：  pip install faster-whisper\n\n"
                              "（本机已有 CTranslate2 模型，无需重新下载）\n\n"

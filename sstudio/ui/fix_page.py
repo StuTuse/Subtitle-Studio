@@ -372,9 +372,12 @@ class FixInterface(QWidget):
                           self.main).show()
 
     def _revert_all(self) -> None:
-        from qfluentwidgets import MessageBox
-        box = MessageBox("确认回滚", "把所有条目恢复为原始识别文本？\n（可用 Ctrl+Z 撤销）",
-                         self.main)
+        # 用主窗的无动画确认框：裸 MessageBox 的淡出动画对象无父级、随时
+        # 可能被 GC，done() 永不执行——表现是"点确认/取消都没反应"（与
+        # 退出确认框同一坑，main_window._CloseAskBox 注释有完整分析）。
+        from .main_window import _CloseAskBox
+        box = _CloseAskBox("确认回滚", "把所有条目恢复为原始识别文本？\n（可用 Ctrl+Z 撤销）",
+                           self.main)
         if not box.exec_():
             return
         doc = self.main.doc
