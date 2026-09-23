@@ -1721,4 +1721,18 @@ check("warn 不影响自检结论", "def warn(name, good, detail=\"\"):" in _src
 check("GPU 可推理双条件", "bool(rt.usable) and loadable" in _src123)
 check("key 状态掩码不打印明文", "p.api_key" in _src123 and "key 已填" in _src123 and "key 未填" in _src123)
 
+section("105. 主窗转写编排语义（第 124 轮钉子）")
+import inspect as _insp124  # noqa: E402
+from sstudio.ui import main_window as _mw124  # noqa: E402
+_src124 = _insp124.getsource(_mw124.MainWindow.start_transcribe)
+check("代际计数防迟到信号", "getattr(self, \"_gen\", 0) + 1" in _src124)
+_src124b = _insp124.getsource(_mw124.MainWindow._on_progress)
+check("进度节流 0.125s", ">= 0.125" in _src124b)
+_src124c = _insp124.getsource(_mw124.MainWindow._flush_progress)
+check("pct 显式判 None（0% 忙碌条）", "pct is not None and pct >= 0" in _src124c)
+_src124d = _insp124.getsource(_mw124.MainWindow._on_transcribe_failed)
+check("失败路径 reap 防 GC abort", "reap(w)" in _src124d)
+_src124e = _insp124.getsource(_mw124.MainWindow.cancel_transcribe)
+check("取消后回 ready 态", "_set_flow(\"ready\"" in _src124e)
+
 raise SystemExit(finish())
