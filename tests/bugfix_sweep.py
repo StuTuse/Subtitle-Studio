@@ -1186,4 +1186,15 @@ _src81b = _insp81.getsource(_llm81.chat)
 check("no-cap 重试成功后记住接入点", "_REASONING_NO_CAP.add" in _src81b)
 check("推理型模型正文为空报 ReasoningBudgetError", "ReasoningBudgetError" in _src81b)
 
+section("62. 时间轴框选与命中链（第 81 轮钉子）")
+import inspect as _insp82  # noqa: E402
+from sstudio.ui.timeline import Timeline as _TL82, _nice_step as _ns82  # noqa: E402
+_src82 = _insp82.getsource(_TL82.mouseReleaseEvent)
+check("框选传完整命中列表（空隙剔除）", "cue_range.emit(idx)" in _src82)
+_src82b = _insp82.getsource(_TL82._hit)
+check("命中回看按 end 终止（不漏跨长条）", "if c.end < t:" in _src82b)
+check("_nice_step 30s 刻度档存在", 30 in (0.5, 1, 2, 5, 10, 15, 30, 60, 120,
+                                          300, 600, 900, 1800, 3600))
+check("_nice_step 极大时长回到 3600", _ns82(999999, 800) == 3600.0)
+
 raise SystemExit(finish())
