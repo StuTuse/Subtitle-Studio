@@ -53,10 +53,13 @@ CB_CANCEL = object()
 
 def reap(w: Optional["_BaseWorker"]) -> None:
     """安全回收 worker：线程没结束前必须保住 Python 引用，
-    否则 GC 会在运行中析构 QThread（Qt 直接 abort）。非阻塞。"""
+    否则 GC 会在运行中析构 QThread（Qt 直接 abort）。非阻塞、可重入。"""
     if w is None:
         return
     try:
+        if getattr(w, "_reaped", False):
+            return                  # 已注册过：重复 reap 会重复 connect finished
+        w._reaped = True
         if w.isFinished():
             _pending_reap.discard(w)
             w.deleteLater()

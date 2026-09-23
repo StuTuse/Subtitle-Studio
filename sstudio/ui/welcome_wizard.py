@@ -138,8 +138,8 @@ class _AppearancePage(_Page):
             cv.addWidget(d)
             card.setCursor(Qt.PointingHandCursor)
             card.clicked.connect(lambda _, k=key: self._pick(k))
-            card.enterEvent = lambda e, c=card: c._hl(True)      # type: ignore
-            card.leaveEvent = lambda e, c=card: c._hl(False)     # type: ignore
+            # 不覆写 enterEvent/leaveEvent：CardWidget 自带悬停反馈；
+            # 之前覆写成调 self._hl（空方法），鼠标一进卡片就 AttributeError
             self.cards.append(card)
             row.addWidget(card, 1)
         self.v.addLayout(row)
@@ -147,16 +147,10 @@ class _AppearancePage(_Page):
         self._picked = ""
         self._pick("auto", paint=False)
 
-    def _hl(self, on: bool) -> None:
-        pass      # CardWidget 自带 hover 效果，无需手动
-
     def _pick(self, key: str, paint: bool = True) -> None:
         self._picked = key
         from .theme import accent_hex
         on_border = accent_hex()
-        for card in self.cards:
-            sel = card.property("theme_key") == key
-            card.setProperty("theme_key", None)
         for i, (key_i, _, _) in enumerate(
                 (("auto", "", ""), ("light", "", ""), ("dark", "", ""))):
             card = self.cards[i]
@@ -655,16 +649,30 @@ class WelcomeWizard(QDialog):
         if self._anim_lock:
             return
         self._anim_lock = True
-        # 体检页若还在装包，请求取消（pip 读循环轮询 _cancel_flag 退出）
+        # 体检页若还在装包，请求取消并稍候——不等的话对话框销毁时线程
+        # 还在跑，QThread 析构直接 abort 闪退
         for pg in self.pages:
             if isinstance(pg, _CheckPage):
                 pg._cancel_worker()
+                w = getattr(pg, "_worker", None)
+                if w is not None and w.isRunning():
+                    w.wait(3000)
         app_pg = self.pages[1]
         if isinstance(app_pg, _AppearancePage):
             app_pg.apply(self.cfg)
         self.cfg.setup_done = True
         self.cfg.save()
         self.accept()
+
+    def reject(self) -> None:  # noqa: N802
+        """Esc / 点 X 中途关向导：同 _finish，先取消装包线程再关。"""
+        for pg in self.pages:
+            if isinstance(pg, _CheckPage):
+                pg._cancel_worker()
+                w = getattr(pg, "_worker", None)
+                if w is not None and w.isRunning():
+                    w.wait(3000)
+        super().reject()
 
 
 def maybe_show_welcome(cfg: Config, parent=None) -> bool:

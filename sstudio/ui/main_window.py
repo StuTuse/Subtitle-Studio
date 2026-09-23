@@ -9,7 +9,7 @@ import time
 from typing import Optional
 
 from qfluentwidgets import (FluentIcon as FIF, FluentWindow, InfoBar, InfoBarPosition,
-                            IndeterminateProgressBar, MessageBox, NavigationItemPosition,
+                            MessageBox, NavigationItemPosition, ProgressBar,
                             setTheme)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent
@@ -94,7 +94,10 @@ class MainWindow(FluentWindow):
 
         # ------------------------------------------------------------ 进度条
         # FluentWindow 没有 statusBar，用一个悬浮在底部的细条 + 文案代替。
-        self.progress = IndeterminateProgressBar(self)
+        # 用确定值 ProgressBar：转写/纠错都有真实百分比；不确定阶段
+        # （pct<0）走 setRange(0,0) 的忙碌态。之前用 IndeterminateProgressBar
+        # 时 setValue 被其 paintEvent 完全忽略——百分比永远画不出来。
+        self.progress = ProgressBar(self)
         self.progress.setFixedHeight(3)
         self.progress.setVisible(False)
         self.progressLabel = QLabel("", self)

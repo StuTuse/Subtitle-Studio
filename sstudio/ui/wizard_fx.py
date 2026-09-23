@@ -52,15 +52,14 @@ def _animate(target, prop: bytes, v0, v1, duration: int, ease,
 def _fade_blur(widget: QWidget, blur_from: float, duration: int, ease,
                fade_from: float = 0.0, fade_to: float = 1.0,
                on_done=None) -> QParallelAnimationGroup:
-    """透明度 + 模糊一起动：fade_from→fade_to，blur_from→0。"""
-    op = QGraphicsOpacityEffect(widget)
-    op.setOpacity(fade_from)
-    widget.setGraphicsEffect(op)
-    a1 = QPropertyAnimation(op, b"opacity", widget)
-    a1.setDuration(duration)
-    a1.setStartValue(fade_from)
-    a1.setEndValue(fade_to)
-    a1.setEasingCurve(ease)
+    """模糊消散 + 位移淡入：blur_from→0。
+
+    注意一个 widget 只挂**一个** QGraphicsEffect：第二次 setGraphicsEffect
+    会把前一个效果直接析构（Qt 语义），先前绑在它上面的透明度动画就会
+    操作已删除的 C++ 对象——淡入失效且可能抛 RuntimeError。这里统一只
+    用模糊效果表达入场（模糊从大到 0 本身就有"从虚到实"的观感），透明
+    度不再单独挂 effect。
+    """
     blur = QGraphicsBlurEffect(widget)
     blur.setBlurRadius(blur_from)
     widget.setGraphicsEffect(blur)
@@ -70,7 +69,6 @@ def _fade_blur(widget: QWidget, blur_from: float, duration: int, ease,
     a2.setEndValue(0.0)
     a2.setEasingCurve(ease)
     grp = QParallelAnimationGroup(widget)
-    grp.addAnimation(a1)
     grp.addAnimation(a2)
     if on_done:
         grp.finished.connect(on_done)
@@ -95,14 +93,6 @@ def cascade_in(widgets: List[Optional[QWidget]], delay: int = 90,
         base_pos = w.pos()
 
         def _start(ww=w, bp=base_pos):
-            op = QGraphicsOpacityEffect(ww)
-            op.setOpacity(0.0)
-            ww.setGraphicsEffect(op)
-            a1 = QPropertyAnimation(op, b"opacity", ww)
-            a1.setDuration(_CASCADE_MS)
-            a1.setStartValue(0.0)
-            a1.setEndValue(1.0)
-            a1.setEasingCurve(EASE_OUT)
             blur = QGraphicsBlurEffect(ww)
             blur.setBlurRadius(5.0)
             ww.setGraphicsEffect(blur)
@@ -117,9 +107,10 @@ def cascade_in(widgets: List[Optional[QWidget]], delay: int = 90,
             a3.setEndValue(bp)
             a3.setEasingCurve(EASE_OUT)
             grp = QParallelAnimationGroup(ww)
-            grp.addAnimation(a1)
             grp.addAnimation(a2)
             grp.addAnimation(a3)
+            # 动画完必须摘 effect：留着会一直走 CPU 光栅化
+            grp.finished.connect(lambda ww=ww: clear_effect(ww))
             grp.start(QPropertyAnimation.DeleteWhenStopped)
 
         QTimer.singleShot(delay + i * stagger, _start)
@@ -136,15 +127,11 @@ def page_in(widget: QWidget, direction: int) -> None:
 
 
 def page_out(widget: QWidget, direction: int, on_done=None) -> None:
-    """旧页退出：反向滑走 + 模糊加深 + 淡出。"""
-    op = QGraphicsOpacityEffect(widget)
-    op.setOpacity(1.0)
-    widget.setGraphicsEffect(op)
-    a1 = QPropertyAnimation(op, b"opacity", widget)
-    a1.setDuration(_PAGE_OUT_MS)
-    a1.setStartValue(1.0)
-    a1.setEndValue(0.0)
-    a1.setEasingCurve(EASE_IN)
+    """旧页退出：反向滑走 + 模糊加深。
+
+    同 _fade_blur 的约束：一个 widget 只挂一个 effect，淡出表达交给
+    模糊加深（0→8px），不再叠加透明度效果。
+    """
     blur = QGraphicsBlurEffect(widget)
     blur.setBlurRadius(0.0)
     widget.setGraphicsEffect(blur)
@@ -154,7 +141,6 @@ def page_out(widget: QWidget, direction: int, on_done=None) -> None:
     a2.setEndValue(8.0)
     a2.setEasingCurve(EASE_IN)
     grp = QParallelAnimationGroup(widget)
-    grp.addAnimation(a1)
     grp.addAnimation(a2)
     dx = -46 * (1 if direction >= 0 else -1)
     pos0 = widget.pos()
@@ -166,6 +152,8 @@ def page_out(widget: QWidget, direction: int, on_done=None) -> None:
     grp.addAnimation(a3)
     if on_done:
         grp.finished.connect(on_done)
+    # 旧页退场后即被新页盖住：同样摘掉 effect，别让它持续吃光栅化
+    grp.finished.connect(lambda: clear_effect(widget))
     grp.start(QPropertyAnimation.DeleteWhenStopped)
 
 
@@ -227,13 +215,6 @@ def _reveal_text(veil: QWidget, logo: Optional[QWidget],
 
 def _fade_away(veil: QWidget, wizard: QWidget, on_done) -> None:
     """第三幕：遮罩模糊消散，露出主窗。"""
-    op = QGraphicsOpacityEffect(veil)
-    op.setOpacity(1.0)
-    veil.setGraphicsEffect(op)
-    a1 = QPropertyAnimation(op, b"opacity", veil)
-    a1.setDuration(_FINAL_FADE_MS)
-    a1.setStartValue(1.0)
-    a1.setEndValue(0.0)
     blur = QGraphicsBlurEffect(veil)
     blur.setBlurRadius(0.0)
     veil.setGraphicsEffect(blur)
@@ -242,7 +223,6 @@ def _fade_away(veil: QWidget, wizard: QWidget, on_done) -> None:
     a2.setStartValue(0.0)
     a2.setEndValue(22.0)
     grp = QParallelAnimationGroup(veil)
-    grp.addAnimation(a1)
     grp.addAnimation(a2)
 
     def _end():

@@ -27,7 +27,6 @@ class FixInterface(QWidget):
         self.cfg = cfg
         self.main = main
         self.worker: Optional[FixWorker] = None
-        self._live: dict = {}
         self._row_map: list = []      # run() 之前也可能收到迟到信号，先占位
 
         outer = QVBoxLayout(self)
@@ -228,7 +227,10 @@ class FixInterface(QWidget):
             self.sync_from_cfg()
 
     def refresh(self) -> None:
-        self.sync_from_cfg()
+        # 运行中不回灌控件：任务正按用户改过的参数跑，切页回来若用 cfg
+        # 旧值覆盖控件，界面显示与后台实际运行参数就不一致了（假界面）
+        if self.worker is None:
+            self.sync_from_cfg()
         doc = self.main.doc
         if not doc or not doc.cues:
             self.btn_run.setEnabled(False)
@@ -393,7 +395,6 @@ class FixInterface(QWidget):
         cur = self.main.editor.table.currentRow()
         for i in range(cur + 1, len(doc.cues)):
             if doc.cues[i].state == "review":
-                self.main.editor.switch_page = None
                 self.main.switch_to("editor")
                 self.main.editor.table.jump(i)
                 return

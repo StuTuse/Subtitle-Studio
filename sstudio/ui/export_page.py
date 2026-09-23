@@ -272,10 +272,15 @@ class ExportInterface(QWidget):
         self._worker = ThreadedCall(_write_exports, pairs, out_dir, enc)
         self._worker.sig_done.connect(self._on_export_done)
         self._worker.sig_failed.connect(self._on_export_failed)
-        self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
+        # 不再 finished→deleteLater：sig_done 与 finished 都是跨线程 queued
+        # 投递、先后无序，deleteLater 抢先会把 sig_done 连同 worker 一起删掉
+        # ——按钮永久禁用、后续导出被 _worker 非 None 守卫静默拦截。生命周期
+        # 交给 reap()（_finish_export 里统一收）。
 
     def _finish_export(self) -> None:
+        from .workers import reap
+        reap(self._worker)
         self._worker = None
         self.btn_export.setEnabled(bool(self.main.doc and self.main.doc.cues))
 
