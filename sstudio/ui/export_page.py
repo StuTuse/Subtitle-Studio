@@ -285,6 +285,7 @@ class ExportInterface(QWidget):
         if not pairs:
             return
         self.btn_export.setEnabled(False)
+        self._used_enc = enc
         self._worker = ThreadedCall(_write_exports, pairs, out_dir, enc)
         self._worker.sig_done.connect(self._on_export_done)
         self._worker.sig_failed.connect(self._on_export_failed)
@@ -313,7 +314,9 @@ class ExportInterface(QWidget):
                           position=InfoBarPosition.TOP, duration=4000)
         if not written:
             return
-        enc = self._enc()
+        # 记录本轮【实际用过的】编码：回包后再读 self.enc 会拿到用户在
+        # 导出期间改的新值，下次启动默认编码就与这次的成品不一致
+        enc = getattr(self, "_used_enc", self._enc())
         out_dir = os.path.dirname(written[0])
         self.cfg.export_encoding = enc
         self.cfg.export_dir = self.out_dir.text().strip()
