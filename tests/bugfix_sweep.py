@@ -696,4 +696,23 @@ except (ValueError, TypeError):
     _tip_ok = False
 check("悬停 tip 格式化不再崩", _tip_ok)
 
+section("26. close_gaps 保护规则与 merge words 时序（第 20 轮加固钉子）")
+_doc_sp = CueDocument(cues=[Cue(0, 1, "甲", speaker="A"), Cue(1.2, 3, "乙", speaker="B")])
+_t, _s = _doc_sp.close_gaps(0.35)
+check("不同说话人的小空隙保留", _t == 0)
+_doc_sp2 = CueDocument(cues=[Cue(0, 1, "甲", speaker="A"), Cue(1.2, 3, "乙", speaker="A")])
+_t2, _s2 = _doc_sp2.close_gaps(0.35)
+check("同说话人的小空隙衔接", _t2 == 1 and abs(_s2 - 0.2) < 1e-9, f"{_s2:.2f}s")
+_doc_q = CueDocument(cues=[Cue(0, 1, "说完了。"), Cue(1.2, 3, "下一句")])
+_t3, _ = _doc_q.close_gaps(0.35)
+check("句末标点后的空隙保留", _t3 == 0)
+_doc_e = CueDocument(cues=[Cue(0, 1, "话没说完……"), Cue(1.2, 3, "继续")])
+_t4, _ = _doc_e.close_gaps(0.35)
+check("省略号后的空隙照常衔接", _t4 == 1)
+_mg = CueDocument(cues=[Cue(0, 1, "一", speaker="A"), Cue(5, 6, "二", speaker="B"),
+                        Cue(10, 11, "三", speaker="C")])
+_m = _mg.merge([0, 2])
+check("隔行合并 words 时序=起始序", _m.start == 0 and _m.end == 11 and _m.speaker == "A")
+check("合并文本按时间序拼接", _m.text == "一\n三", repr(_m.text))
+
 raise SystemExit(finish())
