@@ -98,4 +98,62 @@ try:
 except Exception as e:
     check("坏模板不崩", False, e)
 
+section("9. 推理模型识别与 o 系参数剥离（离线桩，不发请求）")
+check("deepseek-r1 是推理模型", llm._looks_reasoning("deepseek-r1"))
+check("Qwen3-Thinking 是推理模型", llm._looks_reasoning("Qwen3-Thinking"))
+check("qwq-32b 是推理模型", llm._looks_reasoning("qwq-32b"))
+check("foo1-mini 不因含 o1 子串误判", not llm._looks_reasoning("foo1-mini"))
+check("deepseek-chat 不是推理模型", not llm._looks_reasoning("deepseek-chat"))
+check("o1 官方系剥离采样参数", llm._strict_openai_reasoning("o1"))
+check("o3-mini 官方系剥离采样参数", llm._strict_openai_reasoning("o3-mini"))
+check("gpt-5-turbo 剥离采样参数", llm._strict_openai_reasoning("gpt-5-turbo"))
+check("chatgpt-4o-latest 剥离采样参数", llm._strict_openai_reasoning("chatgpt-4o-latest"))
+check("o2 不匹配（不存在但防子串误判）", not llm._strict_openai_reasoning("o2"))
+check("gpt-4o 不是 o 系", not llm._strict_openai_reasoning("gpt-4o"))
+check("deepseek-r1 不走 o 系剥离（用自己的通道）",
+      not llm._strict_openai_reasoning("deepseek-r1"))
+
+# chat() 的 kwargs 组装：桩掉 client，抓 create() 收到的参数
+_captured: dict = {}
+
+
+class _FakeCompletions:
+    def create(self, **kw):
+        _captured.clear()
+        _captured.update(kw)
+        return None
+
+
+class _FakeChat:
+    completions = _FakeCompletions()
+
+
+class _FakeClient:
+    chat = _FakeChat()
+
+
+from sstudio.core.config import LLMProfile  # noqa: E402
+
+
+def _chat_kwargs(model: str, **prof_kw) -> dict:
+    p = LLMProfile(name="t", base_url="http://stub", api_key="k", model=model, **prof_kw)
+    llm._clients[(p.base_url.rstrip("/"), p.api_key, float(p.timeout))] = _FakeClient()
+    try:
+        llm.chat(p, [{"role": "user", "content": "hi"}])
+    except Exception:
+        pass          # 桩返回 None 后的解析异常不影响参数捕获
+    return dict(_captured)
+
+
+kw = _chat_kwargs("o3-mini", no_reasoning=True)
+check("o3-mini 不发 temperature", "temperature" not in kw, sorted(kw))
+check("o3-mini 不发 top_p", "top_p" not in kw)
+check("o3-mini 不发 extra_body（未知字段会 400）", "extra_body" not in kw)
+kw = _chat_kwargs("deepseek-chat")
+check("普通模型带 temperature", kw.get("temperature") == 0.0, kw.get("temperature"))
+check("普通模型带 top_p", "top_p" in kw)
+kw = _chat_kwargs("deepseek-r1", no_reasoning=True)
+check("推理模型带关闭思考的 extra_body", "extra_body" in kw and
+      "reasoning_effort" in kw["extra_body"], kw.get("extra_body"))
+
 sys.exit(finish())
