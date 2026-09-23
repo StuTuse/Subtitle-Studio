@@ -773,4 +773,20 @@ for _c29 in _mix.cues:
 check("改过的行回到原始文本", _mix.cues[0].text == "原始甲")
 check("从未改过的行文本保留", _mix.cues[1].text == "从未改过", repr(_mix.cues[1].text))
 
+section("30. 静音/取消静音恢复原音量（第 27 轮修复钉子）")
+from PyQt5.QtWidgets import QApplication as _QA30  # noqa: E402
+_app30 = _QA30.instance() or _QA30([])
+from sstudio.ui.player import PlayerWidget as _PW30  # noqa: E402
+_pw = _PW30()
+_pw.set_volume(30)
+_pw.toggle_mute()
+check("静音后音量 0", _pw.volume() == 0, _pw.volume())
+_pw.toggle_mute()
+check("取消静音回到 30（不再硬跳 80）", _pw.volume() == 30, _pw.volume())
+_pw.toggle_mute()
+_pw.set_volume(65)
+_pw.toggle_mute()
+_pw.toggle_mute()
+check("多次切换后仍记住最近非零音量", _pw.volume() == 65, _pw.volume())
+
 raise SystemExit(finish())

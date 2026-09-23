@@ -29,6 +29,7 @@ class PlayerWidget(QWidget):
         self._loop_b: Optional[float] = None
         self._speed = 1.0
         self._volume = 80
+        self._last_volume = 80      # 静音前的音量，取消静音时恢复
         self._media_ok = True
 
         self.video = QVideoWidget(self)
@@ -151,7 +152,12 @@ class PlayerWidget(QWidget):
         return self._volume
 
     def toggle_mute(self) -> int:
-        self.set_volume(0 if self._volume else 80)
+        # 静音要记住上次音量：取消静音回到原音量，而不是硬跳 80
+        if self._volume:
+            self._last_volume = self._volume
+            self.set_volume(0)
+        else:
+            self.set_volume(getattr(self, "_last_volume", 80) or 80)
         return self._volume
 
     # ------------------------------------------------------------ A/B 循环
