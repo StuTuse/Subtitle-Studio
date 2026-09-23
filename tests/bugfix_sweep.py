@@ -899,4 +899,15 @@ check("同参调用命中缓存（同一对象）", _r1 is _r2)
 _r3 = _cr38.register(force=True)
 check("force 跳过缓存重探测", _r3 is not None)
 
+section("39. parse_numbered 空编号行/礼貌收尾/围栏（第 42 轮钉子）")
+from sstudio.core.llm import parse_numbered as _pn39  # noqa: E402
+_r39 = _pn39("[1] 你好\n[2]\n[3] 世界", range(1, 4))
+check("空编号行存空串不并进上一条", _r39[2] == "" and _r39[1] == "你好")
+_r39b = _pn39("[1] 台词\n[2] 另一句\n希望对你有帮助！", range(1, 3))
+check("礼貌收尾不污染最后一条", _r39b[2] == "另一句", repr(_r39b[2]))
+_r39c = _pn39("```text\n[1] A\n[2] B\n```", range(1, 3))
+check("markdown 围栏剥离", _r39c[1] == "A" and _r39c[2] == "B")
+_r39d = _pn39("[1] 第一句。\n这不是续行", range(1, 2))
+check("完整句后的新内容不并回", _r39d[1] == "第一句。", repr(_r39d[1]))
+
 raise SystemExit(finish())
