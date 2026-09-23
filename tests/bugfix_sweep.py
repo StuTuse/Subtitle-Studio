@@ -1005,4 +1005,18 @@ check("构造时占位已替换为真实回调", _tc.a == (_tc._progress, _tc._l
 check("cancel 标志翻转", (_tc.cancel(), _tc._cancel())[1] is True)
 check("_cancel 返回标志", _TC48(lambda c: None, CB_CANCEL).kw == {} or True)
 
+section("49. CueDocument.snapshot 字段完备（第 58 轮钉子）")
+_d58 = CueDocument(cues=[Cue(0, 2, "你好", speaker="张三", confidence=0.87,
+                             words=[{"start": 0.0, "end": 1.0, "word": "你好"}])],
+                   source_video="v.mp4")
+_d58.cues[0].text = "改"
+_d58r = CueDocument.from_dict(_d58.snapshot())
+check("speaker 进快照", _d58r.cues[0].speaker == "张三")
+check("confidence 进快照", _d58r.cues[0].confidence == 0.87)
+check("words 进快照", bool(_d58r.cues[0].words))
+check("text 进快照", _d58r.cues[0].text == "改")
+# 快照按设计只含 cues（meta/source_video 不入 undo 栈——restore 不动它们）：
+check("快照只含 cues（元数据不参与 undo）",
+      set(_d58.snapshot().keys()) == {"cues"})
+
 raise SystemExit(finish())
