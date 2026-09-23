@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu
                              QTextEdit)
 
 from ..core.model import Cue, sec_to_ts
-from .theme import is_dark, monospace, state_color, state_text, status_hex
+from .theme import _crisp, is_dark, monospace, state_color, state_text, status_hex
 
 COL_NO, COL_S, COL_E, COL_D, COL_STATE, COL_TEXT = range(6)
 

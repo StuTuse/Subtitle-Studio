@@ -455,10 +455,16 @@ class FasterWhisperEngine:
         if progress:
             if os.path.isdir(model_path):
                 progress(f"加载模型 {os.path.basename(str(model_path))}（{device}/{compute}）…", -1)
+        # 模型加载是取消盲区里最痛的一段：large-v3 冷加载 30~120 秒，
+        # 此前这期间点取消毫无反应。加载前后各查一次，把体感压到秒级
+        if cancel and cancel():
+            raise TranscribeError("已取消。")
         t0 = time.time()
         try:
             model, device, compute, note = _load_model(
                 WhisperModel, model_path, device, compute, cfg)
+            if cancel and cancel():
+                raise TranscribeError("已取消。")
             if note and progress:
                 progress(note, -1)
         except TranscribeError:
@@ -500,6 +506,11 @@ class FasterWhisperEngine:
         if progress:
             progress("模型就绪，开始识别…", 0.0)
         total = _audio_duration(audio_path)
+        # VAD 预处理在第一个 segment 产出前整文件跑完（静音多的 4h 文件
+        # 可达分钟级）：跑之前最后给取消一次机会，此后进入 CTranslate2
+        # 解码确实无法中断
+        if cancel and cancel():
+            raise TranscribeError("已取消。")
 
         # faster-whisper 返回的是惰性生成器，缺 cublas 这类运行时错误要等到
         # 真正迭代时才抛出；而完整消费一次又不该重复跑模型。因此把「跑一次 +

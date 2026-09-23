@@ -181,34 +181,45 @@ def extract_audio(path: str, out_wav: str = "", sr: int = 16000,
         if p is not None:
             last = 0.0
             assert p.stdout is not None
-            for line in p.stdout:
-                if cancel and cancel():
-                    try:
+            try:
+                for line in p.stdout:
+                    if cancel and cancel():
+                        raise RuntimeError("已取消。")
+                    if not total:
+                        continue
+                    line = line.strip()
+                    secs = -1.0
+                    if line.startswith("out_time="):        # 00:01:23.456000
+                        try:
+                            h, m, s = line[9:].split(":")
+                            secs = int(h) * 3600 + int(m) * 60 + float(s)
+                        except ValueError:
+                            secs = -1.0
+                    elif line.startswith("out_time_us="):   # 微秒
+                        try:
+                            secs = int(line.split("=", 1)[1]) / 1e6
+                        except ValueError:
+                            secs = -1.0
+                    if secs >= 0 and secs - last >= 1.0:
+                        last = secs
+                        if progress:
+                            progress(f"正在抽取音频轨… {_si(secs)} / {_si(total)}",
+                                     min(0.999, secs / total))
+            finally:
+                # 取消/异常路径也要回收 ffmpeg 并清掉写了一半的 wav：
+                # 此前 kill 后直接 raise，进程与半成品都留在缓存目录
+                try:
+                    if p.poll() is None:
                         p.kill()
+                        p.wait()
+                except OSError:
+                    pass
+                if os.path.isfile(out_wav) and p.returncode != 0:
+                    try:
+                        os.remove(out_wav)
                     except OSError:
                         pass
-                    raise RuntimeError("已取消。")
-                if not total:
-                    continue
-                line = line.strip()
-                secs = -1.0
-                if line.startswith("out_time="):        # 00:01:23.456000
-                    try:
-                        h, m, s = line[9:].split(":")
-                        secs = int(h) * 3600 + int(m) * 60 + float(s)
-                    except ValueError:
-                        secs = -1.0
-                elif line.startswith("out_time_us="):   # 微秒
-                    try:
-                        secs = int(line.split("=", 1)[1]) / 1e6
-                    except ValueError:
-                        secs = -1.0
-                if secs >= 0 and secs - last >= 1.0:
-                    last = secs
-                    if progress:
-                        progress(f"正在抽取音频轨… {_si(secs)} / {_si(total)}",
-                                 min(0.999, secs / total))
-            rc = p.wait()
+            rc = p.returncode if p.returncode is not None else p.wait()
             if rc == 0 and os.path.isfile(out_wav) and os.path.getsize(out_wav) > 1024:
                 return out_wav
     # 回退：PyAV 解码
