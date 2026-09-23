@@ -850,4 +850,13 @@ check("tip 空置信度不含置信度行", "置信度" not in _tip33(_Cue(0, 1,
 check("tip 数值置信度格式化", "置信度 0.87" in _tip33(
     _Cue.from_dict({"start": 0, "end": 1, "text": "x", "confidence": 0.87})))
 
+section("34. 导出预检语速统计口径与时长警示一致（第 32 轮修复钉子）")
+# 多行字幕的换行符不应计入字/秒：编辑表 _duration_warn 去换行，
+# 导出预检此前含换行——同一条字幕两边判定可能不同。
+_multi = _Cue(0, 1.0, "字" * 8 + "\n" + "字" * 8)   # 16 字 + 1 换行
+_speed_with_nl = len(_multi.display_text) / _multi.duration
+_speed_clean = len(_multi.display_text.replace("\n", "")) / _multi.duration
+check("去换行口径不含换行符", _speed_clean == 16.0, f"{_speed_clean:.1f}")
+check("换行会虚增语速统计", _speed_with_nl > _speed_clean)
+
 raise SystemExit(finish())

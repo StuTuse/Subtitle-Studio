@@ -162,7 +162,8 @@ class ExportInterface(QWidget):
         too_long = [c for c in doc.cues if len(c.display_text.replace("\n", "")) > 28]
         too_short = [c for c in doc.cues if c.duration < 0.5]
         too_slow = [c for c in doc.cues
-                    if c.duration > 0 and len(c.display_text) / c.duration > 9]
+                    if c.duration > 0
+                    and len(c.display_text.replace("\n", "")) / c.duration > 9]
         overlap = sum(1 for i in range(len(doc.cues) - 1)
                       if doc.cues[i].end > doc.cues[i + 1].start + 0.01)
         empty = [i for i, c in enumerate(doc.cues) if not c.display_text.strip()]
