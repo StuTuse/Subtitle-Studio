@@ -2002,4 +2002,18 @@ check("BaseException 级别也通知 UI", "except BaseException as e:" in _src14
 _src143d = _insp143.getsource(_wk143.ThreadedCall.__init__)
 check("占位回调替换为信号发射器", "CB_PROGRESS" in _src143d and "CB_CANCEL" in _src143d)
 
+section("125. 音频抽取与缓存命名语义（第 144 轮钉子）")
+import inspect as _insp144  # noqa: E402
+from sstudio.core import media as _md144  # noqa: E402
+_src144 = _insp144.getsource(_md144.extract_audio)
+check("ffmpeg 进度双格式解析", "out_time_us=" in _src144 and "out_time=" in _src144)
+check("取消/异常回收半成品", "p.returncode != 0" in _src144 and "os.remove(out_wav)" in _src144)
+check("成品大小下限校验", "os.path.getsize(out_wav) > 1024" in _src144)
+_src144b = _insp144.getsource(_md144._extract_with_pyav)
+check("重采样 flush 保尾部", "resampler.resample(None)" in _src144b)
+check("半截 wav 取消即清", "except BaseException:" in _src144b)
+_src144c = _insp144.getsource(_md144.default_wav_path)
+check("缓存名用 md5 稳定 tag", "hashlib.md5(os.path.abspath(video_path)" in _src144c)
+check("孤儿缓存超 24h 才清", "> 86400" in _src144c)
+
 raise SystemExit(finish())
