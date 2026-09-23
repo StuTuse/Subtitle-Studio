@@ -1806,4 +1806,19 @@ check("几何保存 base64", 'saveGeometry().toBase64()' in _src129)
 _src129b = _insp129.getsource(_mw129.MainWindow._ensure_on_screen)
 check("跨屏拉回+超大收回双修", "too_big" in _src129b and "intersects(geo)" in _src129b)
 
+section("111. 时间轴缓存与命中语义（第 130 轮钉子）")
+import inspect as _insp130  # noqa: E402
+from sstudio.ui.timeline import Timeline as _TL130, _nice_step as _ns130  # noqa: E402
+_src130 = _insp130.getsource(_TL130.paintEvent)
+check("缓存 key 含内容 token/尺寸/主题/时长/doc", "self._content_token, w, h, dark, dur, id(self.doc)" in _src130)
+_src130b = _insp130.getsource(_TL130.content_changed)
+check("内容变化清缓存再重画", "self._cache = None" in _src130b and "self._content_token += 1" in _src130b)
+_src130c = _insp130.getsource(_TL130.mousePressEvent)
+check("命中色块只发选中不 seek", "self.cue_clicked.emit(hit)" in _src130c and "self.seek_requested.emit(self._drag_start)" in _src130c)
+_src130d = _insp130.getsource(_TL130.mouseReleaseEvent)
+check("框选传完整命中列表", "self.cue_range.emit(idx)" in _src130d)
+_src130e = _insp130.getsource(_TL130._hit)
+check("回看终止 end<t 早退", "if c.end < t:" in _src130e)
+check("刻度步长序列覆盖长视频", _ns130(7200.0, 1000) == 900 and _ns130(0.1, 800) == 1.0)
+
 raise SystemExit(finish())
