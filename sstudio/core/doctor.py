@@ -110,9 +110,12 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
     for i, (name, idx) in enumerate(PIP_INDEXES):
         if cancel and cancel():
             return False, "已取消。"
-        cmd = _pip_base_args() + ["install", "--no-input", "--disable-pip-version-check",
-                                  f"--timeout={PIP_NET_TIMEOUT}",
-                                  f"--retries={len(PIP_INDEXES)}", *pkgs]
+        # 复用循环前算好的 base：frozen 下每次重建都会重新扫系统 python
+        # （逐个起子进程探测，单个可耗 10s+），3 镜像 × N 探测纯属浪费，
+        # 且不同镜像间可能落到不同解释器
+        cmd = base + ["install", "--no-input", "--disable-pip-version-check",
+                      f"--timeout={PIP_NET_TIMEOUT}",
+                      f"--retries={len(PIP_INDEXES)}", *pkgs]
         if idx:
             cmd += ["-i", idx]
         label = name
