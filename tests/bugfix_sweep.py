@@ -2071,4 +2071,38 @@ check("SRT 导出导入回环", [c.text for c in _c147] == ["回环一", "回环
 _c147b, _f147b = _fm147.import_text(_fm147.to_vtt(_d147c), "x.vtt")
 check("VTT 导出导入回环", [c.text for c in _c147b] == ["回环一", "回环二"] and _f147b == "vtt")
 
+section("129. 撤销栈快照语义实测（第 148 轮钉子）")
+_d148 = _CD147()
+_d148.cues = [_Cue147(start=0, end=1, text="A")]
+_u148, _r148 = [], []          # 模拟 editor_page.push_undo/undo/redo 协议
+_d148.snapshot()
+_u148.append(_d148.snapshot())
+_d148.cues[0].text = "A改"
+check("快照与现值隔离", _u148[0]["cues"][0]["text"] == "A")
+_r148.append(_d148.snapshot())
+_d148.restore(_u148.pop())
+check("undo 回原文", _d148.cues[0].text == "A")
+_d148.restore(_r148.pop())
+check("redo 恢复修改", _d148.cues[0].text == "A改")
+_d148.cues.append(_Cue147(start=2, end=3, text="B"))
+_u148.append(_d148.snapshot())
+_d148.cues.pop()
+_d148.restore(_u148.pop())
+check("结构撤销恢复行数", len(_d148.cues) == 2 and _d148.cues[1].text == "B")
+_t148 = []
+for _i148 in range(61):
+    _t148.append(_i148)
+    del _t148[:-60]            # push_undo 同款截断
+check("历史栈 60 深度截断", len(_t148) == 60 and _t148[0] == 1)
+_d148.cues[0].words = [{"w": "A", "s": 0.0, "e": 0.5}]
+_s148 = _d148.snapshot()
+_d148.cues[0].words = []
+_d148.restore(_s148)
+check("words 时间轴随快照恢复", len(_d148.cues[0].words) == 1)
+_d148.meta["k"] = 1
+_s148b = _d148.snapshot()
+_d148.meta["k"] = 2
+_d148.restore(_s148b)
+check("快照只管 cues 不管 meta（有意设计）", _d148.meta.get("k") == 2)
+
 raise SystemExit(finish())
