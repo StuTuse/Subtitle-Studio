@@ -1596,4 +1596,16 @@ check("多 cue 多行说话人不串块", [(c.speaker, c.text) for c in _v113d] 
 _v113e = _fm113.parse_vtt("\ufeffWEBVTT X-header\n\n00:00:01.000 --> 00:00:02.000\n带BOM与扩展头")
 check("BOM 与扩展头一并剥掉", len(_v113e) == 1 and _v113e[0].text == "带BOM与扩展头")
 
+section("95. 媒体探测与音频抽取（第 114 轮钉子）")
+import inspect as _insp114  # noqa: E402
+from sstudio.core import media as _md114  # noqa: E402
+_src114 = _insp114.getsource(_md114._extract_with_pyav)
+check("音频轨判空在 wave.open 前", "这个文件里没有音频轨。" in _src114)
+check("重采样器 flush 尾帧", "resampler.resample(None)" in _src114)
+check("半成品 wav 异常路径清理", "except BaseException:" in _src114)
+_src114b = _insp114.getsource(_md114.default_wav_path)
+check("wav 名用 md5 不用随机 hash", "hashlib.md5(os.path.abspath(video_path)" in _src114b)
+check("目录不可写回退 tempdir", "tempfile.gettempdir()" in _src114b)
+check("_run 超时返回错误标记", "__ERR__timeout" in _insp114.getsource(_md114._run))
+
 raise SystemExit(finish())
