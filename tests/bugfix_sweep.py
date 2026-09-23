@@ -1494,4 +1494,17 @@ check("修复完成自动重检", "QTimer.singleShot(600, self.refresh)" in _src
 _src107c = _insp107.getsource(_CP107.refresh)
 check("重检前清空 host 行", "takeAt(0)" in _src107c)
 
+section("88. 启动闪屏语义（第 108 轮钉子）")
+import inspect as _insp108  # noqa: E402
+from sstudio.ui.splash import Splash as _SP108, paint_app_icon as _pai108  # noqa: E402
+_src108 = _insp108.getsource(_SP108._s)
+check("绘制倍率恒 1.0（缩放交 DPR）", "return 1.0" in _src108)
+_src108b = _insp108.getsource(_SP108.finish)
+check("淡出动画异常直接关", "except Exception:" in _src108b and "self.close()" in _src108b)
+check("600ms 强制关兜底", "QTimer.singleShot(600, self._force_close)" in _src108b)
+_src108c = _insp108.getsource(_SP108._set_fade)
+check("透明度钳位 0..1", "max(0.0, min(1.0, float(v)))" in _src108c)
+check("app_icon 渲染到 256px", "for px in (16, 24, 32, 48, 64, 128, 256):"
+      in _insp108.getsource(_insp108.getmodule(_SP108).app_icon))
+
 raise SystemExit(finish())
