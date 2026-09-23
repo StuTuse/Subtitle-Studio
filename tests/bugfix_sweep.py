@@ -1161,4 +1161,18 @@ _src77 = _insp77.getsource(_doc77.pip_install)
 check("pip 子进程运行中响应取消并 kill", "p.kill()" in _src77)
 check("pip 总时长闸", "PIP_TIMEOUT" in _src77)
 
+section("60. 字幕表键位与防回环（第 78 轮钉子）")
+import inspect as _insp78  # noqa: E402
+from sstudio.ui.cue_table import CueTable as _CT78  # noqa: E402
+_src78 = _insp78.getsource(_CT78.keyPressEvent)
+check("Delete/Backspace 删除有编辑态守卫",
+      "EditingState" in _src78 and "Key_Backspace" in _src78)
+check("Enter 激活排除 Ctrl+Enter", "ControlModifier" in _src78)
+_src78b = _insp78.getsource(_CT78._on_item_changed)
+check("suspend/抑制行双保险防回环",
+      "_suspend" in _src78b and "_suppress_rows" in _src78b)
+from sstudio.ui.cue_table import _TextDelegate as _TD78  # noqa: E402
+_src78c = _insp78.getsource(_TD78.setModelData)
+check("编辑提交 rstrip 尾随空白", "rstrip()" in _src78c)
+
 raise SystemExit(finish())
