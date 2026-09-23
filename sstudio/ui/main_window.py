@@ -269,6 +269,9 @@ class MainWindow(FluentWindow):
                 return False
             if not path.lower().endswith(".ssp"):
                 path += ".ssp"
+        # 保存代数 +1：让仍在后台跑的自动保存线程在写盘前自查到"已被手动
+        # 保存取代"，放弃用序列化中的旧快照覆盖这次刚落盘的新内容
+        self._save_gen = getattr(self, "_save_gen", 0) + 1
         try:
             _atomic_write_text(path, self.doc.to_json())
         except OSError as e:
@@ -321,13 +324,19 @@ class MainWindow(FluentWindow):
             return          # 上一次自动保存还没落地：下次 mark_dirty 会再排
         doc, path = self.doc, self.doc.path
         gen = self._dirty_gen          # 快照代数：线程跑序列化期间可能又脏了
-        self._dirty_gen += 1
+        self._dirty_gen = gen + 1
+        save_gen = getattr(self, "_save_gen", 0)
         # 5000 条字幕 to_json ~150ms（含词级时间戳更多），放 UI 线程每次
         # 自动保存都卡一下；序列化是纯内存只读，丢给工作线程跑，写盘也在
         # 线程里做（同一份字符串）。完成后按代数复核：期间没再编辑才清脏标。
         from .workers import ThreadedCall
 
         def _serialize_and_write() -> str:
+            # 写盘前复核保存代数：期间用户手动保存过（save_project 递增
+            # _save_gen）就放弃——线程手里的快照比盘上的旧，覆盖会回滚
+            # 用户刚保存的内容。
+            if getattr(self, "_save_gen", 0) != save_gen:
+                return ""
             _atomic_write_text(path, doc.to_json())
             return path
 

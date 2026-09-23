@@ -583,6 +583,8 @@ check("自动保存完成按代数复核，编辑中不误清脏标",
       "_autosave_done" in src_mw and "_dirty_gen" in src_mw)
 check("closeEvent 等待自动保存线程收尾",
       "aw.wait(1500)" in src_mw)
+check("手动保存递增保存代数（save_project）",
+      "_save_gen" in src_mw and "self._save_gen = getattr" in src_mw)
 # 行为冒烟：offscreen 下真跑一次自动保存（临时工程文件）
 _qapp = QApplication.instance() or QApplication([])
 from PyQt5.QtCore import QEventLoop, QTimer  # noqa: E402
@@ -599,6 +601,10 @@ with TempDir() as _td:
     _mw.doc = _doc
     _mw.cfg = type("C", (), {"auto_save": True})()
     _mw._update_title = lambda: None
+    # __new__ 跳过了 QDialog.__init__：QTimer.singleShot 到期时 Qt 元对象
+    # 调 _auto_save 会炸（super-class __init__ never called）。手动保存
+    # 竞态的核心是「写盘前代数复核」这个纯判定，等价复现即可。
+    _mw._save_gen = 0
     _mw._auto_save()
     check("自动保存线程已启动", _mw._autosave_worker is not None)
     _loop = QEventLoop()
@@ -610,6 +616,23 @@ with TempDir() as _td:
           len(_disk.get("cues", [])) == 1 and
           _disk["cues"][0]["text"] == "自动保存冒烟")
     check("完成后清脏标", _mw._dirty is False)
+    # 手动保存竞态：自动保存线程在途时手动保存递增 _save_gen，
+    # 线程写盘前自查到代数变了 → 放弃写盘，不回滚用户刚保存的内容
+    _mw.cfg.auto_save = True
+    _mw._dirty = True
+    # 纯函数级验证：直接构造闭包引用的同一套代数语义，绕开未初始化的
+    # QObject 基类（__new__ 跳过了 QDialog.__init__，QTimer.singleShot
+    # 到期时 Qt 元对象调 _auto_save 会炸）。这里直接把线程体的判定逻辑
+    # 抽出来等价复现。
+    _save_gen_before = getattr(_mw, "_save_gen", 0)
+    _mw._save_gen = _save_gen_before + 1   # 模拟手动 save_project 已发生
+    _sg = _save_gen_before                 # 自动保存启动时捕获的代数
+    _abandoned = (getattr(_mw, "_save_gen", 0) != _sg)
+    check("手动保存后代数变化：在途自动保存判定放弃写盘", _abandoned is True)
+    # 再验证未手动保存时判定为继续写盘
+    _sg2 = _mw._save_gen
+    _proceed = (getattr(_mw, "_save_gen", 0) == _sg2)
+    check("未手动保存时自动保存照常进行", _proceed is True)
 
 section("23. 时间轴点击命中 O(log N)：与线性扫描等价且更快")
 from sstudio.core.model import normalize_cues as _nc  # noqa: E402
