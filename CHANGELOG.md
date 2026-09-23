@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.124] - 2026-09-24
+
+v1.17.124：测试加固——bugfix_sweep 第 98 节钉住 headless 流水线语义（--out 前置校验、中断退出码 130、异常路径清理 wav、成品原子替换、纠错整轮失败退出码 3、close_gaps 与 GUI 对齐）；cli_pipeline.py 三轮深读完成无新缺陷
+
 ## [1.17.123] - 2026-09-24
 
 v1.17.123：测试加固——bugfix_sweep 第 97 节钉住发版脚本推送与发布语义（推送后 ls-remote 复核 tag、Release 已存在走 upload --clobber 补传、缺组件只警告不阻断、token 拼接串取首段）；release.py 三轮深读完成无新缺陷
