@@ -161,26 +161,33 @@ class CueTable(QTableWidget):
             self.selectRow(row)
 
     def update_row(self, row: int, cue: Cue) -> None:
-        if 0 <= row < self.rowCount():
-            self._suppress_rows.add(row)
-            self.item(row, COL_TEXT).setData(Qt.EditRole, cue.display_text)
-            self.item(row, COL_TEXT).setText(cue.display_text)
-            badge, _ = self._styles(cue.state, is_dark())
-            self.item(row, COL_STATE).setText(state_text(cue.state))
-            self.item(row, COL_STATE).setBackground(QBrush(badge))
-            self._suppress_rows.discard(row)
+        if not (0 <= row < self.rowCount()):
+            return
+        tx, st = self.item(row, COL_TEXT), self.item(row, COL_STATE)
+        if tx is None or st is None:      # 行存在但单元格未建（异常路径防御）
+            return
+        self._suppress_rows.add(row)
+        tx.setData(Qt.EditRole, cue.display_text)
+        tx.setText(cue.display_text)
+        badge, _ = self._styles(cue.state, is_dark())
+        st.setText(state_text(cue.state))
+        st.setBackground(QBrush(badge))
+        self._suppress_rows.discard(row)
 
     def mark_row_llm(self, row: int, text: str) -> None:
         """LLM 流式回填：只更新文本与状态底色，保持滚动位置。"""
         if not (0 <= row < self.rowCount()):
             return
         it = self.item(row, COL_TEXT)
+        st = self.item(row, COL_STATE)
+        if it is None or st is None:      # 行存在但单元格未建（异常路径防御）
+            return
         badge, bg = self._styles("llm", is_dark())
         self._suppress_rows.add(row)
         it.setData(Qt.EditRole, text)
         it.setText(text)
-        self.item(row, COL_STATE).setText(state_text("llm"))
-        self.item(row, COL_STATE).setBackground(QBrush(badge))
+        st.setText(state_text("llm"))
+        st.setBackground(QBrush(badge))
         it.setBackground(QBrush(bg))
         self._suppress_rows.discard(row)
 
