@@ -1902,4 +1902,18 @@ check("自动修复等检查回来再跑", "QTimer.singleShot(0, self._fix_all)"
 _src136e = _insp136.getsource(_FR136._add_row)
 check("detail 路径转义防破坏 RichText", "_esc(det)" in _src136e)
 
+section("118. 启动闪屏与单实例语义（第 137 轮钉子）")
+import inspect as _insp137  # noqa: E402
+from sstudio.ui.splash import Splash as _SP137  # noqa: E402
+from sstudio.ui import single_instance as _si137  # noqa: E402
+_src137 = _insp137.getsource(_SP137.finish)
+check("淡出走窗口属性防 GC", "b\"fadeOut\"" in _src137 and "QTimer.singleShot(600, self._force_close)" in _src137)
+_src137b = _insp137.getsource(_SP137._set_fade)
+check("不透明度钳 0-1", "max(0.0, min(1.0, float(v)))" in _src137b)
+_src137c = _insp137.getsource(_SP137.paintEvent)
+check("进度亮块 cos 平滑", "0.5 - 0.5 * math.cos(self._phase * 2 * math.pi)" in _src137c)
+_src137d = _insp137.getsource(_si137)
+check("单实例崩溃残留清理", "removeServer(name)" in _src137d)
+check("新实例环境标记传递", "SS_NEW_INSTANCE" in _src137d)
+
 raise SystemExit(finish())
