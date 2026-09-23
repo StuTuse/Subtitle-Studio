@@ -6,8 +6,7 @@ QGraphicsOpacityEffect + QGraphicsBlurEffect 复刻同一套节奏：
 
 * 页面切换：前进从右推入、后退从左推入，位移 + 模糊消散（420/300ms）；
 * 级联入场：卡片依次上浮，每张错开 55ms（460ms）；
-* 徽标绽放：模糊 8px → 0 淡入（520ms）；
-* 完成仪式：完成按钮放大成全屏遮罩 → 文案级联 → 遮罩模糊消散露出主窗。
+* 徽标绽放：模糊 8px → 0 淡入（520ms）。
 
 性能注意：QGraphicsEffect 走 CPU 光栅化，只在向导这种一次性界面使用；
 动画结束立即 clear_effect 摘掉，主窗口常规操作绝不挂 effect。
@@ -18,8 +17,7 @@ from typing import List, Optional
 
 from PyQt5.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint,
                           QPropertyAnimation, QTimer)
-from PyQt5.QtWidgets import (QGraphicsBlurEffect, QGraphicsOpacityEffect,
-                             QWidget)
+from PyQt5.QtWidgets import (QGraphicsBlurEffect, QWidget)
 
 # macOS 同款缓动曲线
 EASE_OUT = QEasingCurve(QEasingCurve.OutCubic)          # 通用入场
@@ -155,71 +153,3 @@ def clear_effect(widget: QWidget) -> None:
         widget.setGraphicsEffect(None)
     except Exception:
         pass
-
-
-def finish_reveal(finish_btn: QWidget, wizard: QWidget,
-                  logo_widget: Optional[QWidget] = None,
-                  text_widgets: Optional[List[QWidget]] = None,
-                  on_done=None) -> None:
-    """完成仪式：遮罩从按钮矩形扩张铺满 → 文案级联 → 遮罩模糊消散。
-
-    三幕结构复刻 macOS-Web finishWizard。on_done 在遮罩消散完毕后回调，
-    调用方此时再 accept() 关闭向导，主窗从遮罩后面浮现。
-    """
-    geo = finish_btn.geometry()
-    # 全屏遮罩：初始精确覆盖按钮矩形（向导坐标系）
-    veil = QWidget(wizard)
-    veil.setAutoFillBackground(True)
-    veil.setStyleSheet(
-        "background: qradialgradient(cx:0.5, cy:0, radius:1.3, "
-        "stop:0 rgba(47,109,179,235), stop:1 rgba(14,30,52,250));")
-    veil.setGeometry(geo)
-    veil.raise_()
-    veil.show()
-    _animate(veil, b"geometry", QRect(geo), QRect(0, 0, wizard.width(),
-                                                  wizard.height()),
-             _FINISH_MS, FINISH_EASE,
-             on_done=lambda: _reveal_text(veil, logo_widget, text_widgets,
-                                          wizard, on_done))
-
-
-def _reveal_text(veil: QWidget, logo: Optional[QWidget],
-                 texts: Optional[List[QWidget]], wizard: QWidget,
-                 on_done) -> None:
-    """第二幕：遮罩铺满后，徽标 + 文案级联登场。"""
-    if logo is not None:
-        logo.setParent(veil)
-        logo.move((veil.width() - logo.width()) // 2,
-                  max(40, veil.height() // 2 - 130))
-        logo.show()
-        pop_in(logo)
-    for i, w in enumerate(texts or []):
-        if w is None:
-            continue
-        w.setParent(veil)
-        base = w.pos()
-        w.move((veil.width() - w.width()) // 2, base.y())
-        w.show()
-    cascade_in(texts or [], delay=260)
-    QTimer.singleShot(1500, lambda: _fade_away(veil, wizard, on_done))
-
-
-def _fade_away(veil: QWidget, wizard: QWidget, on_done) -> None:
-    """第三幕：遮罩模糊消散，露出主窗。"""
-    blur = QGraphicsBlurEffect(veil)
-    blur.setBlurRadius(0.0)
-    veil.setGraphicsEffect(blur)
-    a2 = QPropertyAnimation(blur, b"blurRadius", veil)
-    a2.setDuration(_FINAL_FADE_MS)
-    a2.setStartValue(0.0)
-    a2.setEndValue(22.0)
-    grp = QParallelAnimationGroup(veil)
-    grp.addAnimation(a2)
-
-    def _end():
-        veil.deleteLater()
-        if on_done:
-            on_done()
-
-    grp.finished.connect(_end)
-    grp.start(QPropertyAnimation.DeleteWhenStopped)
