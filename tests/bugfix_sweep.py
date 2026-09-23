@@ -1748,4 +1748,19 @@ check("非 busy 态忽略进度", "if self._flow != \"busy\":" in _src125c)
 _src125d = _insp125.getsource(_ED125.transport_key)
 check("shift 微调 1s 否则 5s", "nudge(-1 if shift else -5)" in _src125d)
 
+section("107. 设置页接入点与预设编辑（第 126 轮钉子）")
+import inspect as _insp126  # noqa: E402
+from sstudio.ui.settings_page import SettingsInterface as _SP126  # noqa: E402
+_src126 = _insp126.getsource(_SP126._del_prof)
+check("删除路径不先收集防丢 Key", "del self.cfg.profiles[row]" in _src126
+      and "_show_profile(self.cfg.profiles[nxt])" in _src126)
+_src126b = _insp126.getsource(_SP126._rename_prof)
+check("改名只动激活行指针", "if self.cfg.active_profile == old:" in _src126b)
+_src126c = _insp126.getsource(_SP126._save_custom_preset)
+check("同名预设覆盖不堆积", "if e.get(\"name\") != name] + [entry]" in _src126c)
+_src126d = _insp126.getsource(_SP126._test_done)
+check("错误消息转义截 200 防顶坏布局", "_esc((msg or \"\")[:200])" in _src126d)
+_src126e = _insp126.getsource(_SP126._fill_models)
+check("自定义路径模型插最前", "insertItem(0, f\"{shown}  [自定义路径]\", userData=cur)" in _src126e)
+
 raise SystemExit(finish())
