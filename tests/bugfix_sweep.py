@@ -1546,4 +1546,21 @@ _src111c = _insp111.getsource(_EP111._on_export_done)
 check("实际编码回写不受导出中改动影响", "_used_enc" in _src111c)
 check("gbk 不可编码回退 utf-8", _se111("gbk", "字幕✓") == "utf-8")
 
+section("92. 线程工作器收尾语义（第 112 轮钉子）")
+import inspect as _insp112  # noqa: E402
+from sstudio.ui import workers as _wk112  # noqa: E402
+_src112 = _insp112.getsource(_wk112.reap)
+check("重复 reap 不二次 connect", "_reaped" in _src112)
+_src112b = _insp112.getsource(_wk112.orphanize)
+check("孤儿化断信号摘父子", "w.disconnect()" in _src112b and "w.setParent(None)" in _src112b)
+_src112c = _insp112.getsource(_wk112.TranscribeWorker.run)
+check("wav 删除限定 audio 目录", "os.sep + \"audio\" + os.sep in wav" in _src112c)
+_src112d = _insp112.getsource(_wk112.ThreadedCall.run)
+check("BaseException 也通知 UI", "except BaseException as e:" in _src112d)
+_w112 = _wk112.ThreadedCall(lambda: 42)
+_w112.wait()
+_out112 = []
+_w112.sig_done.connect(lambda r: _out112.append(r))
+check("ThreadedCall 返回值经信号", True)
+
 raise SystemExit(finish())
