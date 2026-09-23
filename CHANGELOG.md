@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.91] - 2026-09-23
+
+v1.17.91：测试加固——bugfix_sweep 第 65 节钉住 close_gaps 三条件语义、dedupe 空白归一化与 end 不回缩、stats 防除零；model.py 后半二轮深读无新缺陷
+
 ## [1.17.90] - 2026-09-23
 
 v1.17.90：测试加固——bugfix_sweep 第 64 节钉住配置目录回退链（data/config/models 布局）与 recent_files 裁剪/去重置顶语义；config.py 二轮深读无新缺陷
