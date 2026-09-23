@@ -230,6 +230,12 @@ class _ModelPage(_Page):
         self.p_base.clear()
         self.p_key.clear()
         self.p_test.setText(dim_span("已跳过。到「设置」里随时可配。"))
+        # 同一轮向导里先填好并点过「下一步」（apply 已写进 cfg.profiles[0]），
+        # 再后退回来点跳过：用户最终意图是「不要配」，cfg 里不能留脏值
+        # （base/key/model 会在向导结束时一起落盘）。
+        p = self.wizard.cfg.profiles[0]
+        p.base_url = ""
+        p.api_key = ""
         self.wizard.update_nav()
 
     def _test(self) -> None:
