@@ -1413,4 +1413,18 @@ check("summary 返回非空字符串", bool(_s100), _s100[:30])
 _i100 = _dc100.check_all()
 check("python 检查项恒真", _i100[0].id == "python" and _i100[0].ok)
 
+section("81. CUDA 运行时发现链（第 101 轮钉子）")
+import inspect as _insp101  # noqa: E402
+from sstudio.core import cuda_rt as _cr101  # noqa: E402
+_src101 = _insp101.getsource(_cr101._system_pythons)
+check("过滤 WindowsApps 占位 python", "windowsapps" in _src101)
+check("解释器候选 memo 缓存", "_py_memo" in _src101)
+_src101b = _insp101.getsource(_cr101.register)
+check("缓存区分 extra_dir", "req == _result_extra" in _src101b)
+check("add_dll_directory 失败回退 PATH", "os.environ[\"PATH\"] = d + os.pathsep" in _src101b)
+_src101c = _insp101.getsource(_cr101.probe_loadable)
+check("真 LoadLibrary 验证可加载", "ctypes.WinDLL" in _src101c)
+_d101 = _cr101.discover()
+check("discover 返回 CudaRuntime", isinstance(_d101, _cr101.CudaRuntime))
+
 raise SystemExit(finish())
