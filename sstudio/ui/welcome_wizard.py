@@ -211,7 +211,7 @@ class _ModelPage(_Page):
         self._worker = None
 
     def _fill_presets(self) -> None:
-        """预设下拉 = 内置 + 用户自定义（config.custom_presets，出厂带 UJN 中转）。"""
+        """预设下拉 = 内置 + 用户自定义（config.custom_presets，出厂带示例预设）。"""
         self.preset.addItem("选择服务商预设…", None, None)
         for p in self._presets():
             self.preset.addItem(p["name"], None, p)   # (text, icon, userData)

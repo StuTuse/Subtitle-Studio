@@ -227,8 +227,8 @@ class Config:
     custom_presets: List[Dict[str, str]] = field(default_factory=list)
     # 自定义供应商预设（用户在设置页保存的）。条目键与 BUILTIN_PRESETS 相同：
     # name / base_url / model / api_key(可选) / no_reasoning(可选)。
-    # 欢迎向导与设置页的预设下拉 = 内置 + 自定义；配置里第一条自定义
-    # （出厂为「UJN 中转」）只是初始值，用户可随意增删改。
+    # 欢迎向导与设置页的预设下拉 = 内置 + 自定义；出厂仅注入一条示例
+    # 预设，用户可随意增删改。
 
     # ------------------------------------------------------------ I/O
     def to_dict(self) -> Dict[str, Any]:
@@ -276,13 +276,13 @@ class Config:
             cfg.profiles = [LLMProfile()]
         if not any(p.name == cfg.active_profile for p in cfg.profiles):
             cfg.active_profile = cfg.profiles[0].name
-        # 自定义预设：出厂带一条「UJN 中转」，仅当用户从未配置过时注入；
+        # 自定义预设：出厂带一条本地中转示例，仅当用户从未配置过时注入；
         # 一旦有自定义条目（哪怕删光了留空列表），完全尊重配置文件。
         cp = custom_presets_raw if isinstance(custom_presets_raw, list) else []
         cp = [p for p in cp if isinstance(p, dict) and p.get("name")
               and p.get("base_url")]
         if not cp and not d.get("custom_presets_loaded"):
-            cp = [{"name": "UJN 中转 (本地)",
+            cp = [{"name": "本地中转 (示例)",
                    "base_url": "http://127.0.0.1:8790/v1",
                    "model": "deepseek-v41-flash", "no_reasoning": "1"}]
         cfg.custom_presets = cp
