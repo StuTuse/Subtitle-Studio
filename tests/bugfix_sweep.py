@@ -1303,4 +1303,14 @@ check("skipped 后 apply 不回写", "if self._skipped:\n            return" in 
 _src91c = _insp91.getsource(_AP91.apply)
 check("外观 apply 空值兜底 auto", "self._picked or \"auto\"" in _src91c)
 
+section("72. 时间轴文本解析边界（第 92 轮钉子）")
+from sstudio.core.formats import parse_timed_text as _ptt92, parse_txt as _pt92  # noqa: E402
+_c92 = _ptt92("[00:01:23.450] 你好\n[00:01:25] --> [00:01:28] 世界")
+check("方括号时间行解析", len(_c92) == 2)
+check("无 end 行钳 +3s", abs(_c92[0].end - (_c92[0].start + 3.0)) < 1e-9)
+_c92b = _ptt92("[00:00:10] A\n[00:00:05] B")
+check("时间倒挂行保留原值（不排序）", _c92b[1].start == 5.0)
+_t92 = _pt92("第一行。\n" + "-" * 10 + "\n第二行内容")
+check("分隔线行被剔除", len(_t92) == 2)
+
 raise SystemExit(finish())
