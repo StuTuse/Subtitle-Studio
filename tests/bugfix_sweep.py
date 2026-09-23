@@ -1123,4 +1123,16 @@ check("auto_save 序列化在工作线程",
 check("dropEvent 单文件语义（首个命中即开）",
       "return" in _insp70.getsource(_mw70.MainWindow.dropEvent))
 
+section("57. closeEvent 收尾链语义（第 71 轮钉子）")
+_src71a = _insp70.getsource(_mw70.MainWindow.closeEvent)
+check("后台任务统一 6s 总预算（不串行 15s）", "time.monotonic() + 6.0" in _src71a)
+check("残留线程 os._exit 兜底", "os._exit(0)" in _src71a)
+check("转写残留 wav 兜底清理", "current_wav" in _src71a)
+check("先拆媒体后端防 DirectShow 崩", "player.shutdown()" in _src71a)
+_src71b = _insp70.getsource(_mw70.MainWindow._close_save_quit)
+check("保存失败留在软件（close 只在保存成功后）",
+      "if self.save_project():" in _src71b)
+check("_atomic_write_text 有 fsync",
+      "os.fsync" in _insp70.getsource(_mw70._atomic_write_text))
+
 raise SystemExit(finish())
