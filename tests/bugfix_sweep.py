@@ -834,4 +834,20 @@ for k in range(200):
 _cost = (_t32.perf_counter() - _t0) / 200 * 1000
 check("5000 条命中仍为对数量级", _cost < 0.5, f"{_cost:.3f}ms/次")
 
+section("33. 字幕表纯函数边界：时长警示/行高估算/tip（第 30 轮钉子）")
+from sstudio.ui.cue_table import _duration_warn as _dw33, \
+    _wrap_lines as _wl33, _tip as _tip33  # noqa: E402
+_c_fast = _Cue(0, 1.0, "字" * 20)
+check("语速过快警示", "字/秒" in (_dw33(_c_fast) or ""), repr(_dw33(_c_fast)))
+_c_long = _Cue(0, 9.5, "句子")
+check("超 8s 警示", "8s" in _dw33(_c_long))
+_c_short = _Cue(0, 0.3, "句子")
+check("不足 0.5s 警示", "0.5s" in _dw33(_c_short))
+_c_ok = _Cue(0, 3.0, "正常长度的一句话")
+check("正常条目无警示", _dw33(_c_ok) == "")
+check("空文本行高不崩", _wl33(_Cue(0, 1, "")) == 0)
+check("tip 空置信度不含置信度行", "置信度" not in _tip33(_Cue(0, 1, "x")))
+check("tip 数值置信度格式化", "置信度 0.87" in _tip33(
+    _Cue.from_dict({"start": 0, "end": 1, "text": "x", "confidence": 0.87})))
+
 raise SystemExit(finish())
