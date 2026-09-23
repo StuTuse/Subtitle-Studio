@@ -1313,4 +1313,19 @@ check("时间倒挂行保留原值（不排序）", _c92b[1].start == 5.0)
 _t92 = _pt92("第一行。\n" + "-" * 10 + "\n第二行内容")
 check("分隔线行被剔除", len(_t92) == 2)
 
+section("73. 批量纠错止损/回写链（第 93 轮钉子）")
+import inspect as _insp93  # noqa: E402
+from sstudio.core import llm as _llm93  # noqa: E402
+_src93 = _insp93.getsource(_llm93.fix_document)
+check("止损后取消排队批次", "f2.cancel()" in _src93)
+check("止损部分成果随异常上交", "partial_result" in _src93 or "LLMPartialError" in _src93)
+check("on_cue 桥异常不打断循环", "on_cue(no, new)" in _src93)
+check("strict 拦下行标 review", "cue.state = \"review\"" in _src93)
+_got93 = _llm93.parse_numbered("```srt\n[1] 第一句\n[2] 第二句\n```", range(1, 3))
+check("markdown 围栏剥离", _got93.get(1) == "第一句" and _got93.get(2) == "第二句")
+check("空编号行不污染上一条",
+      _llm93.parse_numbered("[1] 好\n[2]\n谢谢观看", range(1, 3)) == {1: "好", 2: ""})
+check("空编号行后正确并回续行",
+      _llm93.parse_numbered("[1] 好\n[2]\n[2] 后续行", range(1, 3)) == {1: "好", 2: "后续行"})
+
 raise SystemExit(finish())
