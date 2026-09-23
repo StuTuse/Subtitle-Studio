@@ -1859,4 +1859,18 @@ check("撤销后同步编辑框防回写", "_sync_edit_area_after_history()" in 
 _src133c = _insp133.getsource(_ED133._after_struct)
 check("结构变化后夹回有效行", "max(0, min(row, len(self.doc.cues) - 1))" in _src133c)
 
+section("115. 导出编排语义（第 134 轮钉子）")
+import inspect as _insp134  # noqa: E402
+from sstudio.ui.export_page import ExportInterface as _EX134  # noqa: E402
+_src134 = _insp134.getsource(_EX134._export)
+check("导出中禁止重复启动", "getattr(self, \"_worker\", None) is not None" in _src134)
+check("渲染留主线程防竞态", "避免后台线程读 doc 与用户" in _src134)
+check("导出前建目录并报错", "os.makedirs(out_dir, exist_ok=True)" in _src134)
+_src134b = _insp134.getsource(_EX134._on_export_done)
+check("记录实际用过的编码", "getattr(self, \"_used_enc\", self._enc())" in _src134b)
+_src134c = _insp134.getsource(_EX134._base_name)
+check("基名三级回退防互相覆盖", "别再一律叫 subtitle" in _src134c)
+_src134d = _insp134.getsource(_EX134._finish_export)
+check("生命周期交给 reap", "reap(self._worker)" in _src134d)
+
 raise SystemExit(finish())
