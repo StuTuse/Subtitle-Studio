@@ -1608,4 +1608,16 @@ check("wav 名用 md5 不用随机 hash", "hashlib.md5(os.path.abspath(video_pat
 check("目录不可写回退 tempdir", "tempfile.gettempdir()" in _src114b)
 check("_run 超时返回错误标记", "__ERR__timeout" in _insp114.getsource(_md114._run))
 
+section("96. 文档结构编辑语义（第 115 轮钉子）")
+import inspect as _insp115  # noqa: E402
+from sstudio.core.model import CueDocument as _CD115, Cue as _Cue115  # noqa: E402
+_src115 = _insp115.getsource(_CD115.merge)
+check("merge 只删选中不吞夹行", "if i == first or i not in drop" in _src115)
+check("merge confidence 取最小", "min([c.confidence for c in picked" in _src115)
+_src115b = _insp115.getsource(_CD115.split)
+check("split words 按 seconds 分流", "float(w.get(\"start\", 0)) >= seconds" in _src115b)
+_d115 = _CD115(cues=[_Cue115(start=0, end=1, text="甲"), _Cue115(start=0.5, end=2, text="乙")])
+_d115.sorted()
+check("sorted 压重叠不丢条", len(_d115.cues) == 2 and _d115.cues[0].end <= _d115.cues[1].start + 1e-6)
+
 raise SystemExit(finish())
