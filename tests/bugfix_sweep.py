@@ -1658,4 +1658,16 @@ check("translate 前缀剥成纯语言码", "lang.split(\":\", 1)[1] or \"en\"" 
 _src118d = _insp118.getsource(_tr118.transcribe)
 check("faster-whisper 缺失前置报错", "pip install faster-whisper" in _src118d)
 
+section("100. 纠错主流程语义（第 119 轮钉子）")
+import inspect as _insp119  # noqa: E402
+from sstudio.core import llm as _ll119  # noqa: E402
+_src119 = _insp119.getsource(_ll119.fix_document)
+check("extra 只进本轮不滚术语表", "【本轮补充】" in _src119)
+check("连接失败全局止损", "_abort_flag[0] is not None" in _src119)
+check("止损带部分成果上抛", "raise LLMPartialError(" in _src119)
+check("on_cue 桥异常不打断循环", "except Exception:\n                            pass" in _src119)
+check("限流指数退避", "3.0 * (2 ** (attempt - 1))" in _src119)
+_src119b = _insp119.getsource(_ll119.parse_numbered)
+check("范围外编号忽略", "if lo <= no <= hi:" in _src119b)
+
 raise SystemExit(finish())
