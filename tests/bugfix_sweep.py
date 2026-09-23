@@ -1989,4 +1989,17 @@ check("空隙衔接对齐 GUI", "auto_close_gaps" in _src142c)
 check("成品原子替换", "os.replace(tmp, out)" in _src142c)
 check("纠错失败退出码 3", "return 3 if not fix_ok else 0" in _src142c)
 
+section("124. 工作线程收尾语义（第 143 轮钉子）")
+import inspect as _insp143  # noqa: E402
+from sstudio.ui import workers as _wk143  # noqa: E402
+_src143 = _insp143.getsource(_wk143.TranscribeWorker.run)
+check("退出兜底先删后留路径", "os.remove(wav)" in _src143 and "self.current_wav = wav if wav and not self.keep_audio else \"\"" in _src143)
+check("无音频轨前置失败", "文件不含音频" in _src143)
+_src143b = _insp143.getsource(_wk143.FixWorker.run)
+check("止损部分成果原样上交", "e.partial_result" in _src143b)
+_src143c = _insp143.getsource(_wk143.ThreadedCall.run)
+check("BaseException 级别也通知 UI", "except BaseException as e:" in _src143c)
+_src143d = _insp143.getsource(_wk143.ThreadedCall.__init__)
+check("占位回调替换为信号发射器", "CB_PROGRESS" in _src143d and "CB_CANCEL" in _src143d)
+
 raise SystemExit(finish())
