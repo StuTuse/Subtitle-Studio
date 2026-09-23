@@ -112,6 +112,12 @@ def _pipeline(args, cfg: Config, video: str, out: str, key: str) -> int:
         if touched:
             _p(f"已衔接 {touched} 处字幕空隙（共 {saved:.1f}s）")
     _p(f"转写完成：{len(doc.cues)} 条，用时 {res.meta.get('elapsed')}s")
+    if not doc.cues:
+        # 与 GUI 转写路径对齐（GUI 第 18 轮加了同样告警）：纯静音/音乐/
+        # 语言设置不对时一条都识别不出，批处理拿到空 srt 还报成功会
+        # 让自动化链路把空文件当有效产物继续用。
+        _p("⚠ 没有识别出任何字幕——可能是纯静音/音乐片段，或语言设置不匹配。"
+           "可检查 --no-fix 之外的语言配置后重试。")
 
     fix_ok = True
     if not args.no_fix:
