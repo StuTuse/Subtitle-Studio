@@ -2350,4 +2350,24 @@ _d156d.cues = [_Cue147(start=0, end=1, text="重复句"), _Cue147(start=1, end=2
                _Cue147(start=2, end=3, text="不同句")]
 check("重复句去重", _d156d.dedupe_repeats() >= 1 and len(_d156d.cues) == 2)
 
+section("138. 导出端格式细节实测（第 157 轮钉子）")
+import json as _json157  # noqa: E402
+_d157 = _CD147()
+_d157.cues = [_Cue147(start=1.0, end=2.0, text='你好<b>&"引"', speaker="张三")]
+_h157 = _fm147.to_html(_d157)
+check("HTML escape 完整", "&lt;b&gt;" in _h157 and "&amp;" in _h157)
+_j157 = _json157.loads(_fm147.to_json(_d157))
+check("JSON 内容原样", _j157["cues"][0]["start"] == 1.0
+      and _j157["cues"][0]["text"] == '你好<b>&"引"')
+_md157 = _fm147.to_md(_d157)
+check("MD 时间轴与说话人", "00:00:01" in _md157 and "**张三**" in _md157)
+_lrc157 = _fm147.to_lrc(_d157)
+check("LRC 分秒标签格式", "[00:01.00]你好" in _lrc157)
+check("TXT with_time 无毫秒", "[00:00:01]" in _fm147.to_txt(_d157, with_time=True))
+check("ASS Dialogue 厘秒", "Dialogue: 0,0:00:01.00,0:00:02.00" in _fm147.to_ass(_d157))
+check("SRT 文本原样", "你好<b>" in _fm147.to_srt(_d157))
+check("VTT 点号毫秒", "00:00:01.000 --> 00:00:02.000" in _fm147.to_vtt(_d157))
+_src157 = open("sstudio/cli_pipeline.py", encoding="utf-8").read()
+check("CLI SRT 用户编码其余 utf-8", 'getattr(cfg, "export_encoding", "utf-8-sig") if key == "srt" else "utf-8"' in _src157)
+
 raise SystemExit(finish())
