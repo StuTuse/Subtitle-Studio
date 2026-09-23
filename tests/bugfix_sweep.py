@@ -1946,4 +1946,19 @@ check("Esc 中途关同样收 worker", "self._shutdown_worker()" in _src139d)
 _src139e = _insp139.getsource(_WW139._show_page)
 check("切页互斥显示+末页摘要", "pg.setVisible(i == idx)" in _src139e and "refresh_summary" in _src139e)
 
+section("121. 字幕导出端语义（第 140 轮钉子）")
+import inspect as _insp140  # noqa: E402
+from sstudio.core import formats as _fm140  # noqa: E402
+from sstudio.core.model import CueDocument as _CD140, Cue as _Cue140  # noqa: E402
+_d140 = _CD140()
+_d140.cues = [_Cue140(start=1.0, end=2.5, text="你好", speaker="张三"),
+              _Cue140(start=3.0, end=4.0, text="世界")]
+check("SRT speaker 独立行", "张三:" in _fm140.to_srt(_d140))
+check("VTT speaker 标签行", "<v 张三>" in _fm140.to_vtt(_d140))
+check("VTT 头在首", _fm140.to_vtt(_d140).startswith("WEBVTT"))
+check("ASS 时间厘秒格式", _fm140._ass_time(1.234) == "0:00:01.23")
+check("ASS 时间负值钳 0", _fm140._ass_time(-1.0) == "0:00:00.00")
+check("ASS Name 剥逗号换行", "张三" in _fm140.to_ass(_d140) and "Dialogue: 0,0:00:01.00,0:00:02.50" in _fm140.to_ass(_d140))
+check("TXT 自然段句末分段", "你好 世界" in _fm140.to_txt(_d140) or "你好" in _fm140.to_txt(_d140))
+
 raise SystemExit(finish())
