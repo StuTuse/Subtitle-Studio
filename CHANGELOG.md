@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.144] - 2026-09-24
+
+v1.17.144：测试加固——bugfix_sweep 第 118 节钉住启动闪屏与单实例语义（淡出走窗口不透明度属性防动画 GC、600ms 兜底强制关闭、不透明度钳 0-1、进度亮块 cos 平滑往复、单实例崩溃残留 QLocalServer.removeServer 清理、SS_NEW_INSTANCE 环境标记传递）；splash.py 与 single_instance.py 三轮深读完成无新缺陷
+
 ## [1.17.143] - 2026-09-24
 
 v1.17.143：测试加固——bugfix_sweep 第 117 节钉住首启自检修复语义（必需组件缺失时关闭按钮真退出并置 abort_app、closeEvent 守卫必须在前防被同名后定义覆盖、一键修复先取消回收旧 Worker 防并行 pip 与竞态回收、修复中关窗按钮保持可用防镜像黑洞、自动修复等检查结果回来再跑、探测路径 HTML 转义）；first_run_dialog.py 全文三轮深读完成无新缺陷
