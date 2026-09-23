@@ -511,4 +511,25 @@ _frd._worker = _fast
 _frd.reject()
 check("已结束的线程走 reap 不进孤儿表", _fast not in _orph_reg)
 
+# 回归钉死：FirstRunDialog 曾有两个同名 closeEvent，后定义的 worker 收尾
+# 把前定义的「必需组件缺失禁止关窗」守卫覆盖掉（Python 类体顺序语义），
+# X 直接关窗、带着缺组件的半残界面进主窗。守卫必须在唯一的 closeEvent 里。
+import inspect as _inspect  # noqa: E402
+_srcs = []
+for _m in ("closeEvent",):
+    _f = getattr(_FRD, _m)
+    _srcs.append(_inspect.getsource(_f))
+_ce_src = "".join(_srcs)
+check("closeEvent 全类唯一（不再有同名覆盖）",
+      _inspect.getsource(_FRD).count("def closeEvent") == 1)
+check("closeEvent 里保留必需组件守卫", "_required_ok" in _ce_src and "_on_close" in _ce_src)
+check("closeEvent 里保留线程收尾", "_shutdown_worker" in _ce_src)
+# 行为验证：required 未过时 close() 必须被挡下
+_frd2 = _FRD(Config())
+_frd2._required_ok = False
+_frd2.abort_app = False
+_frd2.close()
+check("必需组件缺失时 X 关窗被拦下（窗未销毁）", _frd2.isVisible() or not _frd2.testAttribute(1030))
+check("被拦下的关窗置了 abort_app（退出程序语义）", _frd2.abort_app is True)
+
 raise SystemExit(finish())

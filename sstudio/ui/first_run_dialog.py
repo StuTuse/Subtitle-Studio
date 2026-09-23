@@ -184,13 +184,16 @@ class FirstRunDialog(QDialog):
         self.abort_app = True
         self.reject()
 
-    def closeEvent(self, e) -> None:      # noqa: N802
-        """点窗口 X 同样受"必需组件缺失就别往下走"的约束。"""
+    # 注意：本类只保留一个 closeEvent。曾有两个同名定义——「必需组件缺失
+    # 就别往下走」的守卫在前、worker 等待收尾在后，Python 后者覆盖前者，
+    # 守卫被静默废掉（缺组件时 X 也能关窗，用户带着半残界面继续点）。
+    def closeEvent(self, e) -> None:  # noqa: N802
         if not self._required_ok:
             e.ignore()
-            self._on_close()
+            self._on_close()        # X 等同「退出程序」：abort_app=True
             return
-        e.accept()
+        self._shutdown_worker()
+        super().closeEvent(e)
 
     # ------------------------------------------------------------ 检查
     def _run_checks(self) -> None:
@@ -284,10 +287,6 @@ class FirstRunDialog(QDialog):
                 reap(w)
         except RuntimeError:
             pass                # 线程对象已被回收（C++ 侧已删）
-
-    def closeEvent(self, e) -> None:  # noqa: N802
-        self._shutdown_worker()
-        super().closeEvent(e)
 
     def reject(self) -> None:  # noqa: N802
         """Esc / 程序化关闭同样要收尾线程：exec_() 返回后对话框被 GC，
