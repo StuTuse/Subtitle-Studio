@@ -1932,4 +1932,18 @@ _ok138 = all(_s138[i].end <= _s138[i+1].start + 1e-6 for i in range(len(_s138)-1
     and abs(_s138[-1].end - 6.0) < 1e-6 and len(_s138) > 1
 check("拆分实测不重叠且收口", _ok138)
 
+section("120. 向导导航与收尾语义（第 139 轮钉子）")
+import inspect as _insp139  # noqa: E402
+from sstudio.ui.welcome_wizard import WelcomeWizard as _WW139  # noqa: E402
+_src139 = _insp139.getsource(_WW139._go_next)
+check("切页动画锁防连点", "self._anim_lock = True" in _src139 and "_PAGE_MS + 60" in _src139)
+_src139b = _insp139.getsource(_WW139._shutdown_worker)
+check("收尾等不到就孤儿化", "orphanize(w)" in _src139b and "orphanize(w2)" in _src139b)
+_src139c = _insp139.getsource(_WW139._finish)
+check("完成前收 worker 防析构 abort", "self._shutdown_worker()" in _src139c)
+_src139d = _insp139.getsource(_WW139.reject)
+check("Esc 中途关同样收 worker", "self._shutdown_worker()" in _src139d)
+_src139e = _insp139.getsource(_WW139._show_page)
+check("切页互斥显示+末页摘要", "pg.setVisible(i == idx)" in _src139e and "refresh_summary" in _src139e)
+
 raise SystemExit(finish())
