@@ -1521,4 +1521,16 @@ _src109d = _insp109.getsource(_FR109._fix_many)
 check("修复中 btn_close 保持可用", "btn_close 保持可用" in _src109d)
 check("detail 路径 escape", "from html import escape as _esc" in _insp109.getsource(_FR109._add_row))
 
+section("90. 时间线命中与框选（第 110 轮钉子）")
+import inspect as _insp110  # noqa: E402
+from sstudio.ui.timeline import Timeline as _TL110  # noqa: E402
+_src110 = _insp110.getsource(_TL110.paintEvent)
+check("缓存 key 含 token/id(doc)", "id(self.doc)" in _src110)
+_src110b = _insp110.getsource(_TL110.mousePressEvent)
+check("命中色块不重复 seek", "self.cue_clicked.emit(hit)" in _src110b)
+_src110c = _insp110.getsource(_TL110.mouseReleaseEvent)
+check("框选发完整命中列表", "self.cue_range.emit(idx)" in _src110c)
+_src110d = _insp110.getsource(_TL110._hit)
+check("二分回看 end<t 提前终止", "if c.end < t:" in _src110d)
+
 raise SystemExit(finish())
