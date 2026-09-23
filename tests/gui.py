@@ -346,11 +346,8 @@ wz.pages[3]._items = []       # 模拟体检完成
 wz._go_next()
 _pump(520)
 check("完成页出现", wz._idx == 4)
-wz._finish()                  # 完成仪式：遮罩三幕，最后才 accept
-_pump(400)                    # 遮罩扩张中
-check("仪式进行中尚未关闭", wz.result() == 0)
-_pump(2800)                   # 等三幕全部走完
-check("仪式结束后 accept", wz.result() == 1, wz.result())
+wz._finish()                  # 完成即关：无遮罩扩张/级联仪式
+check("点完成立即 accept", wz.result() == 1, wz.result())
 check("完成后写 setup_done", win.cfg.setup_done is True)
 check("外观选择已生效", win.cfg.theme == "dark", win.cfg.theme)
 win.cfg.setup_done = False    # 还原，别影响后面依赖默认配置的段落

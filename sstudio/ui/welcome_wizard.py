@@ -579,9 +579,6 @@ class WelcomeWizard(QDialog):
         if direction and prev is not None and prev is not cur:
             # 旧页滑出 → 新页从另一侧推入（macOS 前进右推/后退左推）
             wizard_fx.page_in(cur, direction)
-        elif not direction:
-            # 首次进入：整页淡入 + 内容级联
-            wizard_fx.pop_in(cur)
 
     def _paint_dots(self, idx: int) -> None:
         """进度点：当前 = 实心蓝胶囊，已过 = 浅蓝，未到 = 灰。"""
@@ -639,7 +636,7 @@ class WelcomeWizard(QDialog):
                           lambda: setattr(self, "_anim_lock", False))
 
     def _finish(self) -> None:
-        """完成仪式：按钮扩张铺满 → 文案级联 → 模糊消散露出主窗。"""
+        """完成：直接落盘关闭（不做扩张/级联仪式动画）。"""
         if self._anim_lock:
             return
         self._anim_lock = True
@@ -648,29 +645,7 @@ class WelcomeWizard(QDialog):
             app_pg.apply(self.cfg)
         self.cfg.setup_done = True
         self.cfg.save()
-        # 仪式文案：应用名 + "一切就绪"，盖在遮罩上
-        logo = QLabel(self)
-        logo.setPixmap(app_icon().pixmap(64, 64))
-        logo.setFixedSize(64, 64)
-        name = QLabel("Subtitle Studio", self)
-        f = name.font()
-        f.setPointSize(24)
-        f.setBold(True)
-        name.setFont(f)
-        name.setStyleSheet("color:#ffffff;background:transparent;")
-        name.adjustSize()
-        sub = QLabel("开始制作你的第一条字幕", self)
-        sf = sub.font()
-        sf.setPointSize(11)
-        sub.setFont(sf)
-        sub.setStyleSheet("color:rgba(255,255,255,200);background:transparent;")
-        sub.adjustSize()
-        for w in (name, sub):
-            w.setVisible(False)
-        wizard_fx.finish_reveal(
-            self.btn_finish, self, logo_widget=logo,
-            text_widgets=[name, sub],
-            on_done=self.accept)
+        self.accept()
 
 
 def maybe_show_welcome(cfg: Config, parent=None) -> bool:
