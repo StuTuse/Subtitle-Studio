@@ -859,4 +859,14 @@ _speed_clean = len(_multi.display_text.replace("\n", "")) / _multi.duration
 check("去换行口径不含换行符", _speed_clean == 16.0, f"{_speed_clean:.1f}")
 check("换行会虚增语速统计", _speed_with_nl > _speed_clean)
 
+section("35. Cue to_dict/from_dict 全字段往返保真（第 36 轮钉子）")
+_c_full = _Cue(1.5, 3.2, "测试", original_text="原", speaker="甲", state="llm",
+               confidence=0.85, words=[{"w": "测", "s": 1.5, "e": 1.8}])
+_c_rt = _Cue.from_dict(_c_full.to_dict())
+for _f in ("start", "end", "text", "original_text", "speaker", "state",
+           "confidence", "words"):
+    check(f"往返保真：{_f}", getattr(_c_full, _f) == getattr(_c_rt, _f))
+_c_min = _Cue.from_dict(_Cue(0, 1, "最小").to_dict())
+check("缺省字段往返保真", _c_min.confidence is None and _c_min.original_text == "")
+
 raise SystemExit(finish())
