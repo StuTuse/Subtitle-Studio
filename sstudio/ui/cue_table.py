@@ -125,9 +125,12 @@ class CueTable(QTableWidget):
             d.setFont(self._mono)
             d.setTextAlignment(Qt.AlignCenter)
             d.setFlags(d.flags() & ~Qt.ItemIsEditable)
-            if c.duration > 8:
-                # 过长字幕警示：暗色下用更亮的红，保证与深底对比够
+            warn = _duration_warn(c)
+            if warn:
+                # 与导出页「导出前检查」同一套标准：编辑时就把问题亮出来，
+                # 别等用户点到导出页才发现"3 条语速过快"
                 d.setForeground(QBrush(QColor("#ff6b6b") if dark else QColor("#d13438")))
+                d.setToolTip(warn + "\n（与导出预检同一套标准）")
             self.setItem(r, COL_D, d)
 
             badge, bg = self._styles(c.state, dark)
@@ -255,6 +258,19 @@ class CueTable(QTableWidget):
 
 
 # ---------------------------------------------------------------- helpers
+def _duration_warn(c: Cue) -> str:
+    """时长列警示文案：与 export_page 预检（>28 字 / <0.5s / >9 字每秒）、
+    本表自身的 >8s 过长红字共用同一套判定，返回空串表示没有问题。"""
+    if c.duration > 8:
+        return f"时长 {c.duration:.1f}s，超过 8s——考虑拆分"
+    if c.duration < 0.5:
+        return f"时长 {c.duration:.1f}s，不足 0.5s——播放时会一闪而过"
+    n = len(c.display_text.replace("\n", ""))
+    if c.duration > 0 and n / c.duration > 9:
+        return f"约 {n / c.duration:.1f} 字/秒，超过 9 字/秒——观众跟不上"
+    return ""
+
+
 def _state_badge(state: str, dark: bool) -> QColor:
     # 暗色徽章提高亮度与饱和度，默认灰字（#e6e6e6）放上去才读得清
     return {

@@ -564,4 +564,11 @@ check("localhost / *.local 同样放行",
       and _llm._is_local_base("http://box.local:8080/v1")
       and not _llm._is_local_base("https://api.deepseek.com/v1"))
 
+section("21. 时长列警示与导出预检同一套标准")
+from sstudio.ui.cue_table import _duration_warn as _dw  # noqa: E402
+check(">8s 过长仍标警", _dw(Cue(0, 9.0, "x")) != "")
+check("<0.5s 过短标警（此前编辑器里看不见）", _dw(Cue(0, 0.3, "x")) != "")
+check(">9 字/秒过快标警", _dw(Cue(0, 1.0, "这是一段非常长的文本内容超快")) != "")
+check("正常条目不标警", _dw(Cue(0, 2.0, "正常字幕")) == "")
+
 raise SystemExit(finish())
