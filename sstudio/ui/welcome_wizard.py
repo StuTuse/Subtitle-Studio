@@ -255,6 +255,11 @@ class _ModelPage(_Page):
         self._worker = w
 
     def _tested(self, res) -> None:
+        # 回收 worker 并清引用：不清的话下次点「测试连接」会被
+        # _test 开头的 is-not-None 守卫静默拦下——按钮活着却永远没反应
+        from .workers import reap
+        reap(self._worker)
+        self._worker = None
         self.btn_test.setEnabled(True)
         ok, msg, dt = res
         from html import escape as _esc
@@ -335,6 +340,7 @@ class _CheckPage(_Page):
         self._items: List[doctor.CheckItem] = []
         self._log_lines: List[str] = []
         self._worker = None
+        self._row_btns: dict = {}      # CheckItem.id -> 逐项安装按钮
 
     def on_enter(self) -> None:
         QTimer.singleShot(60, self.refresh)
@@ -344,6 +350,7 @@ class _CheckPage(_Page):
             r = self.host.takeAt(0)
             if r.widget():
                 r.widget().deleteLater()
+        self._row_btns.clear()
         self._items = doctor.check_all()
         for it in self._items:
             self.host.addWidget(self._row(it))
@@ -380,6 +387,7 @@ class _CheckPage(_Page):
             btn = PrimaryPushButton(it.fix_note or "安装", card)
             btn.clicked.connect(lambda _=False, i=it: self._fix_one(i))
             h.addWidget(btn)
+            self._row_btns[it.id] = btn
         elif it.fix_note and not it.ok:
             tip = CaptionLabel("手动安装", card)
             tip.setToolTip(it.fix_note)
@@ -396,7 +404,27 @@ class _CheckPage(_Page):
         self._fix_many([it])
 
     def _fix_many(self, todo: List[doctor.CheckItem]) -> None:
+        # 连点防护（与 FirstRunDialog._fix_many 同款）：上一个 pip worker
+        # 运行中再点一个「安装」按钮，旧 sig_done 回调会 reap 掉运行中的
+        # 新 worker（deleteLater 运行中线程闪退）。先取消并回收旧的。
+        w = getattr(self, "_worker", None)
+        if w is not None:
+            self._worker = None
+            try:
+                if w.isRunning():
+                    w.cancel()
+                    if not w.wait(1500):
+                        from .workers import orphanize
+                        orphanize(w)
+                else:
+                    from .workers import reap
+                    reap(w)
+            except RuntimeError:
+                pass                # 线程对象已被回收（C++ 侧已删）
         self.btn_fix.setEnabled(False)
+        # 逐项按钮同样禁用：修复中再点别的一项 = 并行 pip + 竞态回收
+        for b in self._row_btns.values():
+            b.setEnabled(False)
         self.fix_bar.setVisible(True)
         self.fix_label.setVisible(True)
         self.fix_bar.setValue(2)
@@ -439,6 +467,9 @@ class _CheckPage(_Page):
         reap(self._worker)
         self._worker = None
         self.btn_fix.setEnabled(True)
+        # 恢复逐项安装按钮（_fix_many 里统一禁用过）
+        for b in self._row_btns.values():
+            b.setEnabled(True)
         if ok:
             self.fix_bar.setValue(100)
             self.fix_label.setText("修复完成，正在重新检查…")
