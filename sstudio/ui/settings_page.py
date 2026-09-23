@@ -823,7 +823,9 @@ class SettingsInterface(QWidget):
     def _test_done(self, res, w) -> None:
         ok, msg, dt = res
         from html import escape as _esc
-        msg = _esc(msg or "")
+        # 服务端偶发把整页 HTML / 长 traceback 塞进错误消息：不截断会把
+        # 标签撑到几百行高，设置页布局整个被顶坏
+        msg = _esc((msg or "")[:200])
         if ok:
             self.test_result.setText(
                 f"{ok_span(f'✓ 连接成功（{dt:.2f}s）')} 模型回复：{msg}")
