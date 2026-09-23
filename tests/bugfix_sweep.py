@@ -1645,4 +1645,17 @@ check("成品原子替换不截断", "os.replace(tmp, out)" in _src117c)
 check("纠错整轮失败退出码 3", "return 3 if not fix_ok else 0" in _src117c)
 check("close_gaps 与 GUI 对齐", "auto_close_gaps" in _src117c)
 
+section("99. 转写引擎收尾语义（第 118 轮钉子）")
+import inspect as _insp118  # noqa: E402
+from sstudio.core import transcriber as _tr118  # noqa: E402
+_src118 = _insp118.getsource(_tr118._load_model)
+check("GPU 失败自动回退 CPU", "auto_cpu_fallback" in _src118 and "attempt(\"cpu\", \"int8\")" in _src118)
+_src118b = _insp118.getsource(_tr118.WhisperCppEngine.transcribe)
+check("旧结果预清防拿上一次字幕", "os.remove(out)" in _src118b)
+check("main.exe 需同目录 whisper.dll", "whisper.dll" in _src118b)
+_src118c = _insp118.getsource(_tr118.OpenAIApiEngine.transcribe)
+check("translate 前缀剥成纯语言码", "lang.split(\":\", 1)[1] or \"en\"" in _src118c)
+_src118d = _insp118.getsource(_tr118.transcribe)
+check("faster-whisper 缺失前置报错", "pip install faster-whisper" in _src118d)
+
 raise SystemExit(finish())
