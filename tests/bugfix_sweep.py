@@ -1887,4 +1887,19 @@ check("代数复核清脏标", "gen == self._dirty_gen - 1 and self._dirty" in _
 _src135d = _insp135.getsource(_mw135.MainWindow.load_project)
 check("工程搬家视频相对路径修复", "os.path.join(os.path.dirname(path)," in _src135d)
 
+section("117. 首启自检修复语义（第 136 轮钉子）")
+import inspect as _insp136  # noqa: E402
+from sstudio.ui.first_run_dialog import FirstRunDialog as _FR136  # noqa: E402
+_src136 = _insp136.getsource(_FR136._on_close)
+check("必需缺失关闭即退出程序", "self.abort_app = True" in _src136)
+_src136b = _insp136.getsource(_FR136.closeEvent)
+check("closeEvent 单定义守卫在前", "if not self._required_ok:" in _src136b)
+_src136c = _insp136.getsource(_FR136._fix_many)
+check("修复连点取消旧 worker", "orphanize(w)" in _src136c and "w.cancel()" in _src136c)
+check("修复中关窗保持可用", "btn_close 保持可用" in _src136c)
+_src136d = _insp136.getsource(_FR136._run_checks)
+check("自动修复等检查回来再跑", "QTimer.singleShot(0, self._fix_all)" in _src136d)
+_src136e = _insp136.getsource(_FR136._add_row)
+check("detail 路径转义防破坏 RichText", "_esc(det)" in _src136e)
+
 raise SystemExit(finish())
