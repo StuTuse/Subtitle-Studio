@@ -1975,4 +1975,18 @@ check("摘要三级文案", "缺少必需组件" in _src141c and "建议补装" 
 _items141 = _dc141.check_all()
 check("check_all 返回六项", len(_items141) == 6 and all(isinstance(i, _dc141.CheckItem) for i in _items141))
 
+section("123. 无界面流水线语义（第 142 轮钉子）")
+import inspect as _insp142  # noqa: E402
+import sstudio.cli_pipeline as _cp142  # noqa: E402
+_src142 = _insp142.getsource(_cp142.run_pipeline)
+check("参数错误前置校验", "不支持的输出扩展名" in _src142 and "return 2" in _src142)
+check("中断退出码 130", "return 130" in _src142)
+check("运行失败统一退出码 1", "return 1" in _src142)
+_src142b = _insp142.getsource(_cp142._pipeline)
+check("中途异常也清理 wav", "finally:" in _src142b and "os.remove(wav)" in _src142b)
+_src142c = _insp142.getsource(_cp142._pipeline_rest)
+check("空隙衔接对齐 GUI", "auto_close_gaps" in _src142c)
+check("成品原子替换", "os.replace(tmp, out)" in _src142c)
+check("纠错失败退出码 3", "return 3 if not fix_ok else 0" in _src142c)
+
 raise SystemExit(finish())
