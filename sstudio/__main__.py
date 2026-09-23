@@ -200,8 +200,21 @@ def main(argv=None) -> int:
             pass
 
     target = args.file or (extra[0] if extra else "")
-    if target and os.path.isfile(target):
-        QTimer.singleShot(250, lambda: win._load_any(os.path.abspath(target)))
+    if target:
+        if os.path.isfile(target):
+            QTimer.singleShot(250, lambda: win._load_any(os.path.abspath(target)))
+        else:
+            # 拖到图标/命令行给的文件不存在：GUI 静默忽略会让人以为
+            # "程序坏了"。明确弹窗说明；批处理误传路径也能从控制台看到。
+            from PyQt5.QtWidgets import QMessageBox
+
+            def _warn_missing():
+                try:
+                    QMessageBox.warning(win, "文件不存在",
+                                        f"找不到要打开的文件：\n{target}")
+                except Exception:
+                    pass
+            QTimer.singleShot(250, _warn_missing)
 
     # 运行期兜底：启动段的异常由 run.py 接住，但进入事件循环之后（点按钮、
     # 加载文件回调里）抛出的异常不走那条路径。打包版是窗口程序、没有控制台，
