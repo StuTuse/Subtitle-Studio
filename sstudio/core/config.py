@@ -169,8 +169,6 @@ BUILTIN_PRESETS: List[Dict[str, str]] = [
     {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1", "model": "deepseek/deepseek-chat"},
     {"name": "Ollama (本地)", "base_url": "http://127.0.0.1:11434/v1", "model": "qwen2.5:14b", "api_key": "ollama"},
     {"name": "LM Studio (本地)", "base_url": "http://127.0.0.1:1234/v1", "model": "local-model", "api_key": "lm-studio"},
-    {"name": "UJN 中转 (本地)", "base_url": "http://127.0.0.1:8790/v1", "model": "deepseek-v41-flash",
-     "api_key": "ujn", "no_reasoning": True},
 ]
 
 
@@ -226,11 +224,17 @@ class Config:
     gap_max: float = 0.35                    # 小于该秒数且不是句末停顿的空隙才衔接
     player_volume: int = 80
     setup_done: bool = False                 # 欢迎向导完成标记（首启配置流程）
+    custom_presets: List[Dict[str, str]] = field(default_factory=list)
+    # 自定义供应商预设（用户在设置页保存的）。条目键与 BUILTIN_PRESETS 相同：
+    # name / base_url / model / api_key(可选) / no_reasoning(可选)。
+    # 欢迎向导与设置页的预设下拉 = 内置 + 自定义；配置里第一条自定义
+    # （出厂为「UJN 中转」）只是初始值，用户可随意增删改。
 
     # ------------------------------------------------------------ I/O
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["profiles"] = [p.to_dict() if isinstance(p, LLMProfile) else p for p in self.profiles]
+        d["custom_presets_loaded"] = True   # 见 from_dict：标记出厂预设已处理过
         return d
 
     @classmethod
@@ -238,6 +242,7 @@ class Config:
         cfg = cls()
         d = dict(d or {})
         profs = d.pop("profiles", None)
+        custom_presets_raw = d.pop("custom_presets", None)
         for k, v in d.items():
             if not hasattr(cfg, k):
                 continue
@@ -271,6 +276,16 @@ class Config:
             cfg.profiles = [LLMProfile()]
         if not any(p.name == cfg.active_profile for p in cfg.profiles):
             cfg.active_profile = cfg.profiles[0].name
+        # 自定义预设：出厂带一条「UJN 中转」，仅当用户从未配置过时注入；
+        # 一旦有自定义条目（哪怕删光了留空列表），完全尊重配置文件。
+        cp = custom_presets_raw if isinstance(custom_presets_raw, list) else []
+        cp = [p for p in cp if isinstance(p, dict) and p.get("name")
+              and p.get("base_url")]
+        if not cp and not d.get("custom_presets_loaded"):
+            cp = [{"name": "UJN 中转 (本地)",
+                   "base_url": "http://127.0.0.1:8790/v1",
+                   "model": "deepseek-v41-flash", "no_reasoning": "1"}]
+        cfg.custom_presets = cp
         return cfg
 
     @classmethod
@@ -279,7 +294,8 @@ class Config:
             with open(config_path(), "r", encoding="utf-8") as f:
                 return cls.from_dict(json.load(f))
         except Exception:
-            return cls()
+            # 无配置文件（真·首次）也走 from_dict：出厂自定义预设在那里注入
+            return cls.from_dict({})
 
     def save(self) -> None:
         # 原子写：先写临时文件再 os.replace 整块替换。直接 open("w") 会先

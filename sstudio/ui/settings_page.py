@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from typing import Dict, List
 
 from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, ComboBox, EditableComboBox,
                             FluentIcon as FIF, InfoBar, InfoBarPosition, LineEdit,
@@ -22,6 +23,11 @@ from ..core.transcriber import discover_ct2_models
 from .safe_spin import SafeDoubleSpinBox, SafeSpinBox
 from .theme import err_span, ok_span, warn_span
 from .workers import TestLLMWorker
+
+# 预设下拉里的特殊动作项（itemData 哨兵值；普通条目存的是 >=0 的下标）
+_PRESET_SAVE = -1
+_PRESET_DELETE = -2
+_PRESET_SEP = -3
 
 
 class SettingsInterface(QWidget):
@@ -102,9 +108,15 @@ class SettingsInterface(QWidget):
             pv.addWidget(b)
         self.preset = ComboBox(card)
         self.preset.setPlaceholderText("供应商预设…")
-        self.preset.addItems([p["name"] for p in BUILTIN_PRESETS])
-        self.preset.activated.connect(self._apply_preset)
+        self._fill_presets()
+        self.preset.activated.connect(self._on_preset_activated)
         pv.addWidget(self.preset)
+        self.btn_preset_save = PushButton(FIF.SAVE, "存为预设", card)
+        self.btn_preset_save.setToolTip(
+            "把当前接入点的地址/模型/Key 存为自定义预设，"
+            "之后在预设下拉里一键套用；自定义预设可随时删除。")
+        self.btn_preset_save.clicked.connect(self._save_custom_preset)
+        pv.addWidget(self.btn_preset_save)
         pv.addStretch(1)
         top.addLayout(pv)
         v.addLayout(top)
@@ -658,10 +670,108 @@ class SettingsInterface(QWidget):
         self.prof_list.takeItem(row)
         self.prof_list.setCurrentRow(0)
 
-    def _apply_preset(self, idx: int) -> None:
-        if idx < 0:
+    # ------------------------------------------------------- 自定义预设
+    def _all_presets(self) -> List[Dict[str, str]]:
+        """预设下拉的完整条目：内置 + 用户自定义（存 config.custom_presets）。"""
+        return list(BUILTIN_PRESETS) + [
+            p for p in (getattr(self.cfg, "custom_presets", []) or [])
+            if isinstance(p, dict) and p.get("name") and p.get("base_url")]
+
+    def _fill_presets(self) -> None:
+        """重灌预设下拉：内置若干 + 分隔 + 自定义若干 + 「存为自定义预设…」。
+
+        itemData 记条目在 _all_presets() 里的下标；动作项用特殊负值。
+        （qfluentwidgets ComboBox.addItem 第二参是 icon，userData 必须走第三参。）
+        """
+        self.preset.clear()
+        presets = self._all_presets()
+        n_builtin = len(BUILTIN_PRESETS)
+        for i, pre in enumerate(presets):
+            label = pre["name"] + ("" if i < n_builtin else "　★")
+            self.preset.addItem(label, None, i)
+        if n_builtin < len(presets):
+            # qfluentwidgets ComboBox 没有 addSeparator，用一条禁用分隔行代替
+            self.preset.addItem("──────────", None, _PRESET_SEP)
+            self.preset.setItemEnabled(self.preset.count() - 1, False)
+        self.preset.addItem("☆ 存当前设置为自定义预设…", None, _PRESET_SAVE)
+        # 自定义条目的删除动作
+        if len(presets) > n_builtin:
+            self.preset.addItem("✕ 删除自定义预设…", None, _PRESET_DELETE)
+        self.preset.setCurrentIndex(-1)
+
+    def _on_preset_activated(self, idx: int) -> None:
+        data = self.preset.itemData(idx)
+        try:
+            data = int(data)
+        except (TypeError, ValueError):
+            self.preset.setCurrentIndex(-1)
             return
-        pre = BUILTIN_PRESETS[idx]
+        if data == _PRESET_SEP:          # 分隔行（本就被禁用，双保险）
+            self.preset.setCurrentIndex(-1)
+            return
+        if data == _PRESET_SAVE:
+            self._save_custom_preset()
+            return
+        if data == _PRESET_DELETE:
+            self._delete_custom_preset()
+            return
+        self._apply_preset(data)
+        self.preset.setCurrentIndex(-1)
+
+    def _save_custom_preset(self) -> None:
+        """把当前表单里的接入点存为自定义预设（写 config 并立即落盘）。"""
+        self._collect_profile()
+        row = self.prof_list.currentRow()
+        if row < 0:
+            return
+        p = self.cfg.profiles[row]
+        if not p.base_url:
+            InfoBar.warning("存不了", "先填接口地址再存预设。",
+                            parent=self.main, position=InfoBarPosition.TOP,
+                            duration=2600)
+            return
+        name = p.name or f"自定义{len(self.cfg.custom_presets) + 1}"
+        entry = {"name": name, "base_url": p.base_url, "model": p.model,
+                 "no_reasoning": "1" if p.no_reasoning else ""}
+        # 同名覆盖，避免列表里堆出重复项
+        self.cfg.custom_presets = [e for e in getattr(self.cfg, "custom_presets", [])
+                                   if e.get("name") != name] + [entry]
+        self.cfg.save()
+        self._fill_presets()
+        InfoBar.success("已存为自定义预设",
+                        f"「{name}」已加入预设下拉，其他接入点也能一键套用。",
+                        parent=self.main, position=InfoBarPosition.TOP,
+                        duration=2600)
+
+    def _delete_custom_preset(self) -> None:
+        """删除一条自定义预设（不动内置预设，也不动接入点本身）。"""
+        presets = self._all_presets()
+        n_builtin = len(BUILTIN_PRESETS)
+        custom = presets[n_builtin:]
+        if not custom:
+            InfoBar.warning("没有可删的", "当前没有自定义预设。",
+                            parent=self.main, position=InfoBarPosition.TOP,
+                            duration=2400)
+            return
+        names = [p["name"] for p in custom]
+        from PyQt5.QtWidgets import QInputDialog
+        sel, ok = QInputDialog.getItem(
+            self, "删除自定义预设", "选择要删除的预设：", names, 0, False)
+        if not ok:
+            return
+        self.cfg.custom_presets = [e for e in self.cfg.custom_presets
+                                   if e.get("name") != sel]
+        self.cfg.save()
+        self._fill_presets()
+        InfoBar.success("已删除", f"预设「{sel}」已移除（接入点本身不受影响）。",
+                        parent=self.main, position=InfoBarPosition.TOP,
+                        duration=2400)
+
+    def _apply_preset(self, idx: int) -> None:
+        presets = self._all_presets()
+        if idx < 0 or idx >= len(presets):
+            return
+        pre = presets[idx]
         row = self.prof_list.currentRow()
         if row < 0:
             return
@@ -670,6 +780,7 @@ class SettingsInterface(QWidget):
         p.base_url = pre["base_url"]
         p.model = pre["model"]
         p.api_key = p.api_key or pre.get("api_key", "")
+        p.no_reasoning = bool(pre.get("no_reasoning")) or p.no_reasoning
         p.kind = "ollama" if "127.0.0.1" in pre["base_url"] else "openai"
         self._show_profile(p)
         self.prof_list.item(row).setText(f"{p.name}  ·  {p.model}")

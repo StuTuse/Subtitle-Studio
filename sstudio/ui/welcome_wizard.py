@@ -178,9 +178,7 @@ class _ModelPage(_Page):
                    "字幕纠错会调用它修错别字。可以先跳过——之后在「设置」里随时配。")
 
         self.preset = ComboBox(self)
-        self.preset.addItem("选择服务商预设…", None, None)
-        for p in BUILTIN_PRESETS:
-            self.preset.addItem(p["name"], None, p)   # (text, icon, userData)
+        self._fill_presets()
         self.preset.currentIndexChanged.connect(self._apply_preset)
         self.v.addWidget(self.preset)
 
@@ -211,6 +209,18 @@ class _ModelPage(_Page):
         self.v.addStretch(1)
         self._skipped = False
         self._worker = None
+
+    def _fill_presets(self) -> None:
+        """预设下拉 = 内置 + 用户自定义（config.custom_presets，出厂带 UJN 中转）。"""
+        self.preset.addItem("选择服务商预设…", None, None)
+        for p in self._presets():
+            self.preset.addItem(p["name"], None, p)   # (text, icon, userData)
+
+    def _presets(self) -> list:
+        cp = getattr(self.wizard.cfg, "custom_presets", []) or []
+        return list(BUILTIN_PRESETS) + [p for p in cp
+                                        if isinstance(p, dict)
+                                        and p.get("name") and p.get("base_url")]
 
     def _apply_preset(self, idx: int) -> None:
         p = self.preset.itemData(idx)
