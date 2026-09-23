@@ -1778,4 +1778,20 @@ check("时长警示三分支", _dw127(_Cue127(start=0, end=9, text="x")).startsw
       and _dw127(_Cue127(start=0, end=1, text="字" * 10)).startswith("约"))
 check("Backspace 同 Delete 删除", "Qt.Key_Delete, Qt.Key_Backspace" in _insp127.getsource(_CT127.keyPressEvent))
 
+section("109. 防误触数值框与向导动效（第 128 轮钉子）")
+import inspect as _insp128  # noqa: E402
+from sstudio.ui.safe_spin import _WheelGuard as _WG128  # noqa: E402
+from sstudio.ui import wizard_fx as _wf128  # noqa: E402
+_src128 = _insp128.getsource(_WG128._open_chooser)
+check("弹窗销毁双头堵", "WA_DeleteOnClose" in _src128 and "_menu_gone" in _src128)
+check("假点击不弹", "QApplication.mouseButtons() == Qt.NoButton" in _src128)
+_src128b = _insp128.getsource(_WG128.stepBy)
+check("stepBy 兜底空实现", "pass" in _src128b)
+_src128c = _insp128.getsource(_wf128.clear_effect)
+check("动效结束摘 effect", "setGraphicsEffect(None)" in _src128c)
+_src128d = _insp128.getsource(_wf128._fade_blur)
+check("单 widget 只挂一个 effect 语义", "第二次 setGraphicsEffect" in _src128d)
+_src128e = _insp128.getsource(_wf128.page_in)
+check("页面推入后清 effect", "clear_effect(widget)" in _src128e)
+
 raise SystemExit(finish())
