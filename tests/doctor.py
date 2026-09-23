@@ -43,7 +43,7 @@ def fake_popen_fail_then_ok(cmd, **kw):
             self.returncode = 1 if any("tuna" in c for c in cmd) else 0
             self.stdout = iter(["line1\n", "ERROR: simulate\n"] if self.returncode else ["ok\n"])
 
-        def wait(self):
+        def wait(self, timeout=None):
             return self.returncode
     _calls.append(cmd)
     return _P(_calls[-1])
@@ -70,7 +70,7 @@ def fake_popen_all_fail(cmd, **kw):
         returncode = 1
         stdout = iter(["ERROR: no net\n"])
 
-        def wait(self):
+        def wait(self, timeout=None):
             return 1
     _calls.append(cmd)
     return _P()

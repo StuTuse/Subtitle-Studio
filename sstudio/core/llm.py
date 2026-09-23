@@ -123,6 +123,17 @@ def _looks_reasoning(model: str) -> bool:
     return any(m in (model or "").lower() for m in ("deepseek-r1", "qwq", "-thinking"))
 
 
+# OpenAI 官方 o 系（o1/o3/o4）与 gpt-5 系：采样参数被服务端硬拒——
+# temperature≠1、top_p、以及未知 extra_body 字段一律 400。对这类模型
+# 不发 temperature/top_p/thinking，其余照常。
+_O_SERIES = re.compile(r"^(o[134](-mini)?)([-_.].+)?$", re.I)
+
+
+def _strict_openai_reasoning(model: str) -> bool:
+    m = (model or "").lower()
+    return bool(_O_SERIES.match(m)) or m.startswith(("gpt-5", "chatgpt-4o"))
+
+
 def _reasoning_usage(resp) -> int:
     """从 usage 里取思考 token 数；老网关没有该字段时返回 0。"""
     try:
@@ -150,31 +161,37 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
     """
     client = load_client(prof)
     key = ((prof.base_url or "").rstrip("/"), prof.model)
+    strict_openai = _strict_openai_reasoning(prof.model)
     kwargs: Dict[str, Any] = dict(
         model=prof.model,
         messages=messages,
-        temperature=float(prof.temperature),
     )
+    if not strict_openai:
+        # o 系/gpt-5 系拒绝 temperature≠1 与 top_p（400: unsupported value），
+        # 参数干脆不发，服务端按默认采样。
+        kwargs["temperature"] = float(prof.temperature)
+        try:
+            kwargs["top_p"] = float(prof.top_p)
+        except Exception:
+            pass
     cap = int(prof.max_tokens or 0)
     if cap > 0 and key not in _REASONING_NO_CAP:
         kwargs["max_tokens"] = cap
-    try:
-        kwargs["top_p"] = float(prof.top_p)
-    except Exception:
-        pass
     # 关闭推理模型的"思考"。字幕纠错是逐字比对，不需要推理：实测同一网关
     # 同一批字幕，开启思考 51s、关闭后 0.3s，准确率不降。
     # 三种网关写法一起带上，但注意：实测并非每种都被执行——本地网关只认
     # reasoning_effort=none，另两种会被静默忽略；还有服务端干脆不支持
     # （如 deepseek-v41-flash）。所以响应回来后要验证是否真的生效，
     # 不生效就在结果里说清楚，而不是让用户以为已经关上了。
+    # o 系/gpt-5 系对未知 extra_body 字段也回 400：它们默认不深度思考，
+    # 无需关闭，直接跳过。
     want_no_reason = getattr(prof, "no_reasoning", False)
-    if want_no_reason:
+    if want_no_reason and not strict_openai:
         eb = kwargs.setdefault("extra_body", {})
         eb.update({"reasoning_effort": "none",
                    "thinking": {"type": "disabled"},
                    "chat_template_kwargs": {"enable_thinking": False}})
-    elif _looks_reasoning(prof.model):
+    elif _looks_reasoning(prof.model) and not strict_openai:
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
     def _check_no_reason_effective(r, msg) -> None:

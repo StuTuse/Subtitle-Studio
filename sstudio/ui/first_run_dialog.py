@@ -226,7 +226,8 @@ class FirstRunDialog(QDialog):
 
     def _fix_many(self, todo: List[doctor.CheckItem]) -> None:
         self.btn_fix_all.setEnabled(False)
-        self.btn_close.setEnabled(False)
+        # btn_close 保持可用：修复中关窗走 closeEvent 请求取消（见下）。
+        # 以前禁用 + 取消恒假，镜像黑洞时模态窗只能任务管理器杀进程。
         self.fix_bar.setVisible(True)
         self.fix_label.setVisible(True)
         self.fix_bar.setValue(2)
@@ -258,6 +259,12 @@ class FirstRunDialog(QDialog):
         self._worker.sig_failed.connect(lambda m: self._on_fix_done((False, m), todo))
         reap(self._worker)
         self._worker.start()
+
+    def closeEvent(self, e) -> None:  # noqa: N802
+        w = getattr(self, "_worker", None)
+        if w is not None and w.isRunning():
+            w.cancel()          # 请求取消；run() 轮询到后走"已取消"分支
+        super().closeEvent(e)
 
     def _on_fix_done(self, result, todo) -> None:
         ok, msg = result if isinstance(result, tuple) else (False, str(result))

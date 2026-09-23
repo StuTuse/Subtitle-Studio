@@ -432,6 +432,11 @@ class _CheckPage(_Page):
         reap(self._worker)
         self._worker.start()
 
+    def _cancel_worker(self) -> None:
+        w = getattr(self, "_worker", None)
+        if w is not None and w.isRunning():
+            w.cancel()          # pip 逐行读时轮询 _cancel_flag，下一个检查点退出
+
     def _done(self, result) -> None:
         ok, msg = result if isinstance(result, tuple) else (False, str(result))
         from .workers import reap
@@ -650,6 +655,10 @@ class WelcomeWizard(QDialog):
         if self._anim_lock:
             return
         self._anim_lock = True
+        # 体检页若还在装包，请求取消（pip 读循环轮询 _cancel_flag 退出）
+        for pg in self.pages:
+            if isinstance(pg, _CheckPage):
+                pg._cancel_worker()
         app_pg = self.pages[1]
         if isinstance(app_pg, _AppearancePage):
             app_pg.apply(self.cfg)

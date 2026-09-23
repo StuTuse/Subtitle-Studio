@@ -35,7 +35,10 @@ PIP_INDEXES = [
     ("官方源", None),            # None = 不加 -i 参数
 ]
 
-PIP_TIMEOUT = 1200             # 大 wheel（torch 系列 ~2.5GB）留足时间
+# 大 wheel（torch 系列 ~2.5GB）的总时长余量（秒）；--timeout 是"单次
+# 网络请求无数据就断"的秒数——防的是镜像黑洞/半死代理下 pip 挂死。
+PIP_TIMEOUT = 1200
+PIP_NET_TIMEOUT = 30
 
 
 def _pip_base_args() -> List[str]:
@@ -108,7 +111,8 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
         if cancel and cancel():
             return False, "已取消。"
         cmd = _pip_base_args() + ["install", "--no-input", "--disable-pip-version-check",
-                                  *pkgs]
+                                  f"--timeout={PIP_NET_TIMEOUT}",
+                                  f"--retries={len(PIP_INDEXES)}", *pkgs]
         if idx:
             cmd += ["-i", idx]
         label = name
@@ -126,7 +130,19 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
             errs.append(f"{label}: {e}")
             continue
         assert p.stdout is not None
+        killed = False
+        # 逐行读但检查取消/总时长：以前 for line in p.stdout 在镜像黑洞
+        # 下永久阻塞（模态窗按钮全禁用 → 只能任务管理器杀进程）。
         for line in p.stdout:
+            if cancel and cancel():
+                p.kill()
+                killed = True
+                break
+            if time.time() - t0 > PIP_TIMEOUT:
+                p.kill()
+                killed = True
+                errs.append(f"{label}: 超过 {PIP_TIMEOUT}s 未完成，已终止")
+                break
             line = line.rstrip()
             if not line:
                 continue
@@ -137,8 +153,16 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
                 errs.append(f"{label}: {line[:200]}")
             if log:
                 log(line)
-        p.wait()
+        try:
+            p.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
         dt = time.time() - t0
+        if killed and cancel and cancel():
+            return False, "已取消。"
+        if killed:
+            continue
         if p.returncode == 0:
             if progress:
                 progress(f"{' '.join(pkgs)} 安装成功（{label}，{dt:.0f}s）", 1.0)
@@ -198,24 +222,30 @@ def check_all() -> List[CheckItem]:
         fix_note="" if (pyqt_ok or frozen) else "安装"))
 
     # ---- faster-whisper：本地转写的核心 ----
+    # 打包版（frozen）里 faster_whisper/av 必须被本进程 import 才算在——
+    # PyInstaller 进程不读系统 Python 的 site-packages，pip 装到系统环境
+    # 里 find_spec 依旧 None：按钮按了"安装成功"但检查永远红，死循环。
+    # 所以打包版这两项不给 pip 修复按钮，只给文字指引（CUDA 运行库不受此限，
+    # 它按路径找 DLL，装哪儿都能被 add_dll_directory 挂上）。
     fw_ok = importlib.util.find_spec("faster_whisper") is not None
     items.append(CheckItem(
         id="faster_whisper", title="本地语音识别（faster-whisper）",
         why="没有它无法在本地把语音转成字幕（也没法用 GPU 加速）。",
-        level="recommend", ok=fw_ok,
-        detail=_mod_version("faster_whisper") or "未安装",
-        fix_pkgs=[] if fw_ok else ["faster-whisper>=1.0.0"],
-        fix_note="" if fw_ok else "安装"))
+        level="recommend", ok=fw_ok or frozen,
+        detail=_mod_version("faster_whisper")
+        or ("打包版内置" if frozen else "未安装"),
+        fix_pkgs=[] if (fw_ok or frozen) else ["faster-whisper>=1.0.0"],
+        fix_note="" if (fw_ok or frozen) else "安装"))
 
     # ---- PyAV：不装 ffmpeg 也能解码视频的兜底 ----
     av_ok = importlib.util.find_spec("av") is not None
     items.append(CheckItem(
         id="pyav", title="视频解码（PyAV）",
         why="没装 ffmpeg 时的内置解码兜底；有它 + ffmpeg 双保险。",
-        level="recommend", ok=av_ok,
-        detail=_mod_version("av") or "未安装",
-        fix_pkgs=[] if av_ok else ["av>=12.0.0"],
-        fix_note="" if av_ok else "安装"))
+        level="recommend", ok=av_ok or frozen,
+        detail=_mod_version("av") or ("打包版内置" if frozen else "未安装"),
+        fix_pkgs=[] if (av_ok or frozen) else ["av>=12.0.0"],
+        fix_note="" if (av_ok or frozen) else "安装"))
 
     # ---- ffmpeg（可选，找不到也能跑）----
     from . import media as _media
