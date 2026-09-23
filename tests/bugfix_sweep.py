@@ -1457,4 +1457,14 @@ check("Qt DEBUG 级不落盘（r59）", "if int(mode) <= 0:" in _src104)
 check("unraisablehook 析构期异常落盘", "_append_crash(\"析构期异常\"" in _src104)
 check("headless 拼错参数当场报错", "headless 模式不认识的参数" in _src104)
 
+section("85. 单实例守护语义（第 105 轮钉子）")
+import inspect as _insp105  # noqa: E402
+from sstudio.ui.single_instance import SingleInstance as _SI105, _server_name as _sn105  # noqa: E402
+_src105 = _insp105.getsource(_SI105.try_start)
+check("逃生门环境变量旁路", "SS_NEW_INSTANCE" in _src105)
+check("守护起不来宁放行不拒启", "return True" in _src105)
+check("listen 失败清残桩重试", "QLocalServer.removeServer(name)" in _src105)
+_n105 = _sn105()
+check("server 名稳定非空", _n105.startswith("SubtitleStudio-") and len(_n105) == 27, _n105)
+
 raise SystemExit(finish())
