@@ -478,6 +478,12 @@ class MainWindow(FluentWindow):
             f"速度 {m.get('speed', 0)}x · 语言 {m.get('language', '?')} · "
             "可去「AI 纠错」修错别字。")
         self.mark_dirty()
+        if not doc.cues:
+            # 转写"成功"但一条都没识别出来：多半是纯静音/无语音，或语言
+            # 参数选错。报"成功（0 条）"会让用户以为坏了却无从下手。
+            self._warn("没有识别出任何字幕",
+                       "音频里可能没有可识别的语音（纯静音/音乐），"
+                       "或「设置 → 语言」与实际语音不符。可换语言后重试。")
         InfoBar.success("转写完成", f"{len(doc.cues)} 条字幕（{m.get('engine', '')}）。"
                         + (f"已自动衔接 {m.get('gaps_closed', 0)} 处字幕空隙，"
                            "防止播放时闪断。" if m.get("gaps_closed") else "")
