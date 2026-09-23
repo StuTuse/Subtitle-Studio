@@ -75,6 +75,51 @@ def reap(w: Optional["_BaseWorker"]) -> None:
         pass
 
 
+_orphans: list = []
+
+
+def orphanize(w: Optional[QThread]) -> None:
+    """限时 wait() 等不到时的兜底：把仍在跑的线程从将死的对话框上摘下来。
+
+    对话框析构会连带析构作为子对象的 QThread——线程还在跑时 Qt 直接
+    abort（QThread: Destroyed while thread is still running）。pip 镜像
+    黑洞/大包下载时 3 秒等不到很常见，所以关窗路径在 wait 超时后调用
+    本函数：断开全部信号（槽的接收者可能已销毁）、摘掉父子关系、把
+    Python 引用交给模块级注册表看管，线程自然退出后再 deleteLater。
+    """
+    if w is None:
+        return
+    try:
+        if not w.isRunning():
+            return
+        try:
+            w.disconnect()          # 不再回调进即将销毁的对话框控件
+        except Exception:
+            pass
+        try:
+            w.setParent(None)       # 摘掉父子：对话框析构不再连带析构线程
+        except RuntimeError:
+            return
+        if getattr(w, "_reaped", False):
+            _pending_reap.discard(w)
+        w._reaped = True
+        _orphans.append(w)
+
+        def _gc(_w=w):
+            try:
+                _orphans.remove(_w)
+            except ValueError:
+                pass
+            try:
+                _w.deleteLater()
+            except RuntimeError:
+                pass
+
+        w.finished.connect(_gc)
+    except RuntimeError:
+        pass
+
+
 class TranscribeWorker(_BaseWorker):
     """抽音频 -> 转写。一条命令走完整流程，进度统一映射到 0–1。"""
 

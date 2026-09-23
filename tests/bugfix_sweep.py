@@ -446,4 +446,69 @@ for _nm in ("engine", "device", "compute", "lang", "mirror"):
 check("模型下拉 userData 非空（选了本地模型必须真的存路径，不是显示文本）",
       _dlg.model.currentData() not in (None, ""), _dlg.model.currentData())
 
+
+section("19. 关窗收尾：慢线程孤儿化（QThread destroyed-while-running 闪退根治）")
+# 回归：体检窗/欢迎向导关窗只 wait(3000)，pip 镜像黑洞时等不到仍继续析构，
+# 对话框把还在跑的 QThread 子对象一起带走 → Qt 直接 abort。
+from PyQt5.QtCore import QThread as _QThread  # noqa: E402
+from sstudio.ui.workers import (orphanize as _orph_fn,  # noqa: E402
+                                _orphans as _orph_reg, _BaseWorker as _BW)
+
+
+class _SlowThread(_BW):
+    """一个不理会 cancel、固定跑一段时间的线程（模拟 pip 下载静默期）。"""
+
+    def __init__(self, parent=None, ms=1200):
+        super().__init__(parent)
+        self.done = False
+        self._ms = ms
+
+    def run(self):
+        import time as _t
+        for _ in range(int(self._ms / 100)):
+            _t.sleep(0.1)
+        self.done = True
+
+
+_slow = _SlowThread()
+_slow.start()
+_orph_fn(_slow)                     # 线程还活着时就孤儿化
+check("孤儿化后线程仍在注册表里（保活 Python 引用）", _slow in _orph_reg)
+check("孤儿化已摘掉父子关系", _slow.parent() is None)
+_t0 = __import__("time").time()
+while not _slow.done and __import__("time").time() - _t0 < 3:
+    _qa.processEvents()
+    __import__("time").sleep(0.02)
+check("被孤儿化的线程能自然跑完", _slow.done)
+# deleteLater 在事件循环里兑现：跑几圈让 _gc 有机会执行
+for _ in range(6):
+    _qa.processEvents()
+    __import__("time").sleep(0.02)
+check("跑完后从注册表移除", _slow not in _orph_reg, len(_orph_reg))
+
+# 体检窗：Esc/reject 路径必须也收尾线程（此前完全没有 reject 覆写）
+from sstudio.ui.first_run_dialog import FirstRunDialog as _FRD  # noqa: E402
+_frd = _FRD(Config())
+_slow2 = _SlowThread(_frd, ms=5000)  # 跑 5s：wait(3000) 必然等不到 → 走兜底
+_slow2.start()
+_frd._worker = _slow2
+_frd.reject()                       # 若实现只 wait 不兜底，这里等 3s 后仍析构
+check("体检窗 reject 后慢线程被孤儿化而非陪葬",
+      _slow2.parent() is None and _slow2 in _orph_reg,
+      f"parent={_slow2.parent()}")
+_t0 = __import__("time").time()
+while not _slow2.done and __import__("time").time() - _t0 < 3:
+    _qa.processEvents()
+    __import__("time").sleep(0.02)
+check("体检窗 reject 后慢线程仍可自然完成（不闪退）", _slow2.done)
+check("体检窗已清空 _worker 引用", getattr(_frd, "_worker", "x") is None)
+
+# 快线程：等得到就正常 reap，不进孤儿注册表
+_fast = _SlowThread(_frd)
+_fast.start()
+_fast.wait(3000)
+_frd._worker = _fast
+_frd.reject()
+check("已结束的线程走 reap 不进孤儿表", _fast not in _orph_reg)
+
 raise SystemExit(finish())

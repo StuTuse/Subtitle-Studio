@@ -262,15 +262,38 @@ class FirstRunDialog(QDialog):
         reap(self._worker)
         self._worker.start()
 
-    def closeEvent(self, e) -> None:  # noqa: N802
+    def _shutdown_worker(self) -> None:
+        """关窗收尾：请求取消 → 限时等待 → 等不到就孤儿化（见 workers.orphanize）。
+
+        三条退出路径（X/完成/退出程序/Esc）统一走这里；只 wait 不兜底的
+        版本在 pip 镜像黑洞时 3 秒等不到仍会继续析构 → abort 闪退。
+        """
         w = getattr(self, "_worker", None)
-        if w is not None and w.isRunning():
-            w.cancel()          # 请求取消；run() 轮询到后走"已取消"分支
-            # 对话框销毁时线程若还在跑，QThread 析构直接 abort 闪退。
-            # pip 装到一半按 X 关窗正是这条路径（欢迎向导同场景已 wait(3000)，
-            # 这里补齐）；给 3s 让 cancel 标志传到逐行读取的检查点。
-            w.wait(3000)
+        if w is None:
+            return
+        self._worker = None
+        try:
+            if w.isRunning():
+                w.cancel()      # 请求取消；run() 轮询到后走"已取消"分支
+                # 给 3s 让 cancel 标志传到逐行读取的检查点
+                if not w.wait(3000):
+                    from .workers import orphanize
+                    orphanize(w)
+            else:
+                from .workers import reap
+                reap(w)
+        except RuntimeError:
+            pass                # 线程对象已被回收（C++ 侧已删）
+
+    def closeEvent(self, e) -> None:  # noqa: N802
+        self._shutdown_worker()
         super().closeEvent(e)
+
+    def reject(self) -> None:  # noqa: N802
+        """Esc / 程序化关闭同样要收尾线程：exec_() 返回后对话框被 GC，
+        析构时线程若还在跑就是 QThread destroyed-while-running。"""
+        self._shutdown_worker()
+        super().reject()
 
     def _on_fix_done(self, result, todo) -> None:
         ok, msg = result if isinstance(result, tuple) else (False, str(result))

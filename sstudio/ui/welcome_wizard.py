@@ -646,6 +646,42 @@ class WelcomeWizard(QDialog):
         QTimer.singleShot(wizard_fx._PAGE_MS + 60,
                           lambda: setattr(self, "_anim_lock", False))
 
+    def _shutdown_worker(self) -> None:
+        """关向导收尾：请求取消 → 限时等待 → 等不到就孤儿化。
+
+        pip 装大包/镜像黑洞时 3 秒等不到很常见；只 wait 不兜底的话，
+        析构连带给还在跑的 QThread 上西天 → abort 闪退。
+        """
+        from .workers import orphanize, reap
+        for pg in self.pages:
+            if isinstance(pg, _CheckPage):
+                w = getattr(pg, "_worker", None)
+                if w is None:
+                    continue
+                pg._worker = None
+                try:
+                    if w.isRunning():
+                        w.cancel()      # pip 逐行读时轮询 _cancel_flag
+                        if not w.wait(3000):
+                            orphanize(w)
+                    else:
+                        reap(w)
+                except RuntimeError:
+                    pass
+            # 模型页连接测试线程同样可能是活的
+            w2 = getattr(pg, "_worker", None) if not isinstance(pg, _CheckPage) else None
+            if w2 is not None:
+                try:
+                    pg._worker = None
+                    if w2.isRunning():
+                        w2.cancel()
+                        if not w2.wait(2000):
+                            orphanize(w2)
+                    else:
+                        reap(w2)
+                except RuntimeError:
+                    pass
+
     def _finish(self) -> None:
         """完成：直接落盘关闭（不做扩张/级联仪式动画）。"""
         if self._anim_lock:
@@ -653,12 +689,7 @@ class WelcomeWizard(QDialog):
         self._anim_lock = True
         # 体检页若还在装包，请求取消并稍候——不等的话对话框销毁时线程
         # 还在跑，QThread 析构直接 abort 闪退
-        for pg in self.pages:
-            if isinstance(pg, _CheckPage):
-                pg._cancel_worker()
-                w = getattr(pg, "_worker", None)
-                if w is not None and w.isRunning():
-                    w.wait(3000)
+        self._shutdown_worker()
         app_pg = self.pages[1]
         if isinstance(app_pg, _AppearancePage):
             app_pg.apply(self.cfg)
@@ -668,12 +699,7 @@ class WelcomeWizard(QDialog):
 
     def reject(self) -> None:  # noqa: N802
         """Esc / 点 X 中途关向导：同 _finish，先取消装包线程再关。"""
-        for pg in self.pages:
-            if isinstance(pg, _CheckPage):
-                pg._cancel_worker()
-                w = getattr(pg, "_worker", None)
-                if w is not None and w.isRunning():
-                    w.wait(3000)
+        self._shutdown_worker()
         super().reject()
 
 
