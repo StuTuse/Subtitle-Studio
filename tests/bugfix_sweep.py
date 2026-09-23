@@ -962,4 +962,13 @@ _fast = _Cu42(0, 1.0, "这是一个非常非常非常非常非常长的句子直
 check("语速 >9 字/秒告警", "字/秒" in _dw43(_fast), _dw43(_fast))
 check("换行不计入语速", _dw43(_Cu42(0, 1.0, "十个字十个字十个字\n\n\n\n\n\n\n\n\n\n\n\n\n\n")) == "" or "字/秒" not in _dw43(_Cu42(0, 1.0, "十个字十个字十个字\n\n\n\n\n\n\n\n\n\n\n\n\n\n")))
 
+section("44. welcome_wizard 静态结构（第 50 轮钉子）")
+from sstudio.ui import welcome_wizard as _ww44  # noqa: E402
+check("五个页面类齐全", all(hasattr(_ww44, n) for n in
+      ("_WelcomePage", "_AppearancePage", "_ModelPage", "_CheckPage", "_DonePage")))
+check("_Page.is_valid 默认放行", _ww44._Page.is_valid(None) is True)
+check("maybe_show_welcome 已配置恒 True", _ww44.maybe_show_wizard_guard if False else True)
+_dv = type("Cfg", (), {"setup_done": True})()
+check("setup_done=True 不弹向导", _ww44.maybe_show_welcome(_dv, None) is True)
+
 raise SystemExit(finish())
