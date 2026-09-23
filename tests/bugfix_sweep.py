@@ -1363,4 +1363,14 @@ _src96c = _insp96.getsource(_MW96._auto_save)
 check("自动保存线程复核保存代数", "if getattr(self, \"_save_gen\", 0) != save_gen:" in _src96c)
 check("自动保存互斥未落地跳过", "self._autosave_worker is not None" in _src96c)
 
+section("77. 自检插件根与结论分级（第 97 轮钉子）")
+import inspect as _insp97  # noqa: E402
+import sstudio.selfcheck as _sc97  # noqa: E402
+_src97 = _insp97.getsource(_sc97.run_check)
+check("mediaservice 三重插件根兜底",
+      _src97.count("Qt5\", \"plugins") >= 2)
+check("后端插件前缀匹配", '"dsengine", "wmfengine", "qwindows"' in _src97)
+check("warn 级不影响总体结论", "def warn(name, good, detail=\"\"):" in _src97)
+check("GPU 缺运行库提示自动 CPU", "将自动使用 CPU" in _src97)
+
 raise SystemExit(finish())
