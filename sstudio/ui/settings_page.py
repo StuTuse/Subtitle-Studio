@@ -832,6 +832,19 @@ class SettingsInterface(QWidget):
         else:
             self.test_result.setText(f"{err_span('✕ 失败')} {msg}")
 
+    def shutdown(self) -> None:
+        """主窗退出前收尾：测试连接线程可能还在 HTTP 在途（test_connection
+        不接收 cancel），主窗作为祖先析构会连带析构运行中的 QThread 直接
+        abort。等不到就 orphanize 摘掉父子关系，线程自然结束后自行回收。"""
+        w = getattr(self, "_test_worker", None)
+        if w is None:
+            return
+        from .workers import orphanize, reap
+        reap(w)
+        if w.isRunning():
+            orphanize(w)
+        self._test_worker = None
+
     # ----------------------------------------------------------- ASR 部分
     def _rescan_models(self) -> None:
         """重新扫描本地模型：外部 CLI 扫描有进程内缓存，先清掉再填。"""

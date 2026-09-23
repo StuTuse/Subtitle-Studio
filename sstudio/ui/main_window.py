@@ -640,6 +640,12 @@ class MainWindow(FluentWindow):
             self.editor.player.shutdown()
         except Exception:
             pass
+        # 设置页"测试连接"线程可能还在 HTTP 在途（挂在 settings 页下），
+        # 主窗析构会连带析构运行中的 QThread 直接 abort——先摘掉父子
+        try:
+            self.settings.shutdown()
+        except Exception:
+            pass
         try:
             self.cfg.window_geometry = bytes(self.saveGeometry().toBase64()).decode("ascii")
             self.cfg.player_volume = self.editor.player.volume()
