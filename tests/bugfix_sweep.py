@@ -715,4 +715,13 @@ _m = _mg.merge([0, 2])
 check("隔行合并 words 时序=起始序", _m.start == 0 and _m.end == 11 and _m.speaker == "A")
 check("合并文本按时间序拼接", _m.text == "一\n三", repr(_m.text))
 
+section("27. LLMProfile 浮点字段的 NaN/Inf 归一（第 21 轮加固钉子）")
+import math as _math21  # noqa: E402
+from sstudio.core.config import LLMProfile as _LLMP  # noqa: E402
+_p_nan = _LLMP.from_dict(_json25.loads('{"temperature": NaN, "top_p": Infinity}'))
+check("NaN temperature 归默认 0.0", _p_nan.temperature == 0.0, repr(_p_nan.temperature))
+check("Inf top_p 归默认 1.0", _p_nan.top_p == 1.0, repr(_p_nan.top_p))
+_p_num = _LLMP.from_dict(_json25.loads('{"temperature": 0.7, "timeout": 120.5}'))
+check("正常浮点保留", _p_num.temperature == 0.7 and _p_num.timeout == 120.5)
+
 raise SystemExit(finish())

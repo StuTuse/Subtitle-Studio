@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
@@ -150,6 +151,10 @@ class LLMProfile:
                     v = int(float(v))
                 elif isinstance(default, float):
                     v = float(v)
+                    # NaN/Inf 能穿透 json.loads（Python 扩展字面量）：
+                    # temperature=NaN 进请求体会被服务端 400，归默认值
+                    if not math.isfinite(v):
+                        v = default
                 else:
                     v = "" if v is None else str(v)
             except (TypeError, ValueError):
