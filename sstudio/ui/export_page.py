@@ -26,6 +26,7 @@ def _write_exports(pairs, out_dir, enc):
     原子替换保证盘上要么没有、要么是完整文件。"""
     written, errors = [], []
     for name, text in pairs:
+        tmp = ""
         try:
             fp = os.path.join(out_dir, name)
             tmp = fp + ".tmp"
@@ -36,6 +37,13 @@ def _write_exports(pairs, out_dir, enc):
             os.replace(tmp, fp)
             written.append(fp)
         except Exception as e:
+            # 失败路径把半截 tmp 清掉：网络盘/编码试探失败很常见，
+            # 不清的话输出目录里会积一批 .tmp 垃圾
+            if tmp:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
             errors.append((name, str(e)))
     if not written:
         raise OSError("；".join(f"{n}: {e}" for n, e in errors) or "没有写出任何文件")
