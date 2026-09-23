@@ -1328,4 +1328,16 @@ check("空编号行不污染上一条",
 check("空编号行后正确并回续行",
       _llm93.parse_numbered("[1] 好\n[2]\n[2] 后续行", range(1, 3)) == {1: "好", 2: "后续行"})
 
+section("74. 转写引擎收尾链（第 94 轮钉子）")
+import inspect as _insp94  # noqa: E402
+from sstudio.core.transcriber import WhisperCppEngine as _WCE94, OpenAIApiEngine as _OAE94, _pick_device as _pd94  # noqa: E402
+_src94 = _insp94.getsource(_WCE94.transcribe)
+check("whisper.cpp 先删旧结果文件", "os.remove(out)" in _src94)
+check("stdout 读毕后补取消检查", "raise TranscribeError(\"已取消。\")" in _src94)
+_src94b = _insp94.getsource(_OAE94.transcribe)
+check("OpenAI API translate 前缀剥离", "lang.split(\":\", 1)[1]" in _src94b)
+_src94c = _insp94.getsource(_pd94)
+check("手动 cuda 保留选择报可读错误", "if dev == \"cuda\":\n                    # 用户手动指定" in _src94c)
+check("cuda compute auto 默认 float16", "compute = \"float16\"" in _src94c)
+
 raise SystemExit(finish())
