@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from PyQt5.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint,
-                          QPropertyAnimation, QRect, QTimer)
+                          QPropertyAnimation, QTimer)
 from PyQt5.QtWidgets import (QGraphicsBlurEffect, QGraphicsOpacityEffect,
                              QWidget)
 
@@ -117,20 +117,20 @@ def cascade_in(widgets: List[Optional[QWidget]], delay: int = 90,
 
 
 def page_in(widget: QWidget, direction: int) -> None:
-    """页面推入：前进从右 (+46px)、后退从左 (-46px)，带模糊消散。"""
-    dx = 46 * (1 if direction >= 0 else -1)
-    base = widget.pos()
-    start = QPoint(base.x() + dx, base.y())
-    widget.move(start)
+    """页面推入：模糊消散入场（macOS 拍子 420ms）。
+
+    历史版本这里还会 move() 做侧向滑入——但页面由 QVBoxLayout 管几何，
+    布局的 LayoutRequest 下一拍就把位置拍回槽位，位移从未真正可见过；
+    而且它和布局争抢几何是隐患。现在只保留实际生效的模糊消散。
+    """
     _fade_blur(widget, 6.0, _PAGE_MS, EASE_OUT,
                on_done=lambda: clear_effect(widget))
 
 
 def page_out(widget: QWidget, direction: int, on_done=None) -> None:
-    """旧页退出：反向滑走 + 模糊加深。
+    """旧页退出：模糊加深（0→8px，300ms）。
 
-    同 _fade_blur 的约束：一个 widget 只挂一个 effect，淡出表达交给
-    模糊加深（0→8px），不再叠加透明度效果。
+    同 page_in：位移动画与布局打架且不可见，只保留模糊部分。
     """
     blur = QGraphicsBlurEffect(widget)
     blur.setBlurRadius(0.0)
@@ -142,14 +142,6 @@ def page_out(widget: QWidget, direction: int, on_done=None) -> None:
     a2.setEasingCurve(EASE_IN)
     grp = QParallelAnimationGroup(widget)
     grp.addAnimation(a2)
-    dx = -46 * (1 if direction >= 0 else -1)
-    pos0 = widget.pos()
-    a3 = QPropertyAnimation(widget, b"pos", widget)
-    a3.setDuration(_PAGE_OUT_MS)
-    a3.setStartValue(pos0)
-    a3.setEndValue(QPoint(pos0.x() + dx, pos0.y()))
-    a3.setEasingCurve(EASE_IN)
-    grp.addAnimation(a3)
     if on_done:
         grp.finished.connect(on_done)
     # 旧页退场后即被新页盖住：同样摘掉 effect，别让它持续吃光栅化
@@ -161,7 +153,6 @@ def clear_effect(widget: QWidget) -> None:
     """动画结束后的收尾：摘掉 effect（留着会持续吃光栅化性能）。"""
     try:
         widget.setGraphicsEffect(None)
-        # 复位可能被 page_out 移走的位置（后退重进时 page_in 会重新定位）
     except Exception:
         pass
 
