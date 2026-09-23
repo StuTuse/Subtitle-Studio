@@ -878,4 +878,13 @@ _cu36b = _plrc36("[00:05.00]后\n[00:01.00]前")
 check("乱序行按时间排序", [c.text for c in _cu36b] == ["前", "后"])
 check("排序后 end 接下一条 start", _cu36b[0].end <= _cu36b[1].start + 0.04)
 
+section("37. human_time 进位边界（第 38 轮钉子）")
+from sstudio.ui.theme import human_time as _ht37  # noqa: E402
+check("3599.999 四舍五入进位不出现 59:60", _ht37(3599.999) == "1:00:00.00",
+      _ht37(3599.999))
+check("整分钟", _ht37(60) == "1:00.00")
+check("零", _ht37(0) == "0:00.00")
+check("负值钳 0", _ht37(-5) == "0:00.00")
+check("小时位", _ht37(3661.5) == "1:01:01.50")
+
 raise SystemExit(finish())
