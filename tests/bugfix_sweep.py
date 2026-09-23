@@ -1223,4 +1223,20 @@ _cfg83.add_recent("a")
 check("重复路径置顶不重复",
       _cfg83.recent_files == [_os52.path.abspath("a"), _os52.path.abspath("c")])
 
+section("65. 衔接/去重/统计语义（第 84 轮钉子）")
+_doc84 = CueDocument(cues=[Cue(0, 1, "说话没完，"), Cue(1.2, 2.5, "接着说。"),
+                           Cue(3.0, 4.0, "新的一句。")])
+t84, s84 = _doc84.close_gaps(0.35)
+check("close_gaps 衔接 1 处（句末保留）", t84 == 1 and abs(s84 - 0.2) < 1e-9)
+_doc84b = CueDocument(cues=[Cue(0, 1, "重复"), Cue(1.0, 2.0, " 重  复 "),
+                            Cue(2.0, 3.0, "不同")])
+rm84 = _doc84b.dedupe_repeats()
+check("dedupe 空白归一化去重", rm84 == 1 and len(_doc84b.cues) == 2)
+check("dedupe 后 end 取 max 不回缩", _doc84b.cues[0].end == 2.0)
+_doc84c = CueDocument(cues=[])
+check("stats 空文档不除零", _doc84c.stats()["chars_per_sec"] == 0.0)
+_doc84d = CueDocument(cues=[Cue(0, 1, "甲", speaker="A"), Cue(1.2, 2, "乙", speaker="B")])
+t84d, _ = _doc84d.close_gaps(0.35)
+check("说话人不同不衔接", t84d == 0)
+
 raise SystemExit(finish())
