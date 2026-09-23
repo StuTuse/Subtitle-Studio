@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.65] - 2026-09-23
+
+v1.17.65：测试加固——bugfix_sweep 第 49 节钉住 CueDocument.snapshot 字段完备（speaker/confidence/words/text）与快照仅含 cues 的设计语义；undo/redo 与 split/merge 快照链复检无新缺陷
+
 ## [1.17.64] - 2026-09-23
 
 v1.17.64：导出修复——ASS 的 speaker 字段剥除换行：手改工程文件可能让 speaker 带换行，此前会把一行 Dialogue 折成两行破坏 ASS 结构；空 speaker 不再写出 None 字样
