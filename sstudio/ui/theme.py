@@ -28,6 +28,7 @@ def apply_theme(cfg: Config) -> None:
             setThemeColor(ThemeColor(QColor(cfg.accent)))
     except Exception:
         pass
+    invalidate_theme_cache()       # setTheme 之后缓存作废，is_dark() 重新探测
     # accent 供 accent_hex() 全局取用（不维持对窗口的强引用）
     try:
         app = QApplication.instance()
@@ -235,12 +236,32 @@ def dim_span(text: str) -> str:
     return _span("dim", text)
 
 
+_is_dark_cache: Optional[bool] = None
+_is_dirty = True
+
+
 def is_dark() -> bool:
-    try:
-        from qfluentwidgets import isDarkTheme
-        return bool(isDarkTheme())
-    except Exception:
-        return False
+    """当前是否暗色主题。
+
+    qfluentwidgets 的 isDarkTheme() 每次 import + 查询，此前被表格渲染
+    和 LLM 流式回填逐行调用（5000 条纠错 = 上万次）。主题切换由
+    invalidate_theme_cache() 主动通知，这里读缓存即可。
+    """
+    global _is_dark_cache, _is_dirty
+    if _is_dirty or _is_dark_cache is None:
+        try:
+            from qfluentwidgets import isDarkTheme
+            _is_dark_cache = bool(isDarkTheme())
+        except Exception:
+            _is_dark_cache = False
+        _is_dirty = False
+    return _is_dark_cache
+
+
+def invalidate_theme_cache() -> None:
+    """主题切换后调用：下一次 is_dark() 重新探测。"""
+    global _is_dirty
+    _is_dirty = True
 
 
 def accent_hex() -> str:

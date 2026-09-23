@@ -184,9 +184,15 @@ class Timeline(QWidget):
             hit = self._hit(e.x())
             self._sel = hit
             if hit is not None:
+                # 命中色块只发选中：cue_clicked → _select_row → seek(cue.start)
+                # 已会驱动播放，再发 seek_requested(点击点) 会把两种语义
+                # 互相覆盖（选中一条却播到点击的中间位置）
                 self.cue_clicked.emit(hit)
-        self.seek_requested.emit(self._drag_start)
-        self.update()
+            else:
+                self.seek_requested.emit(self._drag_start)
+        else:
+            self.seek_requested.emit(self._drag_start)
+        self._repaint()
 
     def mouseMoveEvent(self, e) -> None:  # noqa: N802
         if self._press_x is not None and e.buttons() & Qt.LeftButton:
