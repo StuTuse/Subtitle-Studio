@@ -1402,4 +1402,15 @@ except Exception as e99:
     _ok99 = False, type(e99).__name__
 check("伪 docx 异常转可读 ValueError", _ok99[0], _ok99[1])
 
+section("80. 体检检查项与汇总（第 100 轮钉子）")
+import inspect as _insp100  # noqa: E402
+from sstudio.core import doctor as _dc100  # noqa: E402
+_src100 = _insp100.getsource(_dc100.check_all)
+check("cuda 修复重查绕过会话缓存", "register(force=True)" in _src100)
+check("frozen 不给 pip 修复按钮", "打包版内置" in _src100)
+_s100 = _dc100.summary(_dc100.check_all())
+check("summary 返回非空字符串", bool(_s100), _s100[:30])
+_i100 = _dc100.check_all()
+check("python 检查项恒真", _i100[0].id == "python" and _i100[0].ok)
+
 raise SystemExit(finish())
