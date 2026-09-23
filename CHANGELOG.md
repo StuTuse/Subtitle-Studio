@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.109] - 2026-09-24
+
+v1.17.109：稳定性——run.py 崩溃报告在 pythonw/windowed 模式（sys.stderr 为 None）不再自身抛 AttributeError：崩溃日志照写、弹窗照弹；bugfix_sweep 第 82 节钉住崩溃报告与预览框语义
+
 ## [1.17.108] - 2026-09-24
 
 v1.17.108：测试加固——bugfix_sweep 第 81 节钉住 CUDA 运行时发现链（WindowsApps 占位过滤、解释器候选 memo、缓存区分目录、DLL 目录注册回退 PATH、真 LoadLibrary 验证）；cuda_rt.py 二轮深读无新缺陷
