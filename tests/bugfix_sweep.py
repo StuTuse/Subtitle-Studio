@@ -2204,20 +2204,41 @@ check("说话人切换不衔接", _d151e.close_gaps(0.35) == (0, 0.0))
 
 section("133. 版本模块语义实测（第 152 轮钉子）")
 import sstudio.version as _V152  # noqa: E402
-check("模块版本读自 VERSION 文件", _V152.__version__ == "1.17.158")
-check("读文件函数剥 vV 前缀", _V152._read_version_file() == "1.17.158")
-check("normalize 好格式原样", _V152._normalize("1.17.158") == "1.17.158")
+import re as _re152  # noqa: E402
+_ver152 = open("VERSION", encoding="utf-8").read().strip()   # 真源，动态跟随
+check("模块版本读自 VERSION 文件", _V152.__version__ == _ver152)
+check("读文件函数剥 vV 前缀", _V152._read_version_file() == _ver152.lstrip("vV"))
+check("normalize 好格式原样", _V152._normalize(_ver152) == _ver152)
 check("normalize 坏格式回落 0.0.0", _V152._normalize("v1.2.3") == "0.0.0"
       and _V152._normalize("abc") == "0.0.0" and _V152._normalize("") == "0.0.0")
-check("version_tuple 四段", _V152.version_tuple("1.17.158") == (1, 17, 158, 0))
+_m152 = _re152.match(r"(\d+)\.(\d+)\.(\d+)", _ver152)
+check("version_tuple 四段", _V152.version_tuple(_ver152)
+      == (int(_m152.group(1)), int(_m152.group(2)), int(_m152.group(3)), 0))
 check("version_tuple 坏值四零", _V152.version_tuple("abc") == (0, 0, 0, 0))
-check("is_release 正式版 True", _V152.is_release("1.17.158") is True)
+check("is_release 正式版 True", _V152.is_release(_ver152) is True)
 check("is_release 拒 dev 后缀", _V152.is_release("1.17.158-dev") is False
       and _V152.is_release("1.17.158+build1") is False)
 _d152 = _V152.version_info()
-check("version_info 字段齐", _d152["version"] == "1.17.158" and _d152["release"] is True
+check("version_info 字段齐", _d152["version"] == _ver152 and _d152["release"] is True
       and _d152["frozen"] is False and isinstance(_d152["tuple"], tuple))
 _check152 = _V152.describe()
-check("describe 含版本与提交", "1.17.158" in _check152 and "Subtitle Studio" in _check152)
+check("describe 含版本与提交", _ver152 in _check152 and "Subtitle Studio" in _check152)
+
+section("134. 转写引擎装载与消费语义（第 153 轮钉子）")
+import inspect as _insp153  # noqa: E402
+from sstudio.core import transcriber as _tr153  # noqa: E402
+_src153 = _insp153.getsource(_tr153.FasterWhisperEngine.transcribe)
+check("加载前后双取消检查", "raise TranscribeError(\"已取消。\")" in _src153
+      and _src153.count("已取消。") >= 4)
+check("CUDA 缺库换装提示", "缺少 CUDA 12 运行时" in _src153 and "改成 cpu 先跑通" in _src153)
+check("联网失败换源提示", "模型下载源" in _src153)
+check("initial_prompt 截 440", "prompt[:440]" in _src153)
+_src153b = _insp153.getsource(_tr153.FasterWhisperEngine.transcribe)
+check("空文本段跳过不建 Cue", "if text:" in _src153b and "original_text=text" in _src153b)
+check("word 级时间戳 round3", "round(float(w.start), 3)" in _src153b
+      and '"prob"' in _src153b)
+check("进度不依赖 cues 非空", "不要求 cues 非空" in _src153b
+      and "pos / total" in _src153b)
+check("翻译任务前缀解析", "task=\"translate\" if cfg.language.startswith(\"translate:\")" in _src153b)
 
 raise SystemExit(finish())
