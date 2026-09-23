@@ -1507,4 +1507,18 @@ check("透明度钳位 0..1", "max(0.0, min(1.0, float(v)))" in _src108c)
 check("app_icon 渲染到 256px", "for px in (16, 24, 32, 48, 64, 128, 256):"
       in _insp108.getsource(_insp108.getmodule(_SP108).app_icon))
 
+section("89. 首启体检窗收尾语义（第 109 轮钉子）")
+import inspect as _insp109  # noqa: E402
+from sstudio.ui.first_run_dialog import FirstRunDialog as _FR109  # noqa: E402
+_src109 = _insp109.getsource(_FR109._on_close)
+check("必需缺失时退出置 abort_app", "self.abort_app = True" in _src109)
+_src109b = _insp109.getsource(_FR109.closeEvent)
+check("X 等同退出程序（必需缺失）", "self._on_close()" in _src109b)
+check("收尾 worker 三路径统一", "_shutdown_worker()" in _insp109.getsource(_FR109.reject))
+_src109c = _insp109.getsource(_FR109._shutdown_worker)
+check("等不到就孤儿化不闪退", "orphanize(w)" in _src109c)
+_src109d = _insp109.getsource(_FR109._fix_many)
+check("修复中 btn_close 保持可用", "btn_close 保持可用" in _src109d)
+check("detail 路径 escape", "from html import escape as _esc" in _insp109.getsource(_FR109._add_row))
+
 raise SystemExit(finish())
