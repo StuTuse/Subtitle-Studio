@@ -246,7 +246,16 @@ class MainWindow(FluentWindow):
                 return
             if self.doc is None:
                 self.doc = CueDocument()
+            # 与编辑页「导入字幕」一致：旧内容非空先入撤销栈，导入后
+            # Ctrl+Z 能回到导入前（否则旧 undo 快照对着被整体替换的
+            # cues，撤销会错乱地恢复旧列表）
+            if self.doc.cues:
+                self.editor.push_undo()
             self.doc.cues = cues
+            from ..core.model import normalize_cues
+            normalize_cues(self.doc)
+            self.doc.meta["imported_from"] = os.path.abspath(path)
+            self.doc.meta["imported_format"] = fmt
             self.editor.set_document(self.doc, reset_history=False)
             self.editor._say(f"已按 {fmt} 导入 {len(cues)} 条。", 4000)
             self.mark_dirty()
