@@ -103,6 +103,18 @@ class Cue:
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "Cue":
+        # confidence 必须是数字：手改/外部工具生成的工程可能是任意类型，
+        # 字符串会让 _tip 的 f"{confidence:.2f}" 直接 ValueError
+        conf = d.get("confidence")
+        if isinstance(conf, str):
+            try:
+                conf = float(conf)
+            except ValueError:
+                conf = None
+        elif isinstance(conf, (int, float)):
+            conf = float(conf)
+        else:
+            conf = None
         return Cue(
             start=float(d.get("start", 0.0)),
             end=float(d.get("end", 0.0)),
@@ -110,7 +122,7 @@ class Cue:
             original_text=str(d.get("original_text", d.get("text", "") or "") or ""),
             state=str(d.get("state", "asr") or "asr"),
             speaker=str(d.get("speaker", "") or ""),
-            confidence=d.get("confidence"),
+            confidence=conf,
             words=list(d.get("words", []) or []),
             notes=str(d.get("notes", "") or ""),
             id=str(d.get("id") or uuid.uuid4().hex[:16]),

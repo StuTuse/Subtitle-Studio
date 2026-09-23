@@ -679,4 +679,21 @@ _dsp.set_choices([(0.1, "0.10"), (0.2, "0.20")])
 _vals = [v for v, _ in _dsp._choices()]
 check("小数候选按 decimals 取整", all(abs(round(v, 2) - v) < 1e-9 for v in _vals), _vals[:3])
 
+section("25. Cue.from_dict 的 confidence 类型防御（第 19 轮加固钉子）")
+import json as _json25  # noqa: E402
+_c_str = Cue.from_dict(_json25.loads('{"start":0,"end":1,"text":"x","confidence":"high"}'))
+check("字符串 confidence 归 None", _c_str.confidence is None, repr(_c_str.confidence))
+_c_num = Cue.from_dict(_json25.loads('{"start":0,"end":1,"text":"x","confidence":0.87}'))
+check("数值 confidence 保留", _c_num.confidence == 0.87)
+_c_numstr = Cue.from_dict(_json25.loads('{"start":0,"end":1,"text":"x","confidence":"0.9"}'))
+check("数字字符串转 float", _c_numstr.confidence == 0.9)
+_c_none = Cue.from_dict(_json25.loads('{"start":0,"end":1,"text":"x","confidence":null}'))
+check("null confidence 保持 None", _c_none.confidence is None)
+try:
+    f"{_c_str.confidence:.2f}" if _c_str.confidence is not None else "—"
+    _tip_ok = True
+except (ValueError, TypeError):
+    _tip_ok = False
+check("悬停 tip 格式化不再崩", _tip_ok)
+
 raise SystemExit(finish())
