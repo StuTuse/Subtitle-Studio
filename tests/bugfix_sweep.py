@@ -2176,4 +2176,30 @@ _d150g.cues = [_Cue147(start=_i * 2, end=_i * 2 + 1.8, text=f"第{_i}条测试�
 _d150h = _CD147.from_dict(_json150.loads(_d150g.to_json()))
 check("5000 条大文档回环", len(_d150h.cues) == 5000)
 
+section("132. 时间轴核心行为实测（第 151 轮钉子）")
+_d151 = _CD147()
+_d151.cues = [_Cue147(start=0, end=1.0, text="A"), _Cue147(start=1.2, end=2.0, text="B"),
+              _Cue147(start=5.0, end=6.0, text="C")]
+_t151, _s151 = _d151.close_gaps(0.35)
+check("小间隙前条 end 拉齐后条 start", _t151 == 1 and abs(_d151.cues[0].end - 1.2) < 1e-6
+      and abs(_d151.cues[1].start - 1.2) < 1e-6)
+check("大间隙不动", abs(_d151.cues[2].start - 5.0) < 1e-6 and _s151 > 0)
+_d151b = _CD147()
+_d151b.cues = [_Cue147(start=0, end=1, text="A"), _Cue147(start=1, end=2, text="B")]
+check("无缝隙不触发", _d151b.close_gaps(0.35) == (0, 0.0))
+_d151c = _CD147()
+_d151c.cues = [_Cue147(start=0, end=2, text="A"), _Cue147(start=2.5, end=4, text="B"),
+               _Cue147(start=5, end=7, text="C")]
+check("index_of 按 Cue id 匹配", _d151c.index_of(_d151c.cues[1]) == 1
+      and _d151c.index_of(_d151c.cues[0]) == 0)
+check("at_time 命中", _d151c.at_time(3.0) is _d151c.cues[1])
+check("at_time 空隙 None", _d151c.at_time(2.2) is None)
+_d151d = _CD147()
+_d151d.cues = [_Cue147(start=0, end=1, text="A。"), _Cue147(start=1.2, end=2, text="B")]
+check("句末标点不衔接", _d151d.close_gaps(0.35) == (0, 0.0))
+_d151e = _CD147()
+_d151e.cues = [_Cue147(start=0, end=1, text="A", speaker="甲"),
+               _Cue147(start=1.2, end=2, text="B", speaker="乙")]
+check("说话人切换不衔接", _d151e.close_gaps(0.35) == (0, 0.0))
+
 raise SystemExit(finish())
