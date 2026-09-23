@@ -1135,4 +1135,14 @@ check("保存失败留在软件（close 只在保存成功后）",
 check("_atomic_write_text 有 fsync",
       "os.fsync" in _insp70.getsource(_mw70._atomic_write_text))
 
+section("58. 纠错页回滚与对比语义（第 72 轮钉子）")
+_c58a = Cue(0, 2, "改后", original_text="原始")
+check("is_changed 有差异 True", _c58a.is_changed())
+_c58b = Cue(0, 2, "相同", original_text="相同")
+check("is_changed 相同 False", not _c58b.is_changed())
+_c58c = Cue(0, 2, "", original_text="")
+check("is_changed 空串不误报", not _c58c.is_changed())
+_c58d = Cue(0, 2, "  原始  ", original_text="原始")
+check("is_changed 仅空白差不算改", not _c58d.is_changed())
+
 raise SystemExit(finish())
