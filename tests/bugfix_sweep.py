@@ -1197,4 +1197,14 @@ check("_nice_step 30s 刻度档存在", 30 in (0.5, 1, 2, 5, 10, 15, 30, 60, 120
                                           300, 600, 900, 1800, 3600))
 check("_nice_step 极大时长回到 3600", _ns82(999999, 800) == 3600.0)
 
+section("63. 导出器语义（第 82 轮钉子）")
+from sstudio.core.formats import to_txt as _ttx83, to_json as _tjs83, to_lrc as _tlrc83, parse_json as _pj83  # noqa: E402
+_doc83 = CueDocument(cues=[Cue(61.5, 63.2, "你好，世界。"), Cue(64.0, 66.0, "第二句")])
+check("to_txt 段落合并产生非空", bool(_ttx83(_doc83)))
+_j83 = _tjs83(_doc83)
+check("to_json 读回条数一致", len(_pj83(_j83)) == 2)
+check("to_json 读回 text 一致", _pj83(_j83)[0].text == "你好，世界。")
+_lrc83 = _tlrc83(_doc83)
+check("to_lrc 分钟格式 01:01.50", "[01:01.50]你好，世界。" in _lrc83)
+
 raise SystemExit(finish())
