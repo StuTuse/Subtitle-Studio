@@ -499,6 +499,8 @@ class MainWindow(FluentWindow):
 
         原来写死 resize(1440, 900)：在 1366×768 笔记本、或 150% 缩放的 1080p 屏上
         窗口会比桌面还高，标题栏跑到屏幕外、底部控件点不到。这里按可用区夹一遍。
+        注意：width()/availableGeometry() 都是 Qt 逻辑坐标（QT_SCALE_FACTOR
+        已含 ui_scale），两边同单位直接比，不要再乘任何缩放系数。
         """
         try:
             from PyQt5.QtWidgets import QApplication
@@ -507,10 +509,11 @@ class MainWindow(FluentWindow):
             if scr is None:
                 return
             avail = scr.availableGeometry()
-            w = min(self.width(), int(avail.width() * 0.96))
-            h = min(self.height(), int(avail.height() * 0.94))
+            w = min(self.width(), avail.width())
+            h = min(self.height(), avail.height())
             # 允许最小值略大于屏（极端小屏时 Qt 自行处理），这里只做温和收敛
-            self.resize(max(900, w), max(600, h))
+            self.resize(max(min(900, avail.width()), w),
+                        max(min(600, avail.height()), h))
         except Exception:
             pass
 
@@ -528,16 +531,32 @@ class MainWindow(FluentWindow):
             pass
 
     def _ensure_on_screen(self) -> None:
-        """跨屏/改过缩放后，恢复的位置可能在屏幕外，拉回主屏。"""
+        """跨屏/改过缩放后，恢复的位置或尺寸超出当前屏，拉回并收进主屏。
+
+        之前只处理"完全在屏幕外"的极端情况：恢复的窗口尺寸大于可用区时
+        （换屏/改 ui_scale 后常见），标题栏和底栏露在屏外，配合启动闪屏的
+        切换观感就是"渲染两遍但错开"。这里一并把超大窗口收回可用区。
+        """
         try:
             from PyQt5.QtWidgets import QApplication
+            scr = QApplication.screenAt(self.frameGeometry().center()) \
+                or QApplication.primaryScreen()
+            if scr is None:
+                return
+            avail = scr.availableGeometry()
             geo = self.frameGeometry()
-            for scr in QApplication.screens():
-                if scr.availableGeometry().intersects(geo):
-                    return
-            center = QApplication.primaryScreen().availableGeometry().center()
-            fg = self.frameGeometry()
-            self.move(center.x() - fg.width() // 2, center.y() - fg.height() // 2)
+            on_screen = any(scr2.availableGeometry().intersects(geo)
+                            for scr2 in QApplication.screens())
+            too_big = geo.width() > avail.width() or geo.height() > avail.height()
+            if on_screen and not too_big:
+                return
+            if too_big:
+                self.resize(min(self.width(), avail.width()),
+                            min(self.height(), avail.height()))
+            if not on_screen:
+                fg = self.frameGeometry()
+                self.move(avail.center().x() - fg.width() // 2,
+                          avail.center().y() - fg.height() // 2)
         except Exception:
             pass
 

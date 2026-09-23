@@ -87,22 +87,34 @@ def app_icon():      # -> QIcon（QIcon 在函数内导入，注解会触发 pyf
 class Splash(QWidget):
     """仿 Photoshop 的启动闪屏。``show_stage()`` 可换文案，动画持续跑。"""
 
-    W, H = 560, 330            # 逻辑设计尺寸（再乘 ui_scale）
+    W, H = 560, 330            # 逻辑设计尺寸（Qt 会按 QT_SCALE_FACTOR 放大）
 
     def __init__(self, version: str, scale: float = 1.0, parent=None):
         super().__init__(parent, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
                          | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self._scale = max(0.5, float(scale or 1.0))
+        # 历史教训：这里曾把调用方传来的 ui_scale 再乘进窗口尺寸与绘制，
+        # 而 main() 已把同一倍率设进 QT_SCALE_FACTOR —— Qt 逻辑坐标本来就会
+        # 自动放大，再乘一次就是"双重缩放"：窗口物理尺寸超出设计 1.5 倍、
+        # 内容层与半透明阴影层错位，观感是"屏幕渲染了两遍但错开"。
+        # 现在缩放完全交给 Qt 的 devicePixelRatio；scale 参数保留兼容旧调用
+        # 但不再参与几何计算，绘制统一用实时 DPR。
+        self._version = version or ""
         self._stage = "正在启动…"
         self._phase = 0.0                    # 进度条动画相位 0..1
         self._opacity = 1.0                  # 淡出用（映射到窗口不透明度）
-        self._version = version or ""
         self._fade: QPropertyAnimation | None = None
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(16)
         self._anim_timer.timeout.connect(self._tick)
-        self.resize(int(self.W * self._scale), int(self.H * self._scale))
+        self.resize(self.W, self.H)
+
+    def _s(self) -> float:
+        """绘制倍率 = 窗口实时 DPR（Qt 已把 ui_scale 算进去了）。"""
+        try:
+            return max(0.5, self.devicePixelRatioF() or 1.0)
+        except Exception:
+            return 1.0
 
     # ------------------------------------------------------------- 生命周期
     def show_splash(self) -> None:
@@ -173,7 +185,7 @@ class Splash(QWidget):
     def paintEvent(self, e) -> None:   # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-        s = self._scale
+        s = self._s()
         r = QRectF(0, 0, self.width(), self.height())
         panel = r.adjusted(14 * s, 10 * s, -14 * s, -18 * s)
 

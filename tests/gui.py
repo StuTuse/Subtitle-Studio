@@ -375,12 +375,13 @@ check("已关闭", not win.isVisible())
 section("11. 启动闪屏")
 from sstudio import __version__  # noqa: E402
 from sstudio.ui.splash import Splash  # noqa: E402
-sp = Splash(__version__, scale=1.2)
+sp = Splash(__version__, scale=1.2)   # scale 参数已废弃：缩放交给 QT_SCALE_FACTOR
 sp.show_splash()
 pump()
 check("闪屏已显示", sp.isVisible())
-check("尺寸随缩放", sp.width() == int(560 * 1.2) and sp.height() == int(330 * 1.2),
-      (sp.width(), sp.height()))
+check("窗口为设计尺寸(几何不再手乘缩放)",
+      sp.width() == 560 and sp.height() == 330, (sp.width(), sp.height()))
+check("绘制倍率取实时 DPR", sp._s() >= 1.0, sp._s())
 img = sp.grab().toImage()
 check("面板中深色有像素",
       img.pixelColor(sp.width() // 2, int(sp.height() * 0.55)).alpha() > 200)

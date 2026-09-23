@@ -138,15 +138,12 @@ def main(argv=None) -> int:
 
     # 启动等待页：主窗口要构建 4 个页面 + 播放器，双击后"没反应"的观感
     # 主要来自这段构建时间。先亮 splash，边构建边推进文案。
-    # splash 的物理尺寸取有效渲染倍率（ui_scale，0=跟随系统缩放）。
+    # splash 的几何/绘制倍率完全跟随 QT_SCALE_FACTOR（Splash 内部取实时
+    # DPR），这里不再传 ui_scale —— 传了就会双重放大（历史 UI 错位 bug）。
     from sstudio import __version__
     from sstudio.ui.splash import Splash, app_icon
     app.setWindowIcon(app_icon())      # 标题栏/任务栏用同一套自绘图标
-    try:
-        eff_scale = float(cfg.ui_scale) or _os_scale()
-    except Exception:
-        eff_scale = 1.0
-    splash = Splash(__version__, scale=eff_scale)
+    splash = Splash(__version__)
     splash.show_splash()
 
     splash.show_stage("正在加载界面…")
@@ -172,6 +169,7 @@ def main(argv=None) -> int:
     for _p in _QGA2.topLevelWindows():        # 强制主窗口真正画出第一帧
         _p.requestUpdate()
     app.processEvents()
+    app.processEvents()      # 第二圈：让 resize/排版事件真正落一帧，防"半成品第一帧"
     splash.finish()
 
     # 首次使用：欢迎向导（选外观 → 连模型 → 环境体检），完成写 setup_done=1。
