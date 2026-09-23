@@ -272,6 +272,10 @@ def main(argv=None) -> int:
             try:
                 label = {0: "DEBUG", 1: "WARN", 2: "CRIT", 3: "FATAL", 4: "INFO"}.get(
                     int(mode), "MSG")
+                # DEBUG 级不落盘：长会话里每秒一条的 tick 警告会把 crash.log
+                # 撑到几十万行且毫无诊断价值；诊断下限取 WARN。
+                if int(mode) <= 0:
+                    return
                 _append_crash(f"Qt {label}",
                               f"{message}  (文件 {ctx.file}:{ctx.line})\n")
             except Exception:
