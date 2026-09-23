@@ -869,4 +869,13 @@ for _f in ("start", "end", "text", "original_text", "speaker", "state",
 _c_min = _Cue.from_dict(_Cue(0, 1, "最小").to_dict())
 check("缺省字段往返保真", _c_min.confidence is None and _c_min.original_text == "")
 
+section("36. parse_lrc 同戳多条与乱序（第 37 轮钉子）")
+from sstudio.core.formats import parse_lrc as _plrc36  # noqa: E402
+_cu36 = _plrc36("[00:01.00]重复一\n[00:01.00]重复二\n[00:05.00]后一句")
+check("同戳两条全部保留", len(_cu36) == 3)
+check("同戳条目 end 兜底不倒挂", all(c.end > c.start for c in _cu36))
+_cu36b = _plrc36("[00:05.00]后\n[00:01.00]前")
+check("乱序行按时间排序", [c.text for c in _cu36b] == ["前", "后"])
+check("排序后 end 接下一条 start", _cu36b[0].end <= _cu36b[1].start + 0.04)
+
 raise SystemExit(finish())
