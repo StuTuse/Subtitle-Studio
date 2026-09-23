@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.111] - 2026-09-24
+
+v1.17.111：稳定性——运行期 excepthook 在 pythonw/windowed（stderr 为 None）下不再自身抛异常：崩溃日志与提示弹窗保证落到位（与 run.py 同款守卫）；bugfix_sweep 第 84 节钉住运行期钩子健壮性
+
 ## [1.17.110] - 2026-09-24
 
 v1.17.110：测试加固——bugfix_sweep 第 83 节钉住编辑页文件导入与 LLM 回写语义（空态回灌 main.doc、set_document 全套、空文本防清空、original_text 首次落底）；editor_page.py 三轮深读完成无新缺陷
