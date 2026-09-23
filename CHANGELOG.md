@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.49] - 2026-09-23
+
+v1.17.49：测试加固——bugfix_sweep 第 39 节钉住 parse_numbered 四项解析语义（空编号行/礼貌收尾/围栏/续行判定）；llm.py chat 侧逐行复检无新缺陷
+
 ## [1.17.48] - 2026-09-23
 
 v1.17.48：测试加固——bugfix_sweep 第 38 节钉住 cuda_rt discover/register 缓存语义（同参命中缓存、force 重探测）；cuda_rt 全文复检无新缺陷
