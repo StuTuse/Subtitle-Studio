@@ -1090,4 +1090,23 @@ check("set_speed 钳位上限", "min(4.0" in _src66)
 _src67 = _insp66.getsource(_PW66.seek)
 check("seek 无媒体返回 -1 不广播", "return -1.0" in _src67)
 
+section("55. parse_any 分发判定矩阵（第 67 轮钉子）")
+from sstudio.core.formats import parse_any as _pa67  # noqa: E402
+_c, _f = _pa67("# 标题\n\n正文第一段。\n\n第二段。", "a.md")
+check("md 0 条回落 strip_markdown", _f == "md" and len(_c) == 3)
+try:
+    _pa67("{bad json", "a.json")
+    check(".json 坏文件明确报错", False)
+except ValueError:
+    check(".json 坏文件明确报错", True)
+_c, _f = _pa67("[00:00:01] 你好\n[00:00:05] 世界", "a.txt")
+check("'[' 开头带时间戳 txt 不误判 JSON", _f == "timed_text" and len(_c) == 2)
+_c, _f = _pa67("", "a.srt")
+check("空文件不崩", _f == "txt" and _c == [])
+_c, _f = _pa67("<html><body><p>段落</p></body></html>", "a.html")
+check("HTML 提取段落", _f == "html" and len(_c) == 1 and _c[0].text == "段落")
+_c, _f = _pa67("[00:01.00][00:05.00]副歌", "a.lrc")
+check("LRC 同行双时间标签", _f == "lrc" and len(_c) == 2
+      and _c[0].text == _c[1].text == "副歌")
+
 raise SystemExit(finish())
