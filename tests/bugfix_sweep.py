@@ -2041,4 +2041,34 @@ check("bump 与版本号互斥", "--bump 与直接给版本号二选一" in _src
 check("同版本跳过仅打包", "版本未变" in _src146)
 check("dry-run 不写入", "(dry-run) 将写入" in _src146)
 
+section("128. 边界输入实测（第 147 轮钉子）")
+from sstudio.core.model import CueDocument as _CD147, Cue as _Cue147  # noqa: E402
+from sstudio.core.model import sec_to_ts as _st147  # noqa: E402
+from sstudio.core import formats as _fm147  # noqa: E402
+_d147 = _CD147()
+check("空文档八格式导出不抛", all(isinstance(_fm147.export_text(_d147, k), str)
+      for k in ("srt", "vtt", "ass", "txt", "json", "md", "html", "lrc")))
+_d147.cues = [_Cue147(start=5.0, end=5.0, text="零长")]
+check("零长字幕时间轴仍完整", "00:00:05,000 --> 00:00:05,000" in _fm147.to_srt(_d147))
+check("毫秒域内不假进位", _st147(59.999) == "00:00:59,999")
+check("分钟边界真进位", _st147(3599.9999) == "01:00:00,000")
+check("负秒钳零", _st147(-0.5) == "00:00:00,000")
+_d147.cues = [_Cue147(start=0, end=5, text="A"), _Cue147(start=1, end=2, text="B"),
+              _Cue147(start=1.5, end=8, text="C")]
+from sstudio.core.model import normalize_cues as _nz147  # noqa: E402
+_nz147(_d147)
+check("重叠三连规整后不重叠", all(_d147.cues[i].end <= _d147.cues[i + 1].start + 1e-6
+      for i in range(len(_d147.cues) - 1)))
+_d147b = _CD147()
+_d147b.cues = [_Cue147(start=10, end=11, text="C"), _Cue147(start=0, end=1, text="A"),
+               _Cue147(start=5, end=6, text="B")]
+_nz147(_d147b)
+check("乱序被排序", [c.text for c in _d147b.cues] == ["A", "B", "C"])
+_d147c = _CD147()
+_d147c.cues = [_Cue147(start=0, end=2, text="回环一"), _Cue147(start=2.5, end=4, text="回环二")]
+_c147, _f147 = _fm147.import_text(_fm147.to_srt(_d147c), "x.srt")
+check("SRT 导出导入回环", [c.text for c in _c147] == ["回环一", "回环二"] and _f147 == "srt")
+_c147b, _f147b = _fm147.import_text(_fm147.to_vtt(_d147c), "x.vtt")
+check("VTT 导出导入回环", [c.text for c in _c147b] == ["回环一", "回环二"] and _f147b == "vtt")
+
 raise SystemExit(finish())
