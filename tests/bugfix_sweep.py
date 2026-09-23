@@ -1711,4 +1711,14 @@ check("docx 走 _read_docx", "_read_docx(fp)" in _src122c)
 _src122d = _insp122.getsource(_FP122._next_review)
 check("待复查从当前行后回绕找", "for i in range(cur + 1, len(doc.cues)):" in _src122d)
 
+section("104. 自检脚本语义（第 123 轮钉子）")
+import inspect as _insp123  # noqa: E402
+from sstudio import selfcheck as _sc123  # noqa: E402
+_src123 = _insp123.getsource(_sc123.run_check)
+check("后端插件按目录在位判定", "mediaservice" in _src123)
+check("onedir dist 根兜底", "PyQt5\", \"Qt5\", \"plugins" in _src123)
+check("warn 不影响自检结论", "def warn(name, good, detail=\"\"):" in _src123)
+check("GPU 可推理双条件", "bool(rt.usable) and loadable" in _src123)
+check("key 状态掩码不打印明文", "p.api_key" in _src123 and "key 已填" in _src123 and "key 未填" in _src123)
+
 raise SystemExit(finish())
