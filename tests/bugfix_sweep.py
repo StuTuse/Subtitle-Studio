@@ -2314,4 +2314,40 @@ _c155f, _ = _fm147.import_text(
 check("多行文本保留", len(_c155f) == 1 and "第一行" in _c155f[0].text
       and "第二行" in _c155f[0].text)
 
+section("137. Cue 生命周期实测（第 156 轮钉子）")
+_cA156, _cB156 = _Cue147(start=0, end=1, text="A"), _Cue147(start=2, end=3, text="B")
+check("id 唯一", _cA156.id != _cB156.id and len(_cA156.id) == 16
+      and all(ch in "0123456789abcdef" for ch in _cA156.id))
+check("from_dict 无 id 生成新 id", len(_Cue147.from_dict(
+    {"start": 0, "end": 1, "text": "T"}).id) == 16)
+check("from_dict 保留原 id", _Cue147.from_dict(
+    {"start": 0, "end": 1, "text": "T", "id": "abcd1234abcd1234"}).id
+    == "abcd1234abcd1234")
+_d156 = _CD147()
+_d156.cues = [_Cue147(start=0, end=10, text="这是一段测试字幕内容用于切分验证")]
+_dur156 = _d156.cues[0].duration
+_d156.split(0, 5.0)
+check("split 时长和守恒", abs(sum(c.duration for c in _d156.cues) - _dur156) < 0.3)
+check("split 后有序不重叠", all(_d156.cues[i].end <= _d156.cues[i + 1].start + 0.01
+      for i in range(len(_d156.cues) - 1)))
+_d156b = _CD147()
+_d156b.cues = [_Cue147(start=0, end=10, text="边界")]
+_d156b.split(0, 10.0)          # 正好 end：margin 外不切
+check("split 边界不切", len(_d156b.cues) == 1)
+_d156c = _CD147()
+_d156c.cues = [_Cue147(start=0, end=2, text="甲"), _Cue147(start=2.1, end=4, text="乙"),
+               _Cue147(start=5, end=6, text="丙")]
+_m156 = _d156c.merge([0, 2])   # 隔行选中合并，中间行保留
+check("merge 列表索引隔行保留中间行", _m156 is not None and "甲" in _m156.text
+      and "丙" in _m156.text and [c.text for c in _d156c.cues] == ["甲\n丙", "乙"])
+_cC156 = _Cue147(start=1.0, end=2.0, text="X")
+check("contains 命中与界外", _cC156.contains(1.5) and not _cC156.contains(3.0))
+check("duration 计算", abs(_Cue147(start=1, end=2.5).duration - 1.5) < 1e-9)
+check("display_text 取 text 字段", _Cue147(start=0, end=1, text="改后",
+      original_text="原文").display_text == "改后")
+_d156d = _CD147()
+_d156d.cues = [_Cue147(start=0, end=1, text="重复句"), _Cue147(start=1, end=2, text="重复句"),
+               _Cue147(start=2, end=3, text="不同句")]
+check("重复句去重", _d156d.dedupe_repeats() >= 1 and len(_d156d.cues) == 2)
+
 raise SystemExit(finish())
