@@ -288,21 +288,49 @@ class Config:
         cfg.custom_presets = cp
         return cfg
 
+    # load 失败（配置文件损坏/被锁定）时置 True：本实例里是默认值，
+    # 不是用户的真实配置。此时禁止 save() 覆盖——否则一次磁盘抖动就让
+    # 默认对象把用户的 API Key 永久抹掉。
+    load_failed = False
+
     @classmethod
     def load(cls) -> "Config":
+        cfg = cls.from_dict({})
+        path = config_path()
         try:
-            with open(config_path(), "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return cls.from_dict(json.load(f))
+        except FileNotFoundError:
+            # 无配置文件（真·首次）：出厂自定义预设在那里注入
+            return cfg
         except Exception:
-            # 无配置文件（真·首次）也走 from_dict：出厂自定义预设在那里注入
-            return cls.from_dict({})
+            # 文件存在但读不出来：损坏/锁定。保留现场，绝不用默认值覆盖它。
+            try:
+                import shutil
+                shutil.copy2(path, path + ".bad")
+            except OSError:
+                pass
+            cfg.load_failed = True
+            return cfg
 
     def save(self) -> None:
+        if getattr(self, "load_failed", False):
+            # 配置文件读取失败后的实例带着默认值：落盘会把用户的真实配置
+            # （API Key 等）覆盖掉。拒绝写入，等用户处理 .bad 文件。
+            return
         # 原子写：先写临时文件再 os.replace 整块替换。直接 open("w") 会先
         # 清空原文件，写入中途断电/崩溃 → 半截 JSON → 下次 load 失败静默
         # 回退默认，用户的 API Key 全丢。
         try:
             path = config_path()
+            # 写之前留一份上次的完好配置：万一新写的这份后来发现有问题，
+            # 用户还能从 .bak 捞回来
+            try:
+                if os.path.isfile(path):
+                    import shutil
+                    shutil.copy2(path, path + ".bak")
+            except OSError:
+                pass
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)

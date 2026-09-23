@@ -130,10 +130,13 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
             line = line.rstrip()
             if not line:
                 continue
+            # 错误采集与 log 透传并行：以前 elif 串着，调用方一传 log
+            # （两个 UI 恒传），真实报错就收集不到，"所有镜像都失败了"
+            # 只剩退出码，无从排障
+            if line.startswith(("ERROR", "error:")):
+                errs.append(f"{label}: {line[:200]}")
             if log:
                 log(line)
-            elif line.startswith(("ERROR", "error:")):
-                errs.append(f"{label}: {line[:200]}")
         p.wait()
         dt = time.time() - t0
         if p.returncode == 0:
@@ -228,7 +231,9 @@ def check_all() -> List[CheckItem]:
     # ---- CUDA 12 运行库（可选，GPU 加速的关键）----
     try:
         from . import cuda_rt as _cuda
-        rt = _cuda.register()
+        # force=True：修复重查必须绕过会话内缓存——首启已把 unusable 结果
+        # 缓存住，一键修复装好 cublas 后不强制重探的话，本会话内永远红
+        rt = _cuda.register(force=True)
         gpu = False
         try:
             import ctranslate2 as _ct2

@@ -389,11 +389,16 @@ def parse_numbered(text: str, expected: range) -> Dict[int, str]:
         if not ln:
             continue
         m = pat.match(ln)
-        if m and m.group(2) != "":
+        if m:
             no = int(m.group(1))
+            body = m.group(2).strip()
             if lo <= no <= hi:
+                # 编号在期望范围内就当编号行——包括空文本。模型忠实回显
+                # "[5]"（该行没内容）时 group(2) 为空：若落进下面的续行
+                # 合并，字面量 "[5]" 会粘到上一条字幕上污染文本。存空串，
+                # 上游 (got.get(no) or "") 本就把空文本当"未改动"跳过。
                 buf_no = no
-                out[buf_no] = m.group(2).strip()
+                out[buf_no] = body
                 continue
         if buf_no is None:
             continue                      # 开头的寒暄，丢弃
@@ -604,14 +609,30 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                     if on_cue:
                         on_cue(no, new)
     if _abort_flag[0] is not None:
-        raise LLMError(
+        # 止损时已经写回 cue 的批次成果不能丢：把部分结果随异常带上，
+        # 调用方（FixWorker/UI）能展示"已修正 N 条 + 失败原因"，而不是
+        # 看着一条失败消息以为全部白跑（cue 其实已经改了一半）。
+        result.failures.append("连接中断，剩余批次未执行")
+        raise LLMPartialError(
             "连不上模型服务，已停止剩余批次。\n\n" + _abort_flag[0]
             + "\n\n请检查：模型服务是否启动（本地网关要先开）、"
-              "地址是否正确、网络/代理是否正常。")
+              "地址是否正确、网络/代理是否正常。", result)
     note = no_reasoning_note(prof)
     if note:
         result.failures.append(note)       # 跑完提示一次即可，不逐批刷屏
     return result
+
+
+class LLMPartialError(LLMError):
+    """批量纠错中途止损：已完成的批次成果在 result 里，别浪费。
+
+    纯连接类止损（全体批次未开始时 result 为空）对调用方而言与普通
+    LLMError 无异——isinstance 判断向后兼容。
+    """
+
+    def __init__(self, msg: str, partial_result: "FixResult"):
+        super().__init__(msg)
+        self.partial_result = partial_result
 
 
 def rewrite_with_llm(prof: LLMProfile, system: str, user: str,

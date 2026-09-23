@@ -45,6 +45,11 @@ class _BaseWorker(QThread):
 
 _pending_reap: set = set()
 
+# ThreadedCall 的回调占位：构造时被替换成信号发射器（见 ThreadedCall）
+CB_PROGRESS = object()
+CB_LOG = object()
+CB_CANCEL = object()
+
 
 def reap(w: Optional["_BaseWorker"]) -> None:
     """安全回收 worker：线程没结束前必须保住 Python 引用，
@@ -154,6 +159,12 @@ class FixWorker(_BaseWorker):
                                    cancel=self.cancelled, on_cue=self._on_cue,
                                    extra=self.extra)
             self.sig_done.emit(res)
+        except llm.LLMPartialError as e:
+            # 中途断连：已修正的批次成果原样上交（界面照样刷新/统计），
+            # 失败原因附在结果里，用户不会以为全白跑
+            r = e.partial_result
+            r.failures.append(str(e).splitlines()[0])
+            self.sig_done.emit(r)
         except Exception as e:
             self.sig_failed.emit(llm._friendly_err(e) if not isinstance(e, ValueError) else str(e))
 
@@ -197,36 +208,44 @@ class TestLLMWorker(_BaseWorker):
 class ThreadedCall(QThread):
     """通用：在线程里跑一个函数，把返回值/异常送回主线程。
 
-    fn 的签名可以带回调 ``progress(msg, pct)`` / ``log(line)`` / ``cancel()``：
-    构造时把这三个回调包成信号发射器——回调实际在**工作线程**被调用，
-    通过 queued 信号转回主线程执行调用方给的 UI 更新。以前直接把闭包递进
-    fn，闭包里的 setValue/setText 就在工作线程跑，属于跨线程 UI 访问
-    （体检页/向导的"一键修复"偶发闪退的根因）。
+    fn 的签名可以带三个**线程安全回调**（由本类注入，调用方在 a/kw 里
+    用占位对象 :data:`CB_PROGRESS` / :data:`CB_LOG` / :data:`CB_CANCEL`
+    占位即可）：回调在工作线程被调用，经 queued 信号转回主线程执行
+    调用方 connect 到 sig_progress / sig_log 的 UI 更新。以前调用方把
+    碰控件的闭包直接递进 fn，setValue/setText 就在工作线程跑——跨线程
+    UI 访问，体检页/向导"一键修复"偶发闪退的根因。
     """
 
     sig_progress = pyqtSignal(str, float)
     sig_done = pyqtSignal(object)
     sig_failed = pyqtSignal(str)
     sig_log = pyqtSignal(str)
-    sig_cancel = pyqtSignal()
 
     def __init__(self, fn: Callable[..., Any], *a, **kw):
         super().__init__()
-        self.fn, self.a, self.kw = fn, a, kw
-        self._sig_progress = self.sig_progress
-        self._sig_log = self.sig_log
-        self._sig_cancel = self.sig_cancel
         self._cancel_flag = [False]
+        # 占位回调替换为信号发射器；fn 内部调用它们时跨线程转发
+        a = tuple(self._progress if x is CB_PROGRESS else
+                  self._log if x is CB_LOG else
+                  self._cancel if x is CB_CANCEL else x
+                  for x in a)
+        kw = {k: self._progress if v is CB_PROGRESS else
+              self._log if v is CB_LOG else
+              self._cancel if v is CB_CANCEL else v
+              for k, v in kw.items()}
+        self.fn, self.a, self.kw = fn, a, kw
 
     def _progress(self, msg: str, pct: float = -1.0) -> None:
-        self._sig_progress.emit(str(msg), float(pct))
+        self.sig_progress.emit(str(msg), float(pct))
 
     def _log(self, line: str) -> None:
-        self._sig_log.emit(str(line))
+        self.sig_log.emit(str(line))
 
     def _cancel(self) -> bool:
-        self._sig_cancel.emit()
         return self._cancel_flag[0]
+
+    def cancel(self) -> None:
+        self._cancel_flag[0] = True
 
     def run(self) -> None:
         try:

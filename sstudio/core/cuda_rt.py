@@ -102,12 +102,22 @@ def _site_packages() -> List[str]:
     return out
 
 
+_py_memo: Optional[List[str]] = None
+
+
 def _system_pythons() -> List[str]:
     """找机器上真实存在的 python.exe（打包版修复用；找不到返回空列表）。
 
     注意过滤 WindowsApps 里的微软商店占位符 python3.exe —— 那不是真解释器，
     调它会弹商店页面。顺手验证每个候选能真的执行 -c（再挡掉损坏安装）。
+
+    结果做模块级 memo：验证每个候选都要实跑一次解释器（超时 10s），
+    doctor 的 pip 流程一轮要调它多次，不缓存的话体检时 GUI 线程能被
+    十几个 10s 超时串行拖死到分钟级假死。进程内解释器集合不会变。
     """
+    global _py_memo
+    if _py_memo is not None:
+        return list(_py_memo)
     import shutil as _sh
     import subprocess as _sp
     flags = getattr(_sp, "CREATE_NO_WINDOW", 0)
@@ -143,7 +153,8 @@ def _system_pythons() -> List[str]:
                                 "python.exe")
             if os.path.isfile(cand) and cand not in out:
                 out.append(cand)
-    return [p for p in out if _works(p)]
+    _py_memo = [p for p in out if _works(p)]
+    return list(_py_memo)
 
 
 def _candidate_dirs(extra: Optional[str] = None) -> List[str]:
