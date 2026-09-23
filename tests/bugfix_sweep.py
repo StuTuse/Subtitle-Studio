@@ -971,4 +971,11 @@ check("maybe_show_welcome 已配置恒 True", _ww44.maybe_show_wizard_guard if F
 _dv = type("Cfg", (), {"setup_done": True})()
 check("setup_done=True 不弹向导", _ww44.maybe_show_welcome(_dv, None) is True)
 
+section("45. _nice_step 刻度档位（第 51 轮钉子）")
+from sstudio.ui.timeline import _nice_step as _ns45  # noqa: E402
+check("短视频取 0.5/1/2 档", _ns45(10, 600) == 2, _ns45(10, 600))
+check("1 小时媒体取 600 档", _ns45(3600, 600) == 600)
+check("24 小时媒体钳 3600 上限", _ns45(86400, 600) == 3600.0)
+check("窄宽度步长变大", _ns45(10, 100) >= _ns45(10, 600))
+
 raise SystemExit(finish())
