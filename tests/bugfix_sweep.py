@@ -1482,4 +1482,16 @@ check("状态文本五态齐全",
       {"asr", "llm", "edited", "review", "confirmed"} == set(_th106.state_text(s) is not None for s in
                                                             ("asr", "llm", "edited", "review", "confirmed")) or True)
 
+section("87. 向导体检页修复编排（第 107 轮钉子）")
+import inspect as _insp107  # noqa: E402
+from sstudio.ui.welcome_wizard import _CheckPage as _CP107  # noqa: E402
+_src107 = _insp107.getsource(_CP107._fix_many)
+check("连点防护先取消旧 worker", "w.cancel()" in _src107 and "orphanize(w)" in _src107)
+check("修复中禁用逐项按钮", "for b in self._row_btns.values():" in _src107)
+check("回调走 queued 信号不碰控件", "CB_PROGRESS, CB_LOG, CB_CANCEL" in _src107)
+_src107b = _insp107.getsource(_CP107._done)
+check("修复完成自动重检", "QTimer.singleShot(600, self.refresh)" in _src107b)
+_src107c = _insp107.getsource(_CP107.refresh)
+check("重检前清空 host 行", "takeAt(0)" in _src107c)
+
 raise SystemExit(finish())
