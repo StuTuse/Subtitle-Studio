@@ -1916,4 +1916,20 @@ _src137d = _insp137.getsource(_si137)
 check("单实例崩溃残留清理", "removeServer(name)" in _src137d)
 check("新实例环境标记传递", "SS_NEW_INSTANCE" in _src137d)
 
+section("119. 智能拆分与规范化语义（第 138 轮钉子）")
+import inspect as _insp138  # noqa: E402
+from sstudio.core.model import _smart_split as _ss138f, normalize_cues as _nc138, CueDocument as _CD138, Cue as _Cue138  # noqa: E402
+from sstudio.core import model as _mod138  # noqa: E402
+_ss138 = _mod138._smart_split  # noqa: E402
+_src138 = _insp138.getsource(_ss138)
+check("省略号破折号切点一步到位", "while j > 1 and s[j - 1] in \"…—\":" in _src138)
+check("片段过多先合并尾部", "segments[-2] = segments[-2] + segments[-1]" in _src138)
+check("铺完正好收在 end 不溢出", "bounds[-1] = span" in _src138)
+# 实参验证：拆分后边界不重叠、落在原区间内
+_d138 = _CD138(); _d138.cues = [_Cue138(start=0.0, end=6.0, text="这是一段很长很长的字幕内容，需要被拆分成多条。"*3)]
+_s138 = _ss138(_d138.cues[0], 20, 5.0)
+_ok138 = all(_s138[i].end <= _s138[i+1].start + 1e-6 for i in range(len(_s138)-1)) \
+    and abs(_s138[-1].end - 6.0) < 1e-6 and len(_s138) > 1
+check("拆分实测不重叠且收口", _ok138)
+
 raise SystemExit(finish())
