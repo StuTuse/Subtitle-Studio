@@ -110,11 +110,14 @@ class Splash(QWidget):
         self.resize(self.W, self.H)
 
     def _s(self) -> float:
-        """绘制倍率 = 窗口实时 DPR（Qt 已把 ui_scale 算进去了）。"""
-        try:
-            return max(0.5, self.devicePixelRatioF() or 1.0)
-        except Exception:
-            return 1.0
+        """绘制倍率 = 恒 1.0（逻辑坐标 1:1 按设计稿画）。
+
+        历史：窗口手乘 ui_scale 的年代，这里得配同样的倍率；v1.16.3 起窗口
+        固定 560×330 逻辑、缩放交给 DPR，绘制若再乘 DPR 就会把内容画成
+        1.5 倍——标题区越过进度条冲出面板，表现为"字体超出整个窗口"。
+        逻辑布局恒按设计稿 1:1，高 DPI 下 Qt 按 DPR 矢量放大，天然清晰。
+        """
+        return 1.0
 
     # ------------------------------------------------------------- 生命周期
     def show_splash(self) -> None:
@@ -238,7 +241,7 @@ class Splash(QWidget):
         # ---- 不确定进度条：轨道 + 往复游走的亮块
         track_w = panel.width() * 0.56
         tx = panel.center().x() - track_w / 2
-        ty2 = panel.bottom() - 58 * s
+        ty2 = panel.bottom() - 64 * s
         th = max(4.0, 5.0 * s)
         tr = QPainterPath()
         tr.addRoundedRect(tx, ty2, track_w, th, th / 2, th / 2)
@@ -259,10 +262,10 @@ class Splash(QWidget):
         f3.setPointSizeF(max(7.5, 9.0 * s))
         p.setFont(f3)
         p.setPen(QColor(165, 175, 198))
-        p.drawText(QRectF(panel.left(), ty2 + 12 * s, panel.width(), 22 * s),
+        p.drawText(QRectF(panel.left(), ty2 + 12 * s, panel.width(), 18 * s),
                    Qt.AlignHCenter | Qt.AlignVCenter, self._stage)
         p.setPen(QColor(120, 130, 152))
-        p.drawText(QRectF(panel.left(), panel.bottom() - 30 * s,
+        p.drawText(QRectF(panel.left(), panel.bottom() - 26 * s,
                           panel.width(), 20 * s),
                    Qt.AlignHCenter | Qt.AlignVCenter,
                    f"版本 {self._version}  ·  Tuse Creation")
