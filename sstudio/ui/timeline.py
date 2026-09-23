@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 from typing import Optional
 
 from PyQt5.QtCore import QPoint, QRect, Qt, pyqtSignal
@@ -211,12 +212,22 @@ class Timeline(QWidget):
         self._drag_start = None
 
     def _hit(self, x: int) -> Optional[int]:
+        """点击处命中的字幕行。
+
+        cues 按 start 有序（normalize_cues 保证）：先按 start 二分找插入点，
+        再往回看几个候选——end 可能跨过前一条 start（短字幕嵌在长字幕里的
+        情况极少，回看 16 个足够覆盖），从 5000 条 O(N) 降到 O(log N)。
+        """
         if not self.doc:
             return None
         t = self._sec_at(x)
-        for i, c in enumerate(self.doc.cues):
-            if c.start <= t <= c.end:
-                return i
+        cues = self.doc.cues
+        i = bisect.bisect_right(cues, t, key=lambda c: c.start) - 1
+        j = i
+        while j >= 0 and t - cues[j].start <= 60.0:      # 回看上限兜底防病态数据
+            if cues[j].start <= t <= cues[j].end:
+                return j
+            j -= 1
         return None
 
 

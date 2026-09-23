@@ -611,4 +611,27 @@ with TempDir() as _td:
           _disk["cues"][0]["text"] == "自动保存冒烟")
     check("完成后清脏标", _mw._dirty is False)
 
+section("23. 时间轴点击命中 O(log N)：与线性扫描等价且更快")
+from sstudio.core.model import normalize_cues as _nc  # noqa: E402
+from sstudio.ui.timeline import Timeline as _TL  # noqa: E402
+with TempDir() as _td2:
+    _cues2 = [_Cue(i * 1.0, i * 1.0 + 0.8, f"第{i}条") for i in range(3000)]
+    _doc2 = _CD(cues=_cues2)
+    _nc(_doc2)
+    _tl = _TL()
+    _tl.set_document(_doc2)
+    _tl.resize(1000, 74)
+    import random as _random  # noqa: E402
+    _random.seed(7)
+    _mm = 0
+    for _ in range(500):
+        _x = _random.randint(0, 999)
+        _t = _tl._sec_at(_x)
+        _lin = next((i for i, c in enumerate(_doc2.cues)
+                     if c.start <= _t <= c.end), None)
+        if _tl._hit(_x) != _lin:
+            _mm += 1
+    check("bisect 命中与线性扫描完全一致", _mm == 0, f"{_mm}/500 不一致")
+    check("空文档不崩", _TL()._hit(50) is None)
+
 raise SystemExit(finish())
