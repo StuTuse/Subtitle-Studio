@@ -724,4 +724,41 @@ check("Inf top_p 归默认 1.0", _p_nan.top_p == 1.0, repr(_p_nan.top_p))
 _p_num = _LLMP.from_dict(_json25.loads('{"temperature": 0.7, "timeout": 120.5}'))
 check("正常浮点保留", _p_num.temperature == 0.7 and _p_num.timeout == 120.5)
 
+section("28. 撤销/重做语义：redo 清空、60 上限、restore 内容守恒（第 23 轮钉子）")
+from sstudio.ui.editor_page import EditorInterface as _EditorPage  # noqa: E402
+with TempDir() as _td28:
+    import os as _os28  # noqa: E402
+    _doc28 = _CD(cues=[_Cue(i * 1.0, i * 1.0 + 0.8, f"句{i}") for i in range(5)])
+    _doc28.path = _os28.path.join(_td28, "u.ssp")
+    _ed = _EditorPage.__new__(_EditorPage)
+    _ed.doc = _doc28
+    _ed._undo, _ed._redo = [], []
+    _ed._say = lambda *_a, **_k: None
+    _ed.table = type("T", (), {"render": lambda self, cues: None})()
+    _ed.timeline = type("TL", (), {"update": lambda self: None})()
+    _ed._sync_edit_area_after_history = lambda: None
+    _ed.main = type("M", (), {"mark_dirty": lambda self: None})()
+    # 三次修改入栈
+    for k in range(3):
+        _ed.push_undo()
+        _doc28.cues[0].text = f"改{k}"
+    check("undo 栈 3 条", len(_ed._undo) == 3)
+    _ed.undo()
+    check("undo 后文本回到 改1", _doc28.cues[0].text == "改1", _doc28.cues[0].text)
+    check("undo 后 redo 栈 1 条", len(_ed._redo) == 1)
+    _ed.redo()
+    check("redo 回到 改2", _doc28.cues[0].text == "改2", _doc28.cues[0].text)
+    check("redo 消费后 redo 栈空", _ed._redo == [])
+    # push_undo 必须清 redo：undo 后再改，redo 跳到"未来状态"会错乱
+    _ed.undo()
+    check("再 undo 回到 改1", _doc28.cues[0].text == "改1")
+    _ed.push_undo()
+    _doc28.cues[0].text = "新分支"
+    check("undo 后新修改清空 redo（防跳未来）", _ed._redo == [])
+    # 60 上限
+    for _ in range(80):
+        _ed.push_undo()
+        _doc28.cues[1].text = _doc28.cues[1].text + "x"
+    check("undo 栈封顶 60", len(_ed._undo) == 60, len(_ed._undo))
+
 raise SystemExit(finish())
