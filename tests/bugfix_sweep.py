@@ -1873,4 +1873,18 @@ check("基名三级回退防互相覆盖", "别再一律叫 subtitle" in _src134
 _src134d = _insp134.getsource(_EX134._finish_export)
 check("生命周期交给 reap", "reap(self._worker)" in _src134d)
 
+section("116. 工程保存与自动保存语义（第 135 轮钉子）")
+import inspect as _insp135  # noqa: E402
+from sstudio.ui import main_window as _mw135  # noqa: E402
+_src135 = _insp135.getsource(_mw135.MainWindow.save_project)
+check("手动保存递增保存代数", 'self._save_gen = getattr(self, "_save_gen", 0) + 1' in _src135)
+check("工程扩展名强制补齐", "path += \".ssp\"" in _src135)
+_src135b = _insp135.getsource(_mw135.MainWindow._auto_save)
+check("自动保存写前复核代数", "getattr(self, \"_save_gen\", 0) != save_gen" in _src135b)
+check("自动保存单飞守卫", "if self._autosave_worker is not None:" in _src135b)
+_src135c = _insp135.getsource(_mw135.MainWindow._autosave_done)
+check("代数复核清脏标", "gen == self._dirty_gen - 1 and self._dirty" in _src135c)
+_src135d = _insp135.getsource(_mw135.MainWindow.load_project)
+check("工程搬家视频相对路径修复", "os.path.join(os.path.dirname(path)," in _src135d)
+
 raise SystemExit(finish())
