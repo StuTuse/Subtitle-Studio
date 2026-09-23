@@ -1292,4 +1292,15 @@ _src90b = _insp90.getsource(_ED90._on_text_changed)
 check("改文本先 push_undo 再落", "self.push_undo()" in _src90b)
 check("内容相同不产生空步骤", "if cue.display_text == text:" in _src90b)
 
+section("71. 向导模型页 apply/skip 闭环（第 91 轮钉子）")
+import inspect as _insp91  # noqa: E402
+from sstudio.ui.welcome_wizard import _ModelPage as _MP91, _AppearancePage as _AP91  # noqa: E402
+_src91 = _insp91.getsource(_MP91._skip)
+check("skip 清表单脏值", "self.p_base.clear()" in _src91)
+check("skip 同步清 cfg 脏值", "p.base_url = \"\"" in _src91)
+_src91b = _insp91.getsource(_MP91.apply)
+check("skipped 后 apply 不回写", "if self._skipped:\n            return" in _src91b)
+_src91c = _insp91.getsource(_AP91.apply)
+check("外观 apply 空值兜底 auto", "self._picked or \"auto\"" in _src91c)
+
 raise SystemExit(finish())
