@@ -1961,4 +1961,18 @@ check("ASS 时间负值钳 0", _fm140._ass_time(-1.0) == "0:00:00.00")
 check("ASS Name 剥逗号换行", "张三" in _fm140.to_ass(_d140) and "Dialogue: 0,0:00:01.00,0:00:02.50" in _fm140.to_ass(_d140))
 check("TXT 自然段句末分段", "你好 世界" in _fm140.to_txt(_d140) or "你好" in _fm140.to_txt(_d140))
 
+section("122. 环境体检与一键修复语义（第 141 轮钉子）")
+import inspect as _insp141  # noqa: E402
+from sstudio.core import doctor as _dc141  # noqa: E402
+_src141 = _insp141.getsource(_dc141.pip_install)
+check("错误采集与日志并行", "if line.startswith((\"ERROR\", \"error:\")):" in _src141 and "if log:" in _src141)
+check("镜像穷尽汇总尾 6 条", "errs[-6:]" in _src141)
+_src141b = _insp141.getsource(_dc141.check_all)
+check("体检强制重探绕过缓存", "_cuda.register(force=True)" in _src141b)
+check("打包版模块必须本进程 import", "PyInstaller 进程不读系统 Python 的 site-packages" in _src141b)
+_src141c = _insp141.getsource(_dc141.summary)
+check("摘要三级文案", "缺少必需组件" in _src141c and "建议补装" in _src141c and "一切正常" in _src141c)
+_items141 = _dc141.check_all()
+check("check_all 返回六项", len(_items141) == 6 and all(isinstance(i, _dc141.CheckItem) for i in _items141))
+
 raise SystemExit(finish())
