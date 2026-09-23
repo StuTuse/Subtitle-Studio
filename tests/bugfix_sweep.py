@@ -1351,4 +1351,16 @@ _src95c = _insp95.getsource(_PW95.load)
 check("换媒体清 A/B 循环", "self._loop_a = self._loop_b = None" in _src95c)
 check("SPEEDS 全档在 0.1-4.0 内", all(0.1 <= s <= 4.0 for s in _SP95))
 
+section("76. 打开/保存/自动保存链（第 96 轮钉子）")
+import inspect as _insp96  # noqa: E402
+from sstudio.ui.main_window import MainWindow as _MW96  # noqa: E402
+_src96 = _insp96.getsource(_MW96._load_any)
+check("导入前旧内容入撤销栈", "self.editor.push_undo()" in _src96)
+check("导入不重置撤销历史", "reset_history=False" in _src96)
+_src96b = _insp96.getsource(_MW96.save_project)
+check("手动保存递增保存代数", "self._save_gen = getattr(self, \"_save_gen\", 0) + 1" in _src96b)
+_src96c = _insp96.getsource(_MW96._auto_save)
+check("自动保存线程复核保存代数", "if getattr(self, \"_save_gen\", 0) != save_gen:" in _src96c)
+check("自动保存互斥未落地跳过", "self._autosave_worker is not None" in _src96c)
+
 raise SystemExit(finish())
