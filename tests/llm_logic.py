@@ -182,4 +182,23 @@ check("localhost 空 Key 放行", "API Key" not in _fix_key_error("http://localh
 check("ollama kind 空 Key 放行",
       "API Key" not in _fix_key_error("https://example.com/v1", kind="ollama"))
 
+section("11. 重试退避与严格模式后缀（离线钉住批处理时序语义）")
+import re as _re11  # noqa: E402
+_src11 = None
+import inspect as _inspect11  # noqa: E402
+_src11 = _inspect11.getsource(llm.fix_document)
+check("限流走指数退避（3s 起，20s 封顶）",
+      bool(_re11.search(r"min\(20\.0, 3\.0 \* \(2 \*\* \(attempt - 1\)\)\)", _src11)))
+check("普通失败线性退避 1.2s*attempt", "1.2 * attempt" in _src11)
+check("重试附加严格后缀", "STRICT_SUFFIX.format" in _src11)
+check("后缀含行数与编号范围占位", "{count}" in llm.STRICT_SUFFIX and
+      "{first}" in llm.STRICT_SUFFIX and "{last}" in llm.STRICT_SUFFIX)
+check("止损认 ConnectionRefusedError 类型", llm._is_conn_refused(
+    ConnectionRefusedError("[WinError 10061] 未知错误")))
+check("止损认 refused 标记文本", llm._is_conn_refused(
+    ConnectionError("Failed to establish a new connection")))
+check("普通连接异常不误判止损", not llm._is_conn_refused(
+    ConnectionError(" Connection error.")))
+check("超时不误判为服务挂掉", not llm._is_conn_refused(TimeoutError("timed out")))
+
 sys.exit(finish())
