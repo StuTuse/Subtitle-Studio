@@ -270,6 +270,9 @@ def parse_txt(text: str) -> List[Cue]:
     """
     raw = [ln.strip() for ln in text.replace("\r\n", "\n").split("\n")]
     raw = [ln for ln in raw if ln and not re.fullmatch(r"[\s\-—=]*", ln)]
+    # 文件头残留行不是内容：只有 WEBVTT 头 / 纯提示词的空 VTT 回落到
+    # parse_txt 时，用户不该得到一条文本叫 "WEBVTT" 的字幕
+    raw = [ln for ln in raw if not _WEBVTT_HEAD_RE.match(ln)]
     lines: List[str] = []
     for ln in raw:
         if len(ln) <= 42:

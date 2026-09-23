@@ -129,4 +129,43 @@ check("带时间 TXT 有码", "[00:00:00]" in formats.to_txt(doc, with_time=True
 check("说话人进 SRT", "小明:" in formats.to_srt(doc))
 check("LRC 分:秒格式", "[00:00.00]" in formats.to_lrc(doc))
 
+section("9. 防崩与极限输入（含本轮 1800 变异体模糊测试的代表性固定样例）")
+for name, txt in (
+        ("空串", ""),
+        ("纯空白", "   \n\n  "),
+        ("坏 JSON 拒绝认领", "{broken json"),
+        ("JSON 空数组", "[]"),
+        ("SRT 缺尾", "1\n00:00:00,000 --> "),
+        ("WEBVTT 只有头", "WEBVTT\n"),
+        ("二进制乱码", "\x00\x01\x02abc"),
+        ("5000 字无标点行", "字" * 5000),
+        ("负时间码", "-5:00 --> -1:00\nx"),
+        ("嵌套 HTML", "<html><body><p>" * 200 + "x"),
+):
+    try:
+        cues, fmt = formats.parse_any(txt, "x." + name.split()[0])
+        check(f"防崩 {name}", True, f"{len(cues)} 条 [{fmt}]")
+    except Exception as e:
+        check(f"防崩 {name}", False, f"{type(e).__name__}: {e}")
+
+# 扩展名认领但 0 条 → 回落兜底；兜底 parse_txt 不得把 WEBVTT 头当字幕内容
+# （fmt 报告回落后的 "txt" 属 parse_any 现有语义，调用方只看 cues 是否为空）
+cues, fmt = formats.parse_any("WEBVTT\n\n", "empty.vtt")
+check("VTT 空文件回落兜底：WEBVTT 头不变成字幕",
+      cues == [] and fmt in ("vtt", "txt"), f"{len(cues)} 条 [{fmt}]")
+
+# 极端规模性能锚（防止未来引入 O(N²) 解析回退；机器慢时放宽到 5s）
+big = []
+def _tc(s):
+    s = float(s)
+    return f"{int(s)//3600:02d}:{int(s)//60%60:02d}:{int(s)%60:02d},{int(s%1*1000):03d}"
+for i in range(20000):
+    big += [str(i + 1), f"{_tc(i*1.5)} --> {_tc(i*1.5+1.2)}", f"第{i}条", ""]
+import time  # noqa: E402
+t0 = time.perf_counter()
+cues, fmt = formats.parse_any("\n".join(big), "big.srt")
+dt = time.perf_counter() - t0
+check("2 万条 SRT 解析 < 5s（防 O(N²) 回归）", len(cues) == 20000 and dt < 5.0,
+      f"{dt*1000:.0f} ms / {len(cues)} 条")
+
 sys.exit(finish())
