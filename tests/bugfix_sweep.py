@@ -1373,4 +1373,17 @@ check("后端插件前缀匹配", '"dsengine", "wmfengine", "qwindows"' in _src9
 check("warn 级不影响总体结论", "def warn(name, good, detail=\"\"):" in _src97)
 check("GPU 缺运行库提示自动 CPU", "将自动使用 CPU" in _src97)
 
+section("78. 无界面流水线退出码与清场（第 98 轮钉子）")
+import inspect as _insp98  # noqa: E402
+import sstudio.cli_pipeline as _cp98  # noqa: E402
+_src98 = _insp98.getsource(_cp98._pipeline)
+check("headless finally 清抽出的 wav", "os.remove(wav)" in _src98)
+_src98b = _insp98.getsource(_cp98.run_pipeline)
+check("退出码 130 中断", "return 130" in _src98b)
+check("--out 前置校验防跑完才报错", "不支持的输出扩展名" in _src98b)
+_src98c = _insp98.getsource(_cp98._pipeline_rest)
+check("原子替换写成品", "os.replace(tmp, out)" in _src98c)
+check("对齐 GUI close_gaps", "auto_close_gaps" in _src98c)
+check("纠错全败退出码 3", "return 3 if not fix_ok else 0" in _src98c)
+
 raise SystemExit(finish())
