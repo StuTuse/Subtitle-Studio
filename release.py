@@ -381,8 +381,10 @@ def do_release(tag: str, notes: str) -> None:
         return
     err = (r.stderr or out or "").strip()
     if "already exists" in err:      # Release 已存在：只补传/覆盖安装包文件
+        # gh CLI 的上传子命令是 `gh release upload`（没有 upload-file 这个
+        # 子命令——写错了 already-exists 分支永远走不到成功路径）
         r2 = subprocess.run(
-            [gh, "release", "upload-file", tag, setup, "--force"],
+            [gh, "release", "upload", tag, setup, "--clobber"],
             cwd=ROOT, capture_output=True, text=True, env=env)
         if r2.returncode == 0:
             print(f"✓ Release {tag} 已存在，安装包已补传/覆盖")
