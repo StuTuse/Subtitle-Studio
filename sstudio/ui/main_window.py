@@ -450,7 +450,9 @@ class MainWindow(FluentWindow):
         self._place_progress_label()
         self.editor.status.setText(msg)
         self.editor.set_flow_progress(msg, pct)
-        if pct and pct >= 0:
+        # pct=0.0 时旧写法 'pct and pct >= 0' 会短路成忙碌条：首帧进度
+        # （0%）显示成无限转圈。改为显式判 None。
+        if pct is not None and pct >= 0:
             self.progress.setRange(0, 1000)
             self.progress.setValue(int(pct * 1000))
         else:
