@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.64] - 2026-09-23
+
+v1.17.64：导出修复——ASS 的 speaker 字段剥除换行：手改工程文件可能让 speaker 带换行，此前会把一行 Dialogue 折成两行破坏 ASS 结构；空 speaker 不再写出 None 字样
+
 ## [1.17.63] - 2026-09-23
 
 v1.17.63：线程健壮性——ThreadedCall 兜底捕获 BaseException：后台函数抛出 SystemExit/KeyboardInterrupt 级异常时同样通知 UI，体检页/导出按钮不再因线程静默死亡而永久禁用
