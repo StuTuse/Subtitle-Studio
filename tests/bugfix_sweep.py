@@ -926,4 +926,16 @@ for _h in _heads40[:5]:
         _bad40.append(_h)
 check("近 5 版开头均为 vX.Y.Z： 格式", not _bad40, repr(_bad40))
 
+section("41. 时间码转换双向边界（第 46 轮钉子）")
+from sstudio.core.formats import ts_to_sec as _t2s41, sec_to_ts as _s2t41  # noqa: E402
+check("标准 SRT 解析", _t2s41("00:01:02,345") == 62.345)
+check("裸秒数", _t2s41("12.34") == 12.34)
+check("欧式逗号秒", _t2s41("0,5") == 0.5)
+check("非法串归 None", _t2s41("abc") is None)
+check("负数归 None", _t2s41("-1:00") is None)
+check("空串归 None", _t2s41("") is None)
+_big41 = 360000.0
+check("100 小时往返零漂移", abs(_t2s41(_s2t41(_big41)) - _big41) < 0.001)
+check("3 位小时写出（100h+ 兼容）", _s2t41(_big41).startswith("100:"))
+
 raise SystemExit(finish())
