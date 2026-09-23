@@ -431,7 +431,9 @@ def to_ass(doc: CueDocument, font: str = "Microsoft YaHei", fontsize: int = 54) 
     out = [ASS_HEADER.format(font=font, fontsize=fontsize)]
     for c in doc.cues:
         txt = c.display_text.strip().replace("\n", "\\N")
-        name = c.speaker.replace(",", "")
+        # Name 字段同样不能含逗号/换行：逗号破坏 Dialogue 字段切分，
+        # 换行会把一行 Dialogue 折成两行（ssp 手改 speaker 可能带）。
+        name = (c.speaker or "").replace(",", "").replace("\n", " ").strip()
         out.append(
             f"Dialogue: 0,{_ass_time(c.start)},{_ass_time(c.end)},Default,{name},0,0,0,,{txt}"
         )
