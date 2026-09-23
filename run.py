@@ -44,7 +44,9 @@ def _report(exc: BaseException) -> None:
         d = _crash_dir()
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, "crash.log")
-        with open(path, "w", encoding="utf-8") as f:
+        # 追加而不是覆盖：连续两次启动崩溃时上一次的现场还在
+        # （与 __main__ 的 _append_crash 同款约定）
+        with open(path, "a", encoding="utf-8") as f:
             f.write(head + f"# {dt.datetime.now().isoformat(timespec='seconds')}\n"
                     f"# Python {sys.version.split()[0]}  "
                     f"{'打包版' if getattr(sys, 'frozen', False) else '源码'}\n\n{text}")
