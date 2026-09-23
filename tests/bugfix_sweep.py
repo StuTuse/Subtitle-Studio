@@ -1821,4 +1821,16 @@ _src130e = _insp130.getsource(_TL130._hit)
 check("回看终止 end<t 早退", "if c.end < t:" in _src130e)
 check("刻度步长序列覆盖长视频", _ns130(7200.0, 1000) == 900 and _ns130(0.1, 800) == 1.0)
 
+section("112. 版本信息语义（第 131 轮钉子）")
+import inspect as _insp131  # noqa: E402
+from sstudio import version as _v131  # noqa: E402
+check("非法版本回落 0.0.0", _v131._normalize("not-a-version") == "0.0.0")
+check("合法版本原样保留", _v131._normalize("1.17.137") == "1.17.137")
+check("文件版本必须四段", _v131.version_tuple("1.17.137") == (1, 17, 137, 0))
+check("预发布判定拒 -+ 后缀", not _v131.is_release("1.0.0-rc1") and _v131.is_release("1.0.0"))
+_src131 = _insp131.getsource(_v131._git)
+check("打包版跳过 git 子进程", "return \"\"" in _src131 and "frozen" in _src131)
+check("子进程挂 CREATE_NO_WINDOW", "CREATE_NO_WINDOW" in _src131)
+check("VERSION 剥 vV 前缀", "lstrip(\"vV\")" in _insp131.getsource(_v131._read_version_file))
+
 raise SystemExit(finish())
