@@ -2241,4 +2241,46 @@ check("进度不依赖 cues 非空", "不要求 cues 非空" in _src153b
       and "pos / total" in _src153b)
 check("翻译任务前缀解析", "task=\"translate\" if cfg.language.startswith(\"translate:\")" in _src153b)
 
+section("135. 配置坏现场恢复语义实测（第 154 轮钉子）")
+import json as _json154  # noqa: E402
+import tempfile as _tf154  # noqa: E402
+import os as _os154  # noqa: E402
+import sys as _sys154  # noqa: E402
+from sstudio.core.config import Config as _Cfg154  # noqa: E402
+_td154 = _tf154.mkdtemp()
+os.environ["APPDATA"] = _td154
+for _m154 in list(_sys154.modules):
+    if _m154.startswith("sstudio"):
+        del _sys154.modules[_m154]
+from sstudio.core.config import Config as _CfgB154, config_path as _cpath154  # noqa: E402
+_c154 = _CfgB154.load()
+_c154.whisper_model = "large-v3"
+_c154.save()
+_c154.save()                       # 第二次 save 生成 .bak（上次完好配置）
+_p154 = _cpath154()
+with open(_p154, "w", encoding="utf-8") as _f154:
+    _f154.write("{corrupted!!!")
+_c154b = _CfgB154.load()
+check("坏文件读回默认不抛", isinstance(_c154b, _CfgB154))
+check("坏现场落 .bad 存证", _os154.path.isfile(_p154 + ".bad"))
+_c154b.whisper_model = "medium"
+_c154b.save()                      # load_failed：必须被拒
+check("load_failed 拒写保护 Key", open(_p154, encoding="utf-8").read() == "{corrupted!!!"
+      and _c154b.load_failed is True)
+_os154.replace(_p154 + ".bak", _p154)      # 用户从 .bak 恢复完好配置
+_c154c = _CfgB154.load()
+check("恢复 .bak 后 load_failed 复位", _c154c.load_failed is False
+      and _c154c.whisper_model == "large-v3")
+_c154c.whisper_model = "medium"
+_c154c.save()
+_c154d = _CfgB154.load()
+check("恢复后保存读回生效", _c154d.whisper_model == "medium")
+_d154 = _c154d.to_dict()
+_d154["batch_size"] = "12"
+_d154["concurrency"] = "3.0"
+_c154e = _CfgB154.from_dict(_d154)
+check("from_dict 字符串数值容错", int(_c154e.batch_size) == 12
+      and int(_c154e.concurrency) == 3)
+os.environ["APPDATA"] = "" if _os154.environ.get("APPDATA_WAS") else ""
+
 raise SystemExit(finish())
