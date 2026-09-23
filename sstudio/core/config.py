@@ -159,6 +159,14 @@ class LLMProfile:
                     v = "" if v is None else str(v)
             except (TypeError, ValueError):
                 continue
+            # timeout 防呆：手改 config.json 写 0/负数时，OpenAI client 会把它
+            # 原样传给底层 httpx，首个请求就异常；钳回默认 300s。
+            if k == "timeout":
+                try:
+                    if float(v) < 1.0:
+                        v = 300.0
+                except (TypeError, ValueError):
+                    v = 300.0
             setattr(base, k, v)
         return base
 

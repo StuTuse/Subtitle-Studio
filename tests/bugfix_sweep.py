@@ -987,4 +987,14 @@ check("large 别名映射", _mk46("large") == "large-v3")
 check("空串归空", _mk46("  ") == "")
 check("v3 与 turbo 键不同（防误配）", _mk46("large-v3") != _mk46("large-v3-turbo"))
 
+section("47. LLMProfile timeout 防呆（第 54 轮钉子）")
+from sstudio.core.config import LLMProfile as _LP47  # noqa: E402
+check("正常值原样保留", _LP47.from_dict({"timeout": 120}).timeout == 120)
+check("零回落 300", _LP47.from_dict({"timeout": 0}).timeout == 300)
+check("负数回落 300", _LP47.from_dict({"timeout": -5}).timeout == 300)
+check("NaN 回落 300（r21 补丁仍生效）",
+      _LP47.from_dict({"timeout": float("nan")}).timeout == 300)
+check("字符串数字可转", _LP47.from_dict({"timeout": "60"}).timeout == 60)
+check("非数字回落 300", _LP47.from_dict({"timeout": "abc"}).timeout == 300)
+
 raise SystemExit(finish())
