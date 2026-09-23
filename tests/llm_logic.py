@@ -156,4 +156,30 @@ kw = _chat_kwargs("deepseek-r1", no_reasoning=True)
 check("推理模型带关闭思考的 extra_body", "extra_body" in kw and
       "reasoning_effort" in kw["extra_body"], kw.get("extra_body"))
 
+section("10. fix_document 空 Key 早退：云端拦、本地放行（与测试连接行为一致）")
+from sstudio.core.config import Config, LLMProfile as _P2  # noqa: E402
+_cfg = Config()
+
+
+def _fix_key_error(base_url: str, api_key: str = "", kind: str = "openai") -> str:
+    _cfg.profiles = [_P2(name="t", base_url=base_url, api_key=api_key,
+                         model="deepseek-chat", kind=kind)]
+    _cfg.active_profile = "t"
+    try:
+        llm.fix_document(_cfg, cues)      # cues 来自第 7 节
+        return ""
+    except llm.LLMError as e:
+        return str(e)
+    except Exception as e:                # noqa: BLE001
+        return f"<{type(e).__name__}>"    # 网络层异常也算"没被 Key 拦"
+
+
+check("云端空 Key 被拦", "API Key" in _fix_key_error("https://api.deepseek.com/v1"))
+check("本机 127.0.0.1 空 Key 放行", _fix_key_error("http://127.0.0.1:11434/v1")
+      != "尚未配置 API Key。请到「模型设置」里填写。")
+check("localhost 空 Key 放行", "API Key" not in _fix_key_error("http://localhost:1234/v1")
+      or _fix_key_error("http://localhost:1234/v1") == "")
+check("ollama kind 空 Key 放行",
+      "API Key" not in _fix_key_error("https://example.com/v1", kind="ollama"))
+
 sys.exit(finish())
