@@ -294,6 +294,10 @@ class FixInterface(QWidget):
         self.btn_stop.setEnabled(True)
         self.progress.setValue(0)
         self.log.append(f"开始处理 {len(cues)} 条（{self.cfg.profile().model}）…")
+        # 记下本轮运行的文档身份：worker 流式回填按行号定位 self.main.doc，
+        # 运行中用户若打开/新建另一个文档（main.doc 被换），旧 worker 的
+        # 回调会把文本写进新文档对应行——数据串台。身份不符一律丢弃。
+        self._run_doc = doc
 
         # 「本轮指令」是临时输入：作为参数传下去，绝不拼进 cfg.glossary。
         # 早先每点一次运行就往持久配置里追加一份，越滚越大还看不见。
@@ -314,14 +318,20 @@ class FixInterface(QWidget):
         self.main.editor.status.setText(msg)
 
     def _on_cue(self, local_row: int, text: str) -> None:
-        row = self._row_map[local_row] if local_row < len(self._row_map) else local_row
         doc = self.main.doc
+        if doc is not getattr(self, "_run_doc", None):
+            return          # 文档已换：旧运行的回填不能写进新文档（串台）
+        row = self._row_map[local_row] if local_row < len(self._row_map) else local_row
         if doc and 0 <= row < len(doc.cues):
             self.main.editor.apply_llm_text(row, text)
 
     def _on_done(self, res) -> None:
         self._finish()
         doc = self.main.doc
+        if doc is not getattr(self, "_run_doc", None):
+            # 文档运行中被换掉：本轮结果元数据不写、不重渲染新文档
+            self.log.append("（文档已切换，本轮纠错结果不再回写）")
+            return
         if doc:
             doc.meta["llm_model"] = self.cfg.profile().model
             doc.meta["llm_fixed"] = res.changed
