@@ -241,28 +241,38 @@ def _extract_with_pyav(path: str, out_wav: str, sr: int,
         if stream is None:
             # 必须在 wave.open 之前判空：否则留下一个半空 wav 骗过上层的大小校验
             raise RuntimeError("这个文件里没有音频轨。")
-        with wave.open(out_wav, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sr)
-            resampler = av.AudioResampler(format="s16", layout="mono", rate=sr)
-            last_report = 0.0
-            for frame in c.decode(stream):
-                if cancel and cancel():
-                    raise RuntimeError("已取消。")
-                for rf in resampler.resample(frame):
+        try:
+            with wave.open(out_wav, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sr)
+                resampler = av.AudioResampler(format="s16", layout="mono", rate=sr)
+                last_report = 0.0
+                for frame in c.decode(stream):
+                    if cancel and cancel():
+                        raise RuntimeError("已取消。")
+                    for rf in resampler.resample(frame):
+                        wf.writeframes(rf.to_ndarray().tobytes())
+                    if progress and total:
+                        pos = (float(frame.pts * frame.time_base)
+                               if frame.pts is not None else last_report)
+                        if pos - last_report > 2.0:
+                            last_report = pos
+                            progress(f"正在解码音频… {_si(pos)} / {_si(total)}",
+                                     min(0.999, pos / total))
+                # flush 重采样器：否则缓冲区里残留的音频尾部（最后不足一帧的
+                # 部分）被丢掉——字幕最后一条的结束时间会超出音频长度零点几秒
+                for rf in resampler.resample(None):
                     wf.writeframes(rf.to_ndarray().tobytes())
-                if progress and total:
-                    pos = (float(frame.pts * frame.time_base)
-                           if frame.pts is not None else last_report)
-                    if pos - last_report > 2.0:
-                        last_report = pos
-                        progress(f"正在解码音频… {_si(pos)} / {_si(total)}",
-                                 min(0.999, pos / total))
-            # flush 重采样器：否则缓冲区里残留的音频尾部（最后不足一帧的
-            # 部分）被丢掉——字幕最后一条的结束时间会超出音频长度零点几秒
-            for rf in resampler.resample(None):
-                wf.writeframes(rf.to_ndarray().tobytes())
+        except BaseException:
+            # 取消/解码错误路径清掉写了一半的 wav：半截文件留在缓存目录
+            # 既占空间，又可能被下次转写的大小校验误判成可用成品
+            try:
+                if os.path.isfile(out_wav):
+                    os.remove(out_wav)
+            except OSError:
+                pass
+            raise
     finally:
         c.close()
     return out_wav
