@@ -230,7 +230,29 @@ class FirstRunDialog(QDialog):
         self._fix_many([it])
 
     def _fix_many(self, todo: List[doctor.CheckItem]) -> None:
+        # 连点防护（与 settings_page._test 同款）：上一个修复 worker 还在跑时
+        # 再点一个「安装」按钮，旧引用会被直接覆盖——两个 pip 子进程并行 +
+        # 旧 worker 的 sig_done 回调会 reap 掉正在运行的新 worker
+        # （deleteLater 运行中线程是经典闪退源）。先取消并回收旧的。
+        w = getattr(self, "_worker", None)
+        if w is not None:
+            self._worker = None
+            try:
+                if w.isRunning():
+                    w.cancel()
+                    if not w.wait(1500):
+                        from .workers import orphanize
+                        orphanize(w)
+                else:
+                    reap(w)
+            except RuntimeError:
+                pass                # 线程对象已被回收（C++ 侧已删）
         self.btn_fix_all.setEnabled(False)
+        # 逐项按钮同样禁用：修复中再点别的一项 = 并行 pip + 竞态回收
+        for it in self._items:
+            b = getattr(it, "_row_btn", None)
+            if b is not None:
+                b.setEnabled(False)
         # btn_close 保持可用：修复中关窗走 closeEvent 请求取消（见下）。
         # 以前禁用 + 取消恒假，镜像黑洞时模态窗只能任务管理器杀进程。
         self.fix_bar.setVisible(True)
@@ -300,6 +322,11 @@ class FirstRunDialog(QDialog):
         self._worker = None
         self.btn_fix_all.setEnabled(True)
         self.btn_close.setEnabled(True)
+        # 恢复逐项修复按钮（_fix_many 里统一禁用过）
+        for it in self._items:
+            b = getattr(it, "_row_btn", None)
+            if b is not None:
+                b.setEnabled(True)
         if ok:
             self.fix_bar.setValue(100)
             self.fix_label.setText("修复完成，正在重新检查…")
