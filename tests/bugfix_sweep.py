@@ -1670,4 +1670,18 @@ check("限流指数退避", "3.0 * (2 ** (attempt - 1))" in _src119)
 _src119b = _insp119.getsource(_ll119.parse_numbered)
 check("范围外编号忽略", "if lo <= no <= hi:" in _src119b)
 
+section("101. 配置持久化语义（第 120 轮钉子）")
+import inspect as _insp120  # noqa: E402
+from sstudio.core.config import Config as _CF120  # noqa: E402
+_src120 = _insp120.getsource(_CF120.load)
+check("load 失败留 .bad 现场", "shutil.copy2(path, path + \".bad\")" in _src120)
+_src120b = _insp120.getsource(_CF120.save)
+check("save 原子写 fsync", "os.fsync(f.fileno())" in _src120b)
+check("save 前留 .bak", "path + \".bak\"" in _src120b)
+check("load_failed 拒写防抹 Key", "if getattr(self, \"load_failed\", False):" in _src120b)
+_c120 = _CF120.from_dict({"ui_scale": "1.25", "auto_retry": "3.0"})
+check("字符串数值容错转换", abs(_c120.ui_scale - 1.25) < 1e-9 and _c120.auto_retry == 3)
+_g120 = _CF120.from_dict({"glossary": "术语A\n【本轮补充】垃圾尾巴"})
+check("glossary 迁移清补充尾巴", _g120.glossary == "术语A")
+
 raise SystemExit(finish())
