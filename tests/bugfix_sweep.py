@@ -1078,4 +1078,16 @@ check("split_long 零时长原样保留", len(_d65c.cues) == 1 and _d65c.cues[0]
 _d65d = CueDocument(cues=[Cue(0, 1, "唯一")])
 check("merge 单行返回 None", _d65d.merge([0]) is None and len(_d65d.cues) == 1)
 
+section("54. 播放器控制语义（第 66 轮钉子）")
+from sstudio.ui.player import SPEEDS as _SP66  # noqa: E402
+check("倍速档位含 1.0 且递增有序",
+      1.0 in _SP66 and all(_SP66[i] < _SP66[i + 1] for i in range(len(_SP66) - 1)))
+from sstudio.ui.player import PlayerWidget as _PW66  # noqa: E402
+import inspect as _insp66  # noqa: E402
+_src66 = _insp66.getsource(_PW66.set_speed)
+check("set_speed 钳位下限", "max(0.1" in _src66)
+check("set_speed 钳位上限", "min(4.0" in _src66)
+_src67 = _insp66.getsource(_PW66.seek)
+check("seek 无媒体返回 -1 不广播", "return -1.0" in _src67)
+
 raise SystemExit(finish())
