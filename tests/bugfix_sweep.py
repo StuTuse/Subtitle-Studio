@@ -1175,4 +1175,15 @@ from sstudio.ui.cue_table import _TextDelegate as _TD78  # noqa: E402
 _src78c = _insp78.getsource(_TD78.setModelData)
 check("编辑提交 rstrip 尾随空白", "rstrip()" in _src78c)
 
+section("61. chat 流式/推理语义（第 80 轮钉子）")
+import inspect as _insp81  # noqa: E402
+from sstudio.core import llm as _llm81  # noqa: E402
+_src81 = _insp81.getsource(_llm81.chat)
+check("流式半途断流保留已有输出", "if not parts or _is_conn_refused(e):" in _src81)
+check("reasoning_content / reasoning 双字段捕获",
+      "reasoning_content" in _src81 and "reasoning" in _src81)
+_src81b = _insp81.getsource(_llm81.chat)
+check("no-cap 重试成功后记住接入点", "_REASONING_NO_CAP.add" in _src81b)
+check("推理型模型正文为空报 ReasoningBudgetError", "ReasoningBudgetError" in _src81b)
+
 raise SystemExit(finish())
