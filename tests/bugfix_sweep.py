@@ -1563,4 +1563,37 @@ _out112 = []
 _w112.sig_done.connect(lambda r: _out112.append(r))
 check("ThreadedCall 返回值经信号", True)
 
+section("93. 字幕导入解析边界（第 113 轮钉子）")
+import inspect as _insp113  # noqa: E402
+from sstudio.core import formats as _fm113  # noqa: E402
+_c113 = _fm113.parse_lrc("[00:01.2]甲\n[00:03.45]乙\n[01:02.345]丙")
+check("LRC 毫秒 1/2/3 位解析", abs(_c113[0].start - 1.2) < 1e-6 and abs(_c113[1].start - 3.45) < 1e-6
+      and abs(_c113[2].start - 62.345) < 1e-6)
+check("LRC 乱序行排序后配对", all(c.end >= c.start for c in
+      _fm113.parse_lrc("[00:05]后\n[00:01]前")))
+_v113 = _fm113.parse_vtt("WEBVTT\n\nNOTE 注释\n\n00:00:01.000 --> 00:00:02.000\n<v 张三>你好")
+check("VTT 头/NOTE/<v> 三清", len(_v113) == 1 and _v113[0].speaker == "张三"
+      and _v113[0].text == "你好")
+_s113 = _fm113.parse_srt("1\n00:00:01,000 --> 00:00:02,000\n张三:\n你好")
+check("SRT 说话人独占行剥回", _s113[0].speaker == "张三" and _s113[0].text == "你好")
+check("markdown 链接保留文字", "点这里" in _fm113._strip_markdown("[点这里](http://x)"))
+
+section("94. VTT 头部与说话人标签修复（第 113 轮钉子·产品修复）")
+import inspect as _insp113b  # noqa: E402
+_src113b = _insp113b.getsource(_fm113)
+check("WEBVTT 头正则带 re.M", "_WEBVTT_HEAD_RE = re.compile(r\"^(\\uFEFF)?WEBVTT.*$\", re.I | re.M)" in _src113b)
+_v113a = _fm113.parse_vtt("WEBVTT\n\nNOTE 注释\n\n00:00:01.000 --> 00:00:02.000\n<v 张三>你好")
+check("<v> 行内正文形态剥出说话人", len(_v113a) == 1 and _v113a[0].speaker == "张三"
+      and _v113a[0].text == "你好")
+_v113b = _fm113.parse_vtt("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v 张三>\n你好")
+check("<v> 独占行形态正文不丢", len(_v113b) == 1 and _v113b[0].speaker == "张三"
+      and _v113b[0].text == "你好")
+_v113c = _fm113.parse_vtt("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Speaker.李四>早上好")
+check("<v 类名> 变体同样支持", _v113c[0].speaker == "Speaker.李四")
+_v113d = _fm113.parse_vtt("WEBVTT\n\n00:01.000 --> 00:02.000\n<v 甲>一\n二\n\n00:03.000 --> 00:04.000\n<v 乙>丙")
+check("多 cue 多行说话人不串块", [(c.speaker, c.text) for c in _v113d] ==
+      [("甲", "一\n二"), ("乙", "丙")])
+_v113e = _fm113.parse_vtt("\ufeffWEBVTT X-header\n\n00:00:01.000 --> 00:00:02.000\n带BOM与扩展头")
+check("BOM 与扩展头一并剥掉", len(_v113e) == 1 and _v113e[0].text == "带BOM与扩展头")
+
 raise SystemExit(finish())

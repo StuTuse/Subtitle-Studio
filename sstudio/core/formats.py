@@ -17,7 +17,10 @@ from .model import Cue, CueDocument, sec_to_ts, ts_to_sec
 # --------------------------------------------------------------------- 解析
 _BR_RE = re.compile(r"<br\s*/?>", re.I)
 _TAG_RE = re.compile(r"</?(?:i|b|u|font|span|c)[^>]*>", re.I)
-_WEBVTT_HEAD_RE = re.compile(r"^(\uFEFF)?WEBVTT.*$", re.I)
+# 必须带 re.M：$ 在默认模式下只认「串尾/串尾换行前」，WEBVTT 头后面
+# 只要还有正文，.*$ 就钉不住第一行行尾 → 头部永远剥不掉，正文里残留
+# WEBVTT 行还会被 parse_srt 当垃圾块丢弃。re.M 让 $ 匹配行尾才对。
+_WEBVTT_HEAD_RE = re.compile(r"^(\uFEFF)?WEBVTT.*$", re.I | re.M)
 _SENT_END_RE = re.compile(r"[。！？!?.\"'”’」』]\s*$")
 _CLAUSE_START_RE = re.compile(r"^[，。！？、；：,.!?;:]")
 _CJK_RE = re.compile(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]")
@@ -75,9 +78,17 @@ def parse_vtt(text: str) -> List[Cue]:
     text = re.sub(r"^NOTE\b.*?(?=\n\s*\n|$)", "", text, flags=re.S | re.M)
     text = re.sub(r"^STYLE\b.*?(?=\n\s*\n|$)", "", text, flags=re.S | re.M)
     text = re.sub(r"^[{}]$", "", text, flags=re.M)
-    # <v 说话人> 是 VTT 的标准语音标签，整行替换成 to_srt 同款、parse_srt
-    # 能剥回来的「名字:」行；直接混进正文的话会被 _strip_vtt_tags 删掉。
-    text = re.sub(r"^<v(?:\.[^>\s]*)?\s+([^>]+)>\s*$", r"\1:", text, flags=re.M)
+    # <v 说话人> 是 VTT 的标准语音标签，转成 to_srt 同款、parse_srt 能剥
+    # 回的「名字:」独占一行；同行的剩余正文挪到下一行（parse_srt 只认
+    # 整行 名字: 的形态）。旧版以 \s*$ 收尾只认「<v> 独占一行」——真实
+    # VTT 的 <v> 后面几乎总跟着正文，行尾锚永不满足 → 说话人标签整段
+    # 被当正文；直接混进正文的话又会被 _strip_vtt_tags 删掉。
+    def _v_speaker(m):
+        rest = m.group(2) or ""
+        # 同行有正文 → 名字: 换行 + 正文；独占一行 → 只产 名字:（原换行
+        # 保留），补 \n 会凑出双换行把正文切成独立块而丢掉
+        return m.group(1) + ":" + (("\n" + rest) if rest else "")
+    text = re.sub(r"^<v(?:\.[^>\s]*)?\s+([^>]+)>([^\n]*)$", _v_speaker, text, flags=re.M)
     return parse_srt(text)
 
 
