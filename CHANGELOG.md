@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.125] - 2026-09-24
+
+v1.17.125：测试加固——bugfix_sweep 第 99 节钉住转写引擎收尾语义（GPU 不可用自动回退 CPU、whisper.cpp 旧结果预清防拿上一次字幕、main.exe 需同目录 whisper.dll、translate: 前缀剥成纯语言码、引擎缺失前置报错）；transcriber.py 三轮深读完成无新缺陷
+
 ## [1.17.124] - 2026-09-24
 
 v1.17.124：测试加固——bugfix_sweep 第 98 节钉住 headless 流水线语义（--out 前置校验、中断退出码 130、异常路径清理 wav、成品原子替换、纠错整轮失败退出码 3、close_gaps 与 GUI 对齐）；cli_pipeline.py 三轮深读完成无新缺陷
