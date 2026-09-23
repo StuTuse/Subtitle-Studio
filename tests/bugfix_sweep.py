@@ -1833,4 +1833,17 @@ check("打包版跳过 git 子进程", "return \"\"" in _src131 and "frozen" in 
 check("子进程挂 CREATE_NO_WINDOW", "CREATE_NO_WINDOW" in _src131)
 check("VERSION 剥 vV 前缀", "lstrip(\"vV\")" in _insp131.getsource(_v131._read_version_file))
 
+section("113. 设置页 ASR 与杂项卡语义（第 132 轮钉子）")
+import inspect as _insp132  # noqa: E402
+from sstudio.ui import settings_page as _spmod132  # noqa: E402
+_src132 = _insp132.getsource(_spmod132.SettingsInterface._probe_cuda)
+check("探测前清模块级缓存", "cuda_rt._result = None" in _src132)
+check("探测提示追加不覆盖", "+ \"<br>\" if self.asr_hint.text() else \"\"" in _src132)
+check("探测路径转义", "_esc(rt.cublas_dir)" in _src132 and "_esc(rt.note)" in _src132)
+_src132b = _insp132.getsource(_spmod132.SettingsInterface._build_asr)
+check("translate 前缀在语言下拉", "translate:zh" in _src132b)
+_src132c = _insp132.getsource(_spmod132.SettingsInterface._build_misc)
+check("缩放 0=跟随系统 specialValue", "setSpecialValueText(\"跟随系统\")" in _src132c)
+check("空隙衔接开关双文案", "setOnText(\"衔接\")" in _src132c and "setOffText(\"留缝\")" in _src132c)
+
 raise SystemExit(finish())
