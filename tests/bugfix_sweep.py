@@ -1031,4 +1031,13 @@ from sstudio.ui.editor_page import EditorInterface as _EI50  # noqa: E402
 check("_TransportKeyFilter 存在（导航键豁免输入框）",
       hasattr(_EI50, "__module__") and _EI50.__module__.endswith("editor_page"))
 
+section("51. 向导动效节奏常量（第 63 轮钉子）")
+from sstudio.ui import wizard_fx as _fx51  # noqa: E402
+check("推入慢于退出（重叠节奏前提）",
+      _fx51._PAGE_MS > _fx51._PAGE_OUT_MS)
+check("全部时长为正",
+      all(v > 0 for v in (_fx51._PAGE_MS, _fx51._PAGE_OUT_MS,
+                          _fx51._CASCADE_MS, _fx51._POP_MS)))
+check("缓动曲线可复用注册", _fx51.EASE_OUT.type() == _fx51.EASE_OUT.type())
+
 raise SystemExit(finish())
