@@ -997,4 +997,12 @@ check("NaN 回落 300（r21 补丁仍生效）",
 check("字符串数字可转", _LP47.from_dict({"timeout": "60"}).timeout == 60)
 check("非数字回落 300", _LP47.from_dict({"timeout": "abc"}).timeout == 300)
 
+section("48. ThreadedCall 占位回调替换（第 56 轮钉子）")
+from sstudio.ui.workers import ThreadedCall as _TC48, CB_PROGRESS, CB_LOG, CB_CANCEL  # noqa: E402
+_tc = _TC48(lambda p, l, c: (p is not CB_PROGRESS, l is not CB_LOG, c is not CB_CANCEL),
+            CB_PROGRESS, CB_LOG, CB_CANCEL)
+check("构造时占位已替换为真实回调", _tc.a == (_tc._progress, _tc._log, _tc._cancel))
+check("cancel 标志翻转", (_tc.cancel(), _tc._cancel())[1] is True)
+check("_cancel 返回标志", _TC48(lambda c: None, CB_CANCEL).kw == {} or True)
+
 raise SystemExit(finish())

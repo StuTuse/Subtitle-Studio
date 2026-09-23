@@ -307,4 +307,9 @@ class ThreadedCall(QThread):
             self.sig_done.emit(self.fn(*self.a, **self.kw))
         except Exception as e:
             self.sig_failed.emit(f"{type(e).__name__}: {e}")
+        except BaseException as e:
+            # fn 里跑出 SystemExit/KeyboardInterrupt 级别的异常（pip 子进程被
+            # kill 等场景偶发）也必须通知 UI：只捕 Exception 的话线程静默死掉，
+            # 调用方的按钮（体检页"一键修复"/导出按钮）就永久禁用了
+            self.sig_failed.emit(f"{type(e).__name__}: {e}")
 
