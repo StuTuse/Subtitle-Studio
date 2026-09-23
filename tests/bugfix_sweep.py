@@ -1272,4 +1272,14 @@ check("回包后才记录实际编码", "getattr(self, \"_used_enc\", self._enc(
 check("gbk 不可编码字符回退 utf-8", _se88("gbk", "字幕✓") == "utf-8")
 check("gbk 可编码保持 gbk", _se88("gbk", "字幕") == "gbk")
 
+section("69. 音频抽取取消/清场链（第 89 轮钉子）")
+import inspect as _insp89  # noqa: E402
+from sstudio.core import media as _md89  # noqa: E402
+_src89 = _insp89.getsource(_md89.extract_audio)
+check("取消检查在 stdout 循环内", "cancel and cancel():" in _src89)
+check("finally 回收 ffmpeg + 清半成品", "os.remove(out_wav)" in _src89)
+check("rc==0 且体积 >1KB 才认成品", "getsize(out_wav) > 1024" in _src89)
+_src89b = _insp89.getsource(_md89._run)
+check("probe 超时返回错误标记不挂死", "__ERR__timeout" in _src89b)
+
 raise SystemExit(finish())
