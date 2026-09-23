@@ -1438,4 +1438,14 @@ check("headless/check 模式不弹窗", '"--headless", "--check", "--version"' i
 _src102b = _insp102.getsource(_TP102._save)
 check("预览另存失败明确提示", "QMessageBox.warning" in _src102b)
 
+section("83. 编辑页文件导入与 LLM 回写（第 103 轮钉子）")
+import inspect as _insp103  # noqa: E402
+from sstudio.ui.editor_page import EditorInterface as _ED103  # noqa: E402
+_src103 = _insp103.getsource(_ED103._import_subtitle)
+check("空态导入回灌 main.doc", "self.main.doc = self.doc" in _src103)
+check("导入走 set_document 全套", "reset_history=False" in _src103)
+_src103b = _insp103.getsource(_ED103.apply_llm_text)
+check("LLM 空文本不写（防清空）", "if not text or text == c.display_text:" in _src103b)
+check("original_text 只在首次落底", "if c.original_text == \"\":" in _src103b)
+
 raise SystemExit(finish())
