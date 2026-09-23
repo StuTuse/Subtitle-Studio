@@ -2370,4 +2370,35 @@ check("VTT 点号毫秒", "00:00:01.000 --> 00:00:02.000" in _fm147.to_vtt(_d157
 _src157 = open("sstudio/cli_pipeline.py", encoding="utf-8").read()
 check("CLI SRT 用户编码其余 utf-8", 'getattr(cfg, "export_encoding", "utf-8-sig") if key == "srt" else "utf-8"' in _src157)
 
+section("139. 动效库语义实测（第 158 轮钉子）")
+from PyQt5.QtWidgets import QWidget as _Wg158  # noqa: E402
+import inspect as _insp158  # noqa: E402
+from sstudio.ui import wizard_fx as _fx158  # noqa: E402
+_w158 = _Wg158()
+_w158.resize(300, 200)
+_w158.show()
+_fx158.page_in(_w158, +1)
+_fx158.page_in(_w158, -1)
+_fx158.page_in(_w158, +1)          # 连续调用不叠加/不抛
+check("page_in 双向与连续不抛", True)
+_fx158.page_out(_w158, +1, on_done=lambda: None)
+check("page_out 回调签名不抛", True)
+_fx158.clear_effect(_w158)
+_fx158.clear_effect(_w158)          # 幂等
+check("clear_effect 幂等", True)
+check("页面动画拍子合理", 100 <= _fx158._PAGE_MS <= 1000
+      and _fx158._PAGE_OUT_MS < _fx158._PAGE_MS)
+_fx158.pop_in(_w158)
+_fx158.cascade_in([_w158, None])
+check("pop_in 与 cascade_in 不抛", True)
+_src158 = _insp158.getsource(_fx158.clear_effect)
+check("clear_effect 吞异常保收尾", "except Exception:" in _src158)
+_src158b = _insp158.getsource(_fx158.page_in)
+check("page_in 结束即摘 effect", "clear_effect(widget)" in _src158b)
+_src158c = open("sstudio/ui/safe_spin.py", encoding="utf-8").read()
+check("快进选单假点击判 NoButton", "NoButton" in _src158c and "WA_DeleteOnClose" in _src158c
+      and "_menu_gone" in _src158c)
+_src158d = open("sstudio/ui/splash.py", encoding="utf-8").read()
+check("启动页 cos 亮块平滑", "0.5 - 0.5 * math.cos" in _src158d)
+
 raise SystemExit(finish())
