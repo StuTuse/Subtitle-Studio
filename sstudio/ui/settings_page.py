@@ -644,13 +644,17 @@ class SettingsInterface(QWidget):
 
     def _rename_prof(self) -> None:
         row = self.prof_list.currentRow()
-        if row < 0:
+        if row < 0 or self._loading:
             return
         new = self.p_name.text().strip() or f"接入点{row + 1}"
         if any(p.name == new for i, p in enumerate(self.cfg.profiles) if i != row):
             new = f"{new}-{row + 1}"
+        old = self.cfg.profiles[row].name
         self.cfg.profiles[row].name = new
-        self.cfg.active_profile = new
+        # 只在重命名的就是当前激活接入点时才动 active_profile：以前无条件
+        # 赋值，给非激活行改名会把激活指针静默切走（保存后纠错用的模型变了）。
+        if self.cfg.active_profile == old:
+            self.cfg.active_profile = new
         self.p_name.setText(new)
         self.prof_list.item(row).setText(f"{new}  ·  {self.cfg.profiles[row].model}")
 
@@ -671,9 +675,21 @@ class SettingsInterface(QWidget):
             InfoBar.warning("无法删除", "至少保留一个接入点。", parent=self.main,
                             position=InfoBarPosition.TOP, duration=2200)
             return
+        # 先记下表单此刻归属哪一行；删完 currentRowChanged 会把另一行装进表单，
+        # 但信号里 row<0/_loading 的守卫可能不触发 _collect——真正的坑在反向：
+        # 表单里还留着被删接入点的值时切换行，_collect_profile 会把死者的
+        # base_url/API Key 写进幸存行。删除路径只动列表与 cfg，绝不先收集。
         del self.cfg.profiles[row]
+        self.prof_list.blockSignals(True)
         self.prof_list.takeItem(row)
-        self.prof_list.setCurrentRow(0)
+        self.prof_list.blockSignals(False)
+        nxt = max(0, min(row, len(self.cfg.profiles) - 1))
+        self.cfg.active_profile = self.cfg.profiles[nxt].name
+        # 先把幸存行装进表单，再 setCurrentRow：信号触发的 _collect_profile
+        # 收到的已是幸存行自己的值，等于无操作；顺序反了就会把被删项残值
+        # 覆盖进幸存行（丢 Key 类数据损坏）。
+        self._show_profile(self.cfg.profiles[nxt])
+        self.prof_list.setCurrentRow(nxt)
 
     # ------------------------------------------------------- 自定义预设
     def _all_presets(self) -> List[Dict[str, str]]:
@@ -806,6 +822,8 @@ class SettingsInterface(QWidget):
 
     def _test_done(self, res, w) -> None:
         ok, msg, dt = res
+        from html import escape as _esc
+        msg = _esc(msg or "")
         if ok:
             self.test_result.setText(
                 f"{ok_span(f'✓ 连接成功（{dt:.2f}s）')} 模型回复：{msg}")

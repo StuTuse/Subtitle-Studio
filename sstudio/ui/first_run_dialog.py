@@ -139,7 +139,9 @@ class FirstRunDialog(QDialog):
         name = BodyLabel(f"{it.title}（{_LEVEL_TAG.get(it.level, it.level)}）", card)
         mid.addWidget(name)
         det = it.detail or ""
-        line2 = it.why + (f"　{dim_span(det)}" if det else "")
+        from html import escape as _esc
+        # detail 常含探测到的路径（& < > 都可能出现）：RichText 下直接拼会破坏解析
+        line2 = it.why + (f"　{dim_span(_esc(det))}" if det else "")
         sub = CaptionLabel(line2, card)
         sub.setWordWrap(True)
         try:
@@ -264,6 +266,10 @@ class FirstRunDialog(QDialog):
         w = getattr(self, "_worker", None)
         if w is not None and w.isRunning():
             w.cancel()          # 请求取消；run() 轮询到后走"已取消"分支
+            # 对话框销毁时线程若还在跑，QThread 析构直接 abort 闪退。
+            # pip 装到一半按 X 关窗正是这条路径（欢迎向导同场景已 wait(3000)，
+            # 这里补齐）；给 3s 让 cancel 标志传到逐行读取的检查点。
+            w.wait(3000)
         super().closeEvent(e)
 
     def _on_fix_done(self, result, todo) -> None:

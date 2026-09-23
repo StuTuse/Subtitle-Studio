@@ -257,10 +257,12 @@ class _ModelPage(_Page):
     def _tested(self, res) -> None:
         self.btn_test.setEnabled(True)
         ok, msg, dt = res
+        from html import escape as _esc
+        msg = _esc(msg or "")
         if ok:
             self.p_test.setText(
                 f"<span style='color:{status_hex('ok')}'>✓ 连接成功（{dt:.2f}s）</span>"
-                f" 模型回复：{(msg or '')[:60]}")
+                f" 模型回复：{msg[:60]}")
         else:
             self.p_test.setText(f"<span style='color:{status_hex('err')}'>"
                                 f"✕ {msg[:120]}</span>")
