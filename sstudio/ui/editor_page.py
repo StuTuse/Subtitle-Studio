@@ -693,8 +693,9 @@ class EditorInterface(QWidget):
                 c.start = min(v, c.end - 0.05)
             else:
                 c.end = max(v, c.start + 0.05)
-            normalize_cues(doc)
-            self._after_struct(r)
+            # normalize_cues 会 sorted() 重排：改开始时间使行序变化时，
+            # 旧下标 r 就指向别的行了——与 shift/extend 同款，按对象找回
+            self._after_struct(doc.index_of(c))
         elif action in ("review", "confirmed"):
             self.push_undo()
             for r in rows:
