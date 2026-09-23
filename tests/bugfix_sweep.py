@@ -1040,4 +1040,25 @@ check("全部时长为正",
                           _fx51._CASCADE_MS, _fx51._POP_MS)))
 check("缓动曲线可复用注册", _fx51.EASE_OUT.type() == _fx51.EASE_OUT.type())
 
+section("52. 源码树卫生静态扫描（第 64 轮钉子）")
+import os as _os52  # noqa: E402
+import re as _re52  # noqa: E402
+_root52 = _os52.path.dirname(_os52.path.dirname(_os52.path.abspath(__file__)))
+_src52 = _os52.path.join(_root52, "sstudio")
+_n_files, _n_todo, _n_bare = 0, [], []
+for _dp, _dn, _fns in _os52.walk(_src52):
+    for _fn in _fns:
+        if not _fn.endswith(".py"):
+            continue
+        _n_files += 1
+        _fp52 = _os52.path.join(_dp, _fn)
+        for _i, _ln in enumerate(open(_fp52, encoding="utf-8").read().splitlines(), 1):
+            if _re52.search(r"\b(TODO|FIXME|XXX|HACK)\b", _ln):
+                _n_todo.append(f"{_fn}:{_i}")
+            if _re52.match(r"^\s*except\s*:\s*$", _ln):
+                _n_bare.append(f"{_fn}:{_i}")
+check("sstudio 源文件已扫描", _n_files >= 20, str(_n_files))
+check("无 TODO/FIXME 残留", not _n_todo, repr(_n_todo[:5]))
+check("无裸 except", not _n_bare, repr(_n_bare[:5]))
+
 raise SystemExit(finish())
