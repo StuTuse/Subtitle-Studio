@@ -21,7 +21,7 @@ from ..core import llm
 from ..core.config import BUILTIN_PRESETS, Config, LLMProfile
 from ..core.transcriber import discover_ct2_models
 from .safe_spin import SafeDoubleSpinBox, SafeSpinBox
-from .theme import err_span, ok_span, warn_span
+from .theme import CARD_MARGINS, PRIMARY_MIN_W, err_span, ok_span, warn_span
 from .workers import TestLLMWorker
 
 # 预设下拉里的特殊动作项（itemData 哨兵值；普通条目存的是 >=0 的下标）
@@ -72,7 +72,7 @@ class SettingsInterface(QWidget):
         bar.addStretch(1)
         self.btn_save = PrimaryPushButton("保存设置", self)
         self.btn_save.setIcon(FIF.SAVE)
-        self.btn_save.setMinimumWidth(160)
+        self.btn_save.setMinimumWidth(PRIMARY_MIN_W)
         self.btn_save.clicked.connect(self._save)
         bar.addWidget(self.btn_save)
         outer.addLayout(bar)
@@ -84,7 +84,7 @@ class SettingsInterface(QWidget):
     def _build_llm(self, parent) -> CardWidget:
         card = CardWidget(parent)
         v = QVBoxLayout(card)
-        v.setContentsMargins(20, 16, 20, 16)
+        v.setContentsMargins(*CARD_MARGINS)
         v.setSpacing(12)
 
         hint = CaptionLabel("支持 DeepSeek / OpenAI / Kimi / 通义 / 智谱 / 豆包 / 硅基流动 / "
@@ -96,7 +96,9 @@ class SettingsInterface(QWidget):
         top = QHBoxLayout()
         top.addWidget(BodyLabel("接入点", card))
         self.prof_list = QListWidget(card)
-        self.prof_list.setMaximumHeight(132)
+        # 不设 maxHeight 硬上限：右侧一列（3 按钮 + 预设下拉 + 存预设）自然高
+        # ~190px，132 上限会让列表比按钮列矮一截，卡片底部左右失衡
+        self.prof_list.setMinimumHeight(120)
         self.prof_list.currentRowChanged.connect(self._on_prof_row)
         top.addWidget(self.prof_list, 1)
         pv = QVBoxLayout()
@@ -180,7 +182,7 @@ class SettingsInterface(QWidget):
     def _build_prompt(self, parent) -> CardWidget:
         card = CardWidget(parent)
         v = QVBoxLayout(card)
-        v.setContentsMargins(20, 16, 20, 16)
+        v.setContentsMargins(*CARD_MARGINS)
         v.setSpacing(10)
         v.addWidget(StrongBodyLabel("纠错提示词与参考资料", card))
         v.addWidget(CaptionLabel(
@@ -213,7 +215,9 @@ class SettingsInterface(QWidget):
 
         v.addWidget(StrongBodyLabel("术语表 / 专有名词（每行一个，或写 错误写法=>正确写法）", card))
         self.glossary = TextEdit(card)
-        self.glossary.setMaximumHeight(110)
+        # 与纠错页同名编辑器统一"至少 120"（那边 setMinimumHeight(120)）：
+        # 一边 max 110 一边 min 120，同一份数据两处高矮伸缩都不一致
+        self.glossary.setMinimumHeight(120)
         self.glossary.setPlaceholderText("OpenChatCut\n达芬奇=>DaVinci Resolve\n剪映=>CapCut")
         v.addWidget(self.glossary)
 
@@ -276,7 +280,7 @@ class SettingsInterface(QWidget):
     def _build_asr(self, parent) -> CardWidget:
         card = CardWidget(parent)
         v = QVBoxLayout(card)
-        v.setContentsMargins(20, 16, 20, 16)
+        v.setContentsMargins(*CARD_MARGINS)
         v.setSpacing(10)
         v.addWidget(StrongBodyLabel("语音转写引擎", card))
 
@@ -370,6 +374,7 @@ class SettingsInterface(QWidget):
         return card
 
     def _probe_cuda(self) -> None:
+        from html import escape as _esc
         from ..core import cuda_rt
         cuda_rt._result = None
         extra = self.cuda_dir.text().strip() or None
@@ -378,17 +383,17 @@ class SettingsInterface(QWidget):
         if ok:
             self.asr_hint.setText(
                 (self.asr_hint.text() + "<br>" if self.asr_hint.text() else "")
-                + ok_span(f"✓ CUDA 12 运行库就绪：{rt.cublas_dir}"))
+                + ok_span(f"✓ CUDA 12 运行库就绪：{_esc(rt.cublas_dir)}"))
         else:
             self.asr_hint.setText(
                 (self.asr_hint.text() + "<br>" if self.asr_hint.text() else "")
-                + err_span(f"✕ {rt.note}"))
+                + err_span(f"✕ {_esc(rt.note)}"))
 
     # ------------------------------------------------------------- 其它
     def _build_misc(self, parent) -> CardWidget:
         card = CardWidget(parent)
         v = QVBoxLayout(card)
-        v.setContentsMargins(20, 16, 20, 16)
+        v.setContentsMargins(*CARD_MARGINS)
         v.addWidget(StrongBodyLabel("其它", card))
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -451,7 +456,7 @@ class SettingsInterface(QWidget):
     def _build_doctor(self, parent) -> CardWidget:
         card = CardWidget(parent)
         v = QVBoxLayout(card)
-        v.setContentsMargins(20, 16, 20, 16)
+        v.setContentsMargins(*CARD_MARGINS)
         v.setSpacing(10)
         v.addWidget(StrongBodyLabel("环境体检", card))
         tip = CaptionLabel(
@@ -881,6 +886,7 @@ class SettingsInterface(QWidget):
     def _refresh_asr_hint(self) -> None:
         eng = self.engine.currentData()
         cands = discover_ct2_models()
+        from html import escape as _esc
         parts = []
         if eng == "faster-whisper":
             try:
@@ -891,13 +897,14 @@ class SettingsInterface(QWidget):
             from ..core import cuda_rt
             rt = cuda_rt.register(getattr(self.cfg, "cuda_rt_dir", "") or None)
             if rt.usable and cuda_rt.probe_loadable(rt):
-                parts.append(ok_span(f"✓ CUDA 12 运行库：{rt.cublas_dir}"))
+                parts.append(ok_span(f"✓ CUDA 12 运行库：{_esc(rt.cublas_dir)}"))
             else:
-                parts.append(warn_span(f"⚠ GPU 不可用（{rt.note}）"
+                parts.append(warn_span(f"⚠ GPU 不可用（{_esc(rt.note)}）"
                                        "—— 将自动用 CPU 识别。"))
             if cands:
+                # 路径是动态文本：含 & < > 时直接拼 <code> 会破坏富文本解析
                 parts.append(f"发现 {len(cands)} 个本地 CT2 模型：" +
-                             "；".join(f"<code>{c['path']}</code>" for c in cands[:3]))
+                             "；".join(f"<code>{_esc(c['path'])}</code>" for c in cands[:3]))
             else:
                 parts.append("未发现本地 CT2 模型，将在线下载。")
         elif eng == "whisper.cpp":

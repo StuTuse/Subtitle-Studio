@@ -195,15 +195,38 @@ class TestLLMWorker(_BaseWorker):
 
 
 class ThreadedCall(QThread):
-    """通用：在线程里跑一个函数，把返回值/异常送回主线程。"""
+    """通用：在线程里跑一个函数，把返回值/异常送回主线程。
+
+    fn 的签名可以带回调 ``progress(msg, pct)`` / ``log(line)`` / ``cancel()``：
+    构造时把这三个回调包成信号发射器——回调实际在**工作线程**被调用，
+    通过 queued 信号转回主线程执行调用方给的 UI 更新。以前直接把闭包递进
+    fn，闭包里的 setValue/setText 就在工作线程跑，属于跨线程 UI 访问
+    （体检页/向导的"一键修复"偶发闪退的根因）。
+    """
 
     sig_progress = pyqtSignal(str, float)
     sig_done = pyqtSignal(object)
     sig_failed = pyqtSignal(str)
+    sig_log = pyqtSignal(str)
+    sig_cancel = pyqtSignal()
 
     def __init__(self, fn: Callable[..., Any], *a, **kw):
         super().__init__()
         self.fn, self.a, self.kw = fn, a, kw
+        self._sig_progress = self.sig_progress
+        self._sig_log = self.sig_log
+        self._sig_cancel = self.sig_cancel
+        self._cancel_flag = [False]
+
+    def _progress(self, msg: str, pct: float = -1.0) -> None:
+        self._sig_progress.emit(str(msg), float(pct))
+
+    def _log(self, line: str) -> None:
+        self._sig_log.emit(str(line))
+
+    def _cancel(self) -> bool:
+        self._sig_cancel.emit()
+        return self._cancel_flag[0]
 
     def run(self) -> None:
         try:

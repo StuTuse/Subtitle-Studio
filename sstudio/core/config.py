@@ -315,10 +315,13 @@ class Config:
     # 恢复出厂时保留的字段：
     #  · profiles / active_profile —— 大模型接入点（API Key、访问地址、模型名）。
     #    用户明确要求：重置设置绝不能清掉这些，重新填 Key 太折磨人。
+    #  · setup_done —— 欢迎向导只此一回：重置设置不该把用户拉回向导重走一遍。
+    #  · custom_presets —— 用户自己存的供应商预设，属于"数据"不属于"设置"。
     #  · 其余是窗口位置/最近文件这类"使用痕迹"，不算配置，一并保留。
     _RESET_KEEP = ("profiles", "active_profile", "window_geometry",
                    "recent_files", "last_dir", "export_dir",
-                   "player_volume", "editor_hsplit")
+                   "player_volume", "editor_hsplit",
+                   "setup_done", "custom_presets")
 
     def reset_to_defaults(self) -> None:
         """一键恢复出厂默认：**大模型接入点（API Key / 访问地址 / 模型名）原样保留**。

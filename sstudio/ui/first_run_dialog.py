@@ -248,6 +248,10 @@ class FirstRunDialog(QDialog):
                 self.log_box.setPlainText("\n".join(self._log[-400:]))
 
         self._worker = ThreadedCall(work, on_prog, on_log, lambda: False)
+        # 进度/日志回调走 queued 信号回主线程执行（ThreadedCall 内部包装），
+        # 不再让工作线程直接碰控件（跨线程 UI 访问会偶发闪退）。
+        self._worker.sig_progress.connect(on_prog)
+        self._worker.sig_log.connect(on_log)
         self._worker.setParent(self)
         self._worker.sig_done.connect(lambda res: self._on_fix_done(res, todo))
         self._worker.sig_failed.connect(lambda m: self._on_fix_done((False, m), todo))

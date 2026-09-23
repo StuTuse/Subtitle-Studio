@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLis
 
 from ..core import formats
 from ..core.config import Config
-from .theme import err_span, ok_span, open_path
+from .theme import CARD_MARGINS, PRIMARY_MIN_W, err_span, ok_span, open_path
 from .workers import ThreadedCall
 
 
@@ -56,13 +56,15 @@ class ExportInterface(QWidget):
         # 左：格式选择
         left = CardWidget(self)
         lv = QVBoxLayout(left)
-        lv.setContentsMargins(18, 16, 18, 16)
+        lv.setContentsMargins(*CARD_MARGINS)
         lv.addWidget(StrongBodyLabel("选择导出格式（可多选）", left))
         self.fmt_list = QListWidget(left)
         self.fmt_list.setSelectionMode(QListWidget.NoSelection)
         for key in formats.EXPORT_ORDER:
             spec = formats.FORMATS[key]
-            it = QListWidgetItem(f"{spec.label}   —  {spec.desc}")
+            it = QListWidgetItem(f"{spec.label} — {spec.desc}")
+            # 窄窗下列表项被省略号截断时，悬浮还有完整说明可看
+            it.setToolTip(f"{spec.label}：{spec.desc}")
             it.setData(Qt.UserRole, key)
             it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
             it.setCheckState(Qt.Checked if key in ("srt", "txt") else Qt.Unchecked)
@@ -82,7 +84,7 @@ class ExportInterface(QWidget):
         # 右：选项 + 预检
         right = CardWidget(self)
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(18, 16, 18, 16)
+        rv.setContentsMargins(*CARD_MARGINS)
         rv.addWidget(StrongBodyLabel("输出设置", right))
 
         form = QFormLayout()
@@ -129,8 +131,8 @@ class ExportInterface(QWidget):
         bar = QHBoxLayout()
         self.btn_preview = PushButton(FIF.VIEW, "预览 SRT 前 30 行", self)
         self.btn_preview.clicked.connect(self._preview)
-        self.btn_export = PrimaryPushButton(FIF.SAVE_AS, "导 出", self)
-        self.btn_export.setMinimumWidth(180)
+        self.btn_export = PrimaryPushButton(FIF.SAVE_AS, "导出", self)
+        self.btn_export.setMinimumWidth(PRIMARY_MIN_W)
         self.btn_export.clicked.connect(self._export)
         bar.addStretch(1)
         bar.addWidget(self.btn_preview)

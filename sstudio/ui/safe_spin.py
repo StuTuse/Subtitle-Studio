@@ -72,18 +72,19 @@ class _WheelGuard:
         row_h = m.sizeHintForRow(0) or 26
         m.setFixedHeight(min(len(opts), 12) * row_h + 12)
         m.itemClicked.connect(lambda item: self._pick(item))
-        from .theme import is_dark
+        from .theme import accent_hex, is_dark
+        accent = accent_hex()
         if is_dark():
             m.setStyleSheet(
                 "QListWidget{background:#2b2b2b;color:#e6e6e6;border:1px solid #4a4a4a;}"
                 "QListWidget::item{padding:5px 12px;}"
                 "QListWidget::item:hover{background:#37373d;}"
-                "QListWidget::item:selected{background:#2f6db3;color:#ffffff;}")
+                f"QListWidget::item:selected{{background:{accent};color:#ffffff;}}")
         else:
             m.setStyleSheet(
                 "QListWidget{background:#ffffff;color:#1a1a1a;border:1px solid #c9c9c9;}"
                 "QListWidget::item{padding:5px 12px;}"
-                "QListWidget::item:selected{background:#2f6db3;color:#ffffff;}")
+                f"QListWidget::item:selected{{background:{accent};color:#ffffff;}}")
         self._menu = m
         # 弹窗无父级：控件销毁后弹窗若还开着，点击会对已析构的 C++ 对象
         # setValue。关窗即删 + 析构信号清引用，两头都堵上。

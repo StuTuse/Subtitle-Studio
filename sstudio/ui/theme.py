@@ -28,6 +28,13 @@ def apply_theme(cfg: Config) -> None:
             setThemeColor(ThemeColor(QColor(cfg.accent)))
     except Exception:
         pass
+    # accent 供 accent_hex() 全局取用（不维持对窗口的强引用）
+    try:
+        app = QApplication.instance()
+        if app is not None:
+            app._ss_cfg_ref = cfg
+    except Exception:
+        pass
     # qfluentwidgets 只给自家控件换肤；原生 QTableWidget / QPlainTextEdit /
     # 滚动条仍停留在系统（浅色）调色板，暗色下出现"亮块刺眼、灰底灰字"。
     # 这里给 QApplication 整体配一套暗色调色板，两种皮肤才真正一致。
@@ -61,7 +68,7 @@ def _apply_app_palette(dark: bool) -> None:
     p.setColor(QPalette.Button, QColor("#2b2b2b"))
     p.setColor(QPalette.ButtonText, text)
     p.setColor(QPalette.BrightText, QColor("#ffffff"))
-    p.setColor(QPalette.Highlight, QColor("#2f6db3"))     # 选中行/选中文字底
+    p.setColor(QPalette.Highlight, QColor(accent_hex()))   # 选中行/选中文字底
     p.setColor(QPalette.HighlightedText, QColor("#ffffff"))
     p.setColor(QPalette.Link, QColor("#6cb2f0"))
     p.setColor(QPalette.Light, QColor("#3a3a3a"))
@@ -89,6 +96,21 @@ def ui_font(size: int = 13) -> QFont:
     f.setPointSize(size)
     _crisp(f)
     return f
+
+
+# ------------------------------------------------------------ 布局常量
+# 各页统一规格：改一处全局生效，页面里不再散落魔法数。
+PAGE_MARGINS = (28, 20, 28, 20)     # 页面四边留白
+PAGE_SPACING = 14                   # 页面纵向行距
+CARD_MARGINS = (18, 16, 18, 16)     # CardWidget 内边距
+CARD_SPACING = 10                   # 卡片内纵向行距
+PRIMARY_MIN_W = 160                 # 主操作按钮最小宽
+
+
+def apply_card_margins(v) -> None:
+    """统一卡片内边距：v 是 QVBoxLayout/QHBoxLayout 均可。"""
+    v.setContentsMargins(*CARD_MARGINS)
+    v.setSpacing(CARD_SPACING)
 
 
 def _crisp(f: QFont) -> None:
@@ -189,6 +211,32 @@ def is_dark() -> bool:
         return bool(isDarkTheme())
     except Exception:
         return False
+
+
+def accent_hex() -> str:
+    """主题强调色（cfg.accent，深色下提亮一档保证可读）。
+
+    全应用选中态的统一来源：主窗调色板、数值控件弹出列表选中项、
+    欢迎向导的进度点/卡片描边都从这里取，避免散落的 #2f6db3 与主题
+    青色 (#0aa2c0) 各画各的。
+    """
+    c = "#0aa2c0"
+    try:
+        app = QApplication.instance()
+        cfg = getattr(app, "_ss_cfg_ref", None) if app else None
+        if cfg and getattr(cfg, "accent", ""):
+            c = cfg.accent
+    except Exception:
+        pass
+    if is_dark():
+        try:
+            qc = QColor(c)
+            h, s, v, _ = qc.getHsvF()
+            qc.setHsvF(h, s * 0.85, min(1.0, v + 0.18))
+            c = qc.name()
+        except Exception:
+            c = "#37c3dd"
+    return c
 
 
 def human_time(sec: float) -> str:

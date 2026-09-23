@@ -56,10 +56,10 @@ class EditorInterface(QWidget):
             return a
 
         self.bar.addActions([
-            act(FIF.VIDEO, " 导入视频", lambda: self.main.open_media_dialog()),
-            act(FIF.PLAY, " 开始转写", lambda: self.main.start_transcribe()),
-            act(FIF.BROOM, " AI 纠错", lambda: self.main.goto_fix()),
-            act(FIF.SAVE, " 导出", lambda: self.main.switch_to("export")),
+            act(FIF.VIDEO, "导入视频", lambda: self.main.open_media_dialog()),
+            act(FIF.PLAY, "开始转写", lambda: self.main.start_transcribe()),
+            act(FIF.BROOM, "AI 纠错", lambda: self.main.goto_fix()),
+            act(FIF.SAVE, "导出", lambda: self.main.switch_to("export")),
         ])
         self.bar.addSeparator()
         self.bar.addActions([
@@ -730,6 +730,24 @@ class EditorInterface(QWidget):
         self._update_pos_bar(self.table.currentRow())
 
     # ------------------------------------------------------------ 撤销
+    def _sync_edit_area_after_history(self) -> None:
+        """撤销/重做后同步编辑框。
+
+        撤销只重绘了表格：编辑框里还留着撤销前的旧文本，一失焦
+        _apply_inline_silent 会把刚撤销掉的改动原样写回——表现为
+        「Ctrl+Z 没用，再按一下编辑框还弹出旧字」。这里按当前选中行
+        把编辑框刷回文档现值；行数变化（撤销删除/插入）时收拢选中。
+        """
+        row = self._editing_row
+        if not self.doc or not (0 <= row < len(self.doc.cues)):
+            row = max(0, min(row, len(self.doc.cues) - 1)) if self.doc else -1
+            self._editing_row = row
+        if 0 <= row < len(self.doc.cues):
+            self.edit_area.setPlainText(self.doc.cues[row].display_text)
+        else:
+            self.edit_area.clear()
+        self._update_pos_bar(row)
+
     def undo(self) -> None:
         if not self.doc or not self._undo:
             self._say("没有可撤销的操作。", 1500)
@@ -738,7 +756,7 @@ class EditorInterface(QWidget):
         self.doc.restore(self._undo.pop())
         self.table.render(self.doc.cues)
         self.timeline.update()
-        self._update_pos_bar(self.table.currentRow())
+        self._sync_edit_area_after_history()
         self.main.mark_dirty()
 
     def redo(self) -> None:
@@ -748,7 +766,7 @@ class EditorInterface(QWidget):
         self.doc.restore(self._redo.pop())
         self.table.render(self.doc.cues)
         self.timeline.update()
-        self._update_pos_bar(self.table.currentRow())
+        self._sync_edit_area_after_history()
         self.main.mark_dirty()
 
     # ------------------------------------------------------------ 播放同步

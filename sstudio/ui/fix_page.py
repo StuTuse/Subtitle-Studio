@@ -31,8 +31,9 @@ class FixInterface(QWidget):
         self._row_map: list = []      # run() 之前也可能收到迟到信号，先占位
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 18, 28, 16)
-        outer.setSpacing(12)
+        from .theme import CARD_MARGINS, PAGE_MARGINS, PAGE_SPACING, PRIMARY_MIN_W
+        outer.setContentsMargins(*PAGE_MARGINS)
+        outer.setSpacing(PAGE_SPACING)
         outer.addWidget(SubtitleLabel("让大模型只改错别字", self))
 
         split = QSplitter(Qt.Horizontal, self)
@@ -52,11 +53,13 @@ class FixInterface(QWidget):
 
         card = CardWidget(lh)
         cv = QVBoxLayout(card)
-        cv.setContentsMargins(18, 14, 18, 14)
+        cv.setContentsMargins(*CARD_MARGINS)
         cv.setSpacing(8)
         cv.addWidget(StrongBodyLabel("本轮指令（附加在系统提示词之后）", card))
         self.extra = TextEdit(card)
-        self.extra.setMaximumHeight(96)
+        # "至少 3 行、多了内部滚动"代替 maxHeight 限死：限死后用户想多看
+        # 两行指令都做不到；最小高度保住布局下限即可
+        self.extra.setMinimumHeight(84)
         self.extra.setPlaceholderText(
             "本轮额外要求，例如：本集嘉宾叫「老石谈芯」，把所有「老实谈新/老实谈心」都改成它；"
             "涉及「RTX 5060」不要写成「RTX5060 显卡」。")
@@ -73,7 +76,7 @@ class FixInterface(QWidget):
 
         card2 = CardWidget(lh)
         c2 = QVBoxLayout(card2)
-        c2.setContentsMargins(18, 14, 18, 14)
+        c2.setContentsMargins(*CARD_MARGINS)
         c2.setSpacing(6)
         row = QHBoxLayout()
         row.addWidget(StrongBodyLabel("原始稿件（可选）", card2))
@@ -92,7 +95,7 @@ class FixInterface(QWidget):
 
         card3 = CardWidget(lh)
         c3 = QVBoxLayout(card3)
-        c3.setContentsMargins(18, 14, 18, 14)
+        c3.setContentsMargins(*CARD_MARGINS)
         c3.setSpacing(6)
         r3 = QHBoxLayout()
         r3.addWidget(StrongBodyLabel("术语表（一行一个；支持 错=>对）", card3))
@@ -113,7 +116,7 @@ class FixInterface(QWidget):
         # ------------------------------------------------ 右：执行与结果
         right = CardWidget(split)
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(18, 14, 18, 14)
+        rv.setContentsMargins(*CARD_MARGINS)
         rv.setSpacing(10)
         rv.addWidget(StrongBodyLabel("执行", right))
 
@@ -171,7 +174,7 @@ class FixInterface(QWidget):
 
         bar = QHBoxLayout()
         self.btn_run = PrimaryPushButton(FIF.PLAY, "开始纠错", right)
-        self.btn_run.setMinimumWidth(150)
+        self.btn_run.setMinimumWidth(PRIMARY_MIN_W)
         self.btn_run.clicked.connect(self.run)
         self.btn_stop = PushButton(FIF.CLOSE, "停止", right)
         self.btn_stop.setEnabled(False)

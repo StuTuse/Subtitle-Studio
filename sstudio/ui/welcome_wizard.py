@@ -152,8 +152,8 @@ class _AppearancePage(_Page):
 
     def _pick(self, key: str, paint: bool = True) -> None:
         self._picked = key
-        dark = is_dark()
-        on_border = "#2f6db3" if not dark else "#4a90d9"
+        from .theme import accent_hex
+        on_border = accent_hex()
         for card in self.cards:
             sel = card.property("theme_key") == key
             card.setProperty("theme_key", None)
@@ -370,7 +370,8 @@ class _CheckPage(_Page):
         mid.addWidget(BodyLabel(f"{it.title}（"
                                 f"{'必需' if it.level == 'required' else '建议' if it.level == 'recommend' else '可选'}）", card))
         det = it.detail or ""
-        sub = CaptionLabel(it.why + (f"　{dim_span(det)}" if det else ""), card)
+        from html import escape as _esc
+        sub = CaptionLabel(it.why + (f"　{dim_span(_esc(det))}" if det else ""), card)
         sub.setWordWrap(True)
         try:
             sub.setTextFormat(Qt.RichText)
@@ -420,6 +421,10 @@ class _CheckPage(_Page):
 
         from .workers import ThreadedCall, reap
         self._worker = ThreadedCall(work, on_prog, on_log, lambda: False)
+        # 进度/日志回调走 queued 信号回主线程执行（ThreadedCall 内部包装），
+        # 不再让工作线程直接碰控件（跨线程 UI 访问会偶发闪退）。
+        self._worker.sig_progress.connect(on_prog)
+        self._worker.sig_log.connect(on_log)
         self._worker.setParent(self)
         self._worker.sig_done.connect(lambda res: self._done(res))
         self._worker.sig_failed.connect(lambda m: self._done((False, m)))
@@ -479,9 +484,11 @@ class _DonePage(_Page):
             cfg.theme, cfg.theme)
         has_key = bool(cfg.profile().api_key)
         model_txt = f"{cfg.profile().model}" if has_key else "未配置（可离线转写）"
+        # 每栏独占一行：比例字体里连续空格不产生对齐效果，长模型名还会折行
         self.summary.setText(
-            f"外观：{theme_name}    ·    纠错模型：{model_txt}\n"
-            f"环境：{ok_n}/{len(items)} 项通过    ·    "
+            f"外观：{theme_name}\n"
+            f"纠错模型：{model_txt}\n"
+            f"环境：{ok_n}/{len(items)} 项通过\n"
             f"配置保存在 SSData\\config.json")
 
 
@@ -581,14 +588,16 @@ class WelcomeWizard(QDialog):
             wizard_fx.page_in(cur, direction)
 
     def _paint_dots(self, idx: int) -> None:
-        """进度点：当前 = 实心蓝胶囊，已过 = 浅蓝，未到 = 灰。"""
+        """进度点：当前 = 实心强调色胶囊，已过 = 半透明强调色，未到 = 灰。"""
+        from .theme import accent_hex
+        acc = accent_hex()
         for i, d in enumerate(self.dot_labels):
             done = i < idx
             cur = i == idx
             if is_dark():
-                bg = ("#4a90d9" if cur else "#2f5f8a" if done else "#3a3a3a")
+                bg = (acc if cur else "#2f5f8a" if done else "#3a3a3a")
             else:
-                bg = ("#2f6db3" if cur else "#8fb8e0" if done else "#c0c0c0")
+                bg = (acc if cur else "#8fb8e0" if done else "#c0c0c0")
             d.setStyleSheet(f"border-radius:5px;background:{bg};")
             if cur:
                 d._from_w = d.width()
