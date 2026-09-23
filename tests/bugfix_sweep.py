@@ -1207,4 +1207,20 @@ check("to_json 读回 text 一致", _pj83(_j83)[0].text == "你好，世界。")
 _lrc83 = _tlrc83(_doc83)
 check("to_lrc 分钟格式 01:01.50", "[01:01.50]你好，世界。" in _lrc83)
 
+section("64. 配置目录回退与 recent 语义（第 83 轮钉子）")
+from sstudio.core.config import data_dir as _dd83, config_path as _cp83, models_dir as _md83  # noqa: E402
+check("data_dir 可写存在", _os52.path.isdir(_dd83()))
+check("config_path 指向 config.json", _cp83().endswith("config.json"))
+check("models_dir 在 data_dir 下", _dd83() in _md83())
+_cfg83 = Config()
+_cfg83.recent_files = [_os52.path.abspath("a"), _os52.path.abspath("b")]
+_cfg83.max_recent = 1
+_cfg83.add_recent("c")
+check("add_recent 裁剪到 max_recent",
+      _cfg83.recent_files == [_os52.path.abspath("c")])
+_cfg83.max_recent = 2
+_cfg83.add_recent("a")
+check("重复路径置顶不重复",
+      _cfg83.recent_files == [_os52.path.abspath("a"), _os52.path.abspath("c")])
+
 raise SystemExit(finish())
