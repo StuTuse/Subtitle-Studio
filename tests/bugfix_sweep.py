@@ -1684,4 +1684,18 @@ check("字符串数值容错转换", abs(_c120.ui_scale - 1.25) < 1e-9 and _c120
 _g120 = _CF120.from_dict({"glossary": "术语A\n【本轮补充】垃圾尾巴"})
 check("glossary 迁移清补充尾巴", _g120.glossary == "术语A")
 
+section("102. 播放器控制语义（第 121 轮钉子）")
+import inspect as _insp121  # noqa: E402
+from sstudio.ui.player import PlayerWidget as _PW121, SPEEDS as _SP121  # noqa: E402
+_src121 = _insp121.getsource(_PW121.shutdown)
+check("退出前显式拆解媒体后端", "setMedia(QMediaContent())" in _src121 and "setVideoOutput(None)" in _src121)
+_src121b = _insp121.getsource(_PW121.seek)
+check("无媒体不广播位置", "return -1.0" in _src121b)
+check("定位夹回媒体时长", "sec = min(sec, dur)" in _src121b)
+_src121c = _insp121.getsource(_PW121._on_pos)
+check("A/B 循环回跳不广播", "self.seek(self._loop_a)" in _src121c and "return" in _src121c)
+_src121d = _insp121.getsource(_PW121.toggle_mute)
+check("取消静音恢复原音量", "_last_volume" in _src121d)
+check("倍速档位齐全", 0.25 in _SP121 and 2.0 in _SP121 and len(_SP121) == 8)
+
 raise SystemExit(finish())
