@@ -639,7 +639,13 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                         cue.text = new
                         cue.state = "llm"
                     if on_cue:
-                        on_cue(no, new)
+                        # 回调是 UI 桥（Qt 信号发射）：桥本身抛异常不该打断
+                        # as_completed 循环——打断会作废所有后续批次成果，
+                        # 且 with 块退出还要等在跑线程收尾
+                        try:
+                            on_cue(no, new)
+                        except Exception:
+                            pass
     if _abort_flag[0] is not None:
         # 止损时已经写回 cue 的批次成果不能丢：把部分结果随异常带上，
         # 调用方（FixWorker/UI）能展示"已修正 N 条 + 失败原因"，而不是
