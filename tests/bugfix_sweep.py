@@ -953,4 +953,13 @@ check("破折号同样不腰斩",
       all(not (c.text.endswith("—") and not c.text.endswith("——"))
           for c in _d42b.cues), repr([c.text for c in _d42b.cues]))
 
+section("43. _duration_warn 判定边界（第 48 轮钉子）")
+from sstudio.ui.cue_table import _duration_warn as _dw43  # noqa: E402
+check("正常短句无告警", _dw43(_Cu42(0, 2.0, "你好世界")) == "")
+check("超 8s 过长告警", "超过 8s" in _dw43(_Cu42(0, 9.0, "短")), _dw43(_Cu42(0, 9.0, "短")))
+check("不足 0.5s 告警", "不足 0.5s" in _dw43(_Cu42(0, 0.3, "你好")))
+_fast = _Cu42(0, 1.0, "这是一个非常非常非常非常非常长的句子直接塞满")
+check("语速 >9 字/秒告警", "字/秒" in _dw43(_fast), _dw43(_fast))
+check("换行不计入语速", _dw43(_Cu42(0, 1.0, "十个字十个字十个字\n\n\n\n\n\n\n\n\n\n\n\n\n\n")) == "" or "字/秒" not in _dw43(_Cu42(0, 1.0, "十个字十个字十个字\n\n\n\n\n\n\n\n\n\n\n\n\n\n")))
+
 raise SystemExit(finish())
