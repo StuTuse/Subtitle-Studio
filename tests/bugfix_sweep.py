@@ -2016,4 +2016,18 @@ _src144c = _insp144.getsource(_md144.default_wav_path)
 check("缓存名用 md5 稳定 tag", "hashlib.md5(os.path.abspath(video_path)" in _src144c)
 check("孤儿缓存超 24h 才清", "> 86400" in _src144c)
 
+section("126. CUDA 运行库探测语义（第 145 轮钉子）")
+import inspect as _insp145  # noqa: E402
+from sstudio.core import cuda_rt as _cr145  # noqa: E402
+_src145 = _insp145.getsource(_cr145.discover)
+check("CUDA 13 专属提示", "只找到 CUDA 13 的 cublas" in _src145)
+check("双必需 dll 判 usable", "usable = bool(cublas_dir) and bool(cudart_dir)" in _src145)
+_src145b = _insp145.getsource(_cr145.register)
+check("缓存区分 extra 目录", "req == _result_extra" in _src145b)
+check("add_dll_directory 失败回退 PATH", "os.environ[\"PATH\"] = d + os.pathsep + os.environ.get(\"PATH\", \"\")" in _src145b)
+_src145c = _insp145.getsource(_cr145.probe_loadable)
+check("真加载验证防假阳性", "ctypes.WinDLL(os.path.join(found, name))" in _src145c)
+_src145d = _insp145.getsource(_cr145._candidate_dirs)
+check("候选目录覆盖新旧 wheel 名", "\"nvidia\", \"cuda_runtime\", \"bin\"" in _src145d and "\"nvidia\", \"cudart\", \"bin\"" in _src145d)
+
 raise SystemExit(finish())
