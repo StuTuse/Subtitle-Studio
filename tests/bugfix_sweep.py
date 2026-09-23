@@ -1239,4 +1239,15 @@ _doc84d = CueDocument(cues=[Cue(0, 1, "甲", speaker="A"), Cue(1.2, 2, "乙", sp
 t84d, _ = _doc84d.close_gaps(0.35)
 check("说话人不同不衔接", t84d == 0)
 
+section("66. 向导导航与收尾链（第 86 轮钉子）")
+import inspect as _insp86  # noqa: E402
+import sstudio.ui.welcome_wizard as _ww86  # noqa: E402
+_src86 = _insp86.getsource(_ww86.WelcomeWizard._go_next)
+check("前进经过模型页才 apply（后退不落盘）", "isinstance(pg, _ModelPage)" in _src86)
+_src86b = _insp86.getsource(_ww86.WelcomeWizard._finish)
+check("完成前取消体检线程", "_shutdown_worker()" in _src86b)
+_src86c = _insp86.getsource(_ww86.WelcomeWizard.reject)
+check("Esc 中途关闭也取消线程", "_shutdown_worker()" in _src86c)
+check("完成后写 setup_done", "setup_done = True" in _src86b)
+
 raise SystemExit(finish())
