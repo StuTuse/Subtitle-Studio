@@ -184,13 +184,17 @@ class TranscribeWorker(_BaseWorker):
             tb = traceback.format_exc()
             self.sig_failed.emit(str(e) or tb.splitlines()[-1])
         finally:
-            self.current_wav = ""
+            # 先尝试删、删不掉（文件被占用等 OSError）才保留路径：退出
+            # 兜底清理读 current_wav 再删。先前先清空再删，一旦 remove
+            # 失败，路径已丢，文件就永远留在磁盘上了。
             if wav and not self.keep_audio:
                 try:
-                    if os.path.isfile(wav) and "audio" in wav:
+                    if os.path.isfile(wav) and os.sep + "audio" + os.sep in wav:
                         os.remove(wav)
+                        wav = ""
                 except OSError:
                     pass
+            self.current_wav = wav if wav and not self.keep_audio else ""
 
 
 class FixWorker(_BaseWorker):
