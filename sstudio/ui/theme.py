@@ -85,6 +85,11 @@ def _apply_app_palette(dark: bool) -> None:
     app.setPalette(p)
 
 
+def crisp(f: QFont) -> None:
+    """小字号 CJK 更清晰：全 hinting + 抗锯齿。公开接口（编辑区等就地调字号的场景用）。"""
+    _crisp(f)
+
+
 def ui_font(size: int = 13) -> QFont:
     for fam in ("Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC"):
         if fam in QFontDatabase().families():
@@ -95,6 +100,31 @@ def ui_font(size: int = 13) -> QFont:
     f = QFont()
     f.setPointSize(size)
     _crisp(f)
+    return f
+
+
+# 字号档位表：全应用就地调字号一律按档取，不再散落 setPointSize 魔法数。
+# qfluentwidgets 的 BodyLabel/CaptionLabel 等已自带口径，这里只管手工调的。
+FONT_HERO = 14      # 页面 hero 标题
+FONT_EDIT = 10.5    # 字幕编辑区正文（大半号，逐字校对不费眼）
+FONT_BADGE = 12     # 徽章/标记（体检行 ✓✕⚠ 等）
+
+
+def hero_font() -> QFont:
+    f = ui_font(FONT_HERO)
+    f.setBold(True)
+    return f
+
+
+def edit_font() -> QFont:
+    f = ui_font(int(FONT_EDIT))
+    f.setPointSizeF(FONT_EDIT)      # 保住半号
+    return f
+
+
+def badge_font() -> QFont:
+    f = ui_font(FONT_BADGE)
+    f.setBold(True)
     return f
 
 

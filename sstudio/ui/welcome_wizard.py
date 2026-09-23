@@ -361,7 +361,8 @@ class _CheckPage(_Page):
         h.setContentsMargins(14, 8, 14, 8)
         h.setSpacing(10)
         mark = QLabel("✓" if it.ok else ("✕" if it.level == "required" else "⚠"), card)
-        f = mark.font(); f.setBold(True); f.setPointSize(12); mark.setFont(f)
+        from .theme import badge_font
+        mark.setFont(badge_font())
         mark.setStyleSheet(f"color:{status_hex('ok' if it.ok else ('err' if it.level == 'required' else 'warn'))}")
         mark.setFixedWidth(18)
         h.addWidget(mark)

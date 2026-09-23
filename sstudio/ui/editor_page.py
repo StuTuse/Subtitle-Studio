@@ -83,9 +83,9 @@ class EditorInterface(QWidget):
         self.search.setMaximumWidth(420)
         self.search.textChanged.connect(self._filter)
         fr.addWidget(self.search)
-        self.chk_only_problem = ToolButton(self.filter_row)
+        self.chk_only_problem = PushButton(self.filter_row)
         self.chk_only_problem.setCheckable(True)
-        self.chk_only_problem.setText(" 只看待复查/过长/过快")
+        self.chk_only_problem.setText("只看待复查/过长/过快")
         self.chk_only_problem.clicked.connect(self._filter)
         fr.addWidget(self.chk_only_problem)
         fr.addStretch(1)
@@ -105,7 +105,8 @@ class EditorInterface(QWidget):
         hv.setContentsMargins(24, 18, 24, 18)
         hv.setSpacing(8)
         self.hero_title = StrongBodyLabel("拖入视频，或选择一个文件开始", self.hero)
-        f = self.hero_title.font(); f.setPointSize(14); self.hero_title.setFont(f)
+        from .theme import hero_font
+        self.hero_title.setFont(hero_font())
         hv.addWidget(self.hero_title, 0, Qt.AlignHCenter)
         self.hero_sub = CaptionLabel(
             "导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线", self.hero)
@@ -201,11 +202,8 @@ class EditorInterface(QWidget):
             "选中一条字幕后，这里会显示它的文本。\n"
             "直接改错别字，Enter 保存并跳到下一条；\n"
             "Shift+Enter 才是换行。（双击表格里的文字也能就地编辑）")
-        f = self.edit_area.font()
-        f.setPointSizeF(10.5)
-        from .theme import _crisp
-        _crisp(f)          # CJK 小字全 hinting，暗色浅底上都更实
-        self.edit_area.setFont(f)
+        from .theme import edit_font
+        self.edit_area.setFont(edit_font())   # CJK 小字全 hinting，暗浅底都更实
         self.edit_area.setTabChangesFocus(True)
         self.edit_area.setMinimumWidth(220)
         self.edit_area.setMinimumHeight(48)
@@ -216,8 +214,7 @@ class EditorInterface(QWidget):
         self.btn_save_edit = PrimaryPushButton(FIF.SAVE, "保存并下一条", edit_box)
         self.btn_save_edit.clicked.connect(self._apply_inline)
         er.addWidget(self.btn_save_edit)
-        b_del = ToolButton(edit_box)
-        b_del.setText("删除")
+        b_del = PushButton(FIF.DELETE, "删除", edit_box)
         b_del.setToolTip("删除选中条目（Del 键同样可用）")
         b_del.clicked.connect(lambda: self._act("delete"))
         er.addWidget(b_del)
@@ -234,7 +231,7 @@ class EditorInterface(QWidget):
                  "连续说话时字幕之间若有小空隙，播放会闪断：把不超过阈值的前一条"
                  "结束时间拉齐到后一条开始。句末标点（。！？）结尾、或换了说话人"
                  "的空隙会保留。阈值在 设置→其它 调。Ctrl+Z 撤销。")):
-            b = ToolButton(edit_box)
+            b = PushButton(edit_box)
             b.setText(label)
             b.setToolTip(tip)
             b.clicked.connect(slot)

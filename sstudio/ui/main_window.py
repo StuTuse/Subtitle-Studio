@@ -100,9 +100,10 @@ class MainWindow(FluentWindow):
         self.progressLabel = QLabel("", self)
         self.progressLabel.setObjectName("progressLabel")
         self.progressLabel.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        from .theme import FONT_BADGE
         self.progressLabel.setStyleSheet(
-            "QLabel{background:rgba(0,0,0,170);color:#fff;border-radius:9px;"
-            "padding:4px 12px;font-size:12px;}")
+            f"QLabel{{background:rgba(0,0,0,170);color:#fff;border-radius:9px;"
+            f"padding:4px 12px;font-size:{FONT_BADGE}px;}}")
         self.progressLabel.setVisible(False)
         self.progress.raise_()
         self.progressLabel.raise_()
