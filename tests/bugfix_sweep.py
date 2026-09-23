@@ -938,4 +938,19 @@ _big41 = 360000.0
 check("100 小时往返零漂移", abs(_t2s41(_s2t41(_big41)) - _big41) < 0.001)
 check("3 位小时写出（100h+ 兼容）", _s2t41(_big41).startswith("100:"))
 
+section("42. split_long 切点不腰斩省略号（第 47 轮）")
+from sstudio.core.model import Cue as _Cu42, CueDocument as _Cd42  # noqa: E402
+_d42 = _Cd42(cues=[_Cu42(0, 10, "省略号……继续说")])
+_d42.split_long(20)          # 时长 10s > 7s 触发平均切一刀
+_t42 = [c.text for c in _d42.cues]
+check("拆成两段", len(_t42) == 2, repr(_t42))
+check("省略号整体在一侧不被劈开",
+      any(t.count("…") == 2 for t in _t42), repr(_t42))
+check("文本无损", "".join(_t42) == "省略号……继续说")
+_d42b = _Cd42(cues=[_Cu42(0, 10, "甲乙丙丁——戊己庚辛壬癸")])
+_d42b.split_long(20)
+check("破折号同样不腰斩",
+      all(not (c.text.endswith("—") and not c.text.endswith("——"))
+          for c in _d42b.cues), repr([c.text for c in _d42b.cues]))
+
 raise SystemExit(finish())

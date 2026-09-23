@@ -408,6 +408,17 @@ def _smart_split(cue: Cue, max_chars: int, max_dur: float) -> List[Cue]:
         for s in segments:
             if len(s) > 6:
                 mid = len(s) // 2
+                # 切点落在 …/— 标点串中间时（'……'是两个 U+2026、'——'两个
+                # U+2014），从中间切会把一个标点劈成两半（上段尾一个点、
+                # 下段头一个点）。把切点移到整串标点的左端之外即可；这里
+                # 必须一步到位而不是逐步挪动——逐步挪在切点左右都是标点时
+                # 会左右振荡死循环（第 47 轮实测）。整串皆标点的极端串退化为
+                # 在第 1 个字符后切，不会挂起。
+                if mid < len(s) and s[mid - 1] in "…—" and s[mid] in "…—":
+                    j = mid
+                    while j > 1 and s[j - 1] in "…—":
+                        j -= 1
+                    mid = j
                 grown.extend([s[:mid].strip(), s[mid:].strip()])
                 gw.extend([mid, len(s) - mid])
             else:
