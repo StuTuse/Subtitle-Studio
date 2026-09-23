@@ -1145,4 +1145,20 @@ check("is_changed 空串不误报", not _c58c.is_changed())
 _c58d = Cue(0, 2, "  原始  ", original_text="原始")
 check("is_changed 仅空白差不算改", not _c58d.is_changed())
 
+section("59. doctor 体检摘要与取消语义（第 77 轮钉子）")
+from sstudio.core.doctor import summary as _sum77, all_required_ok as _aro77, CheckItem as _CI77  # noqa: E402
+_it77 = [_CI77("a", "A", "", "required", ok=True),
+         _CI77("b", "B", "", "recommend", ok=False),
+         _CI77("c", "C", "", "optional", ok=False)]
+check("summary 建议补装计数", _sum77(_it77) == "核心功能可用；建议补装 1 个组件")
+_it77b = [_CI77("a", "A", "", "required", ok=False)]
+check("summary 缺必需优先报", "缺少必需组件" in _sum77(_it77b))
+check("all_required_ok 有必需未过 → False", not _aro77(_it77b))
+check("all_required_ok True（无 required）", _aro77([_CI77("x", "X", "", "optional", ok=False)]))
+import inspect as _insp77  # noqa: E402
+from sstudio.core import doctor as _doc77  # noqa: E402
+_src77 = _insp77.getsource(_doc77.pip_install)
+check("pip 子进程运行中响应取消并 kill", "p.kill()" in _src77)
+check("pip 总时长闸", "PIP_TIMEOUT" in _src77)
+
 raise SystemExit(finish())
