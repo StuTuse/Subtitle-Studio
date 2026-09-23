@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.110] - 2026-09-24
+
+v1.17.110：测试加固——bugfix_sweep 第 83 节钉住编辑页文件导入与 LLM 回写语义（空态回灌 main.doc、set_document 全套、空文本防清空、original_text 首次落底）；editor_page.py 三轮深读完成无新缺陷
+
 ## [1.17.109] - 2026-09-24
 
 v1.17.109：稳定性——run.py 崩溃报告在 pythonw/windowed 模式（sys.stderr 为 None）不再自身抛 AttributeError：崩溃日志照写、弹窗照弹；bugfix_sweep 第 82 节钉住崩溃报告与预览框语义
