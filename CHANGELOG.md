@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.153] - 2026-09-24
+
+v1.17.153：测试加固——bugfix_sweep 第 127 节钉住发版脚本主流程语义（Release 已存在用 gh release upload --clobber 补传、GitHub 发布失败不阻断本地发版、工作区必须干净才允许发版、tag 已存在拒绝重复、--bump 与显式版本号互斥、同版本跳过仅打包、dry-run 只演练不写入）；release.py 全文三轮深读完成无新缺陷——全部源码文件均达三轮深读深度
+
 ## [1.17.152] - 2026-09-24
 
 v1.17.152：测试加固——bugfix_sweep 第 126 节钉住 CUDA 运行库探测语义（发现 CUDA 13 cublas 时给专属换装提示、cublas 与 cudart 双必需齐备才判可用、注册缓存按 extra 目录区分防设置项整会话不生效、add_dll_directory 失败回退 PATH 前插、probe 真加载验证防依赖树不全假阳性、候选目录同时覆盖新旧 pip wheel 包名）；cuda_rt.py 全文三轮深读完成无新缺陷
