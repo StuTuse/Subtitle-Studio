@@ -96,7 +96,21 @@ def _pipeline(args, cfg: Config, video: str, out: str, key: str) -> int:
     _p(f"媒体：{os.path.basename(video)}  时长 {info.duration:.1f}s")
     wav = media.extract_audio(video, progress=lambda m, p: _p("  " + m))
     _p(f"音频：{wav}")
+    try:
+        return _pipeline_rest(args, cfg, video, out, key, info, wav, t0)
+    finally:
+        # 转写/纠错/导出中途抛异常时（顶层 except 会转成 return 1），
+        # 抽出来的 wav 不能留在缓存目录——GUI 路径有 finally 清理，
+        # headless 漏了会和 r60 修的半截 wav 一样越积越多
+        try:
+            if os.path.isfile(wav):
+                os.remove(wav)
+        except OSError:
+            pass
 
+
+def _pipeline_rest(args, cfg: Config, video: str, out: str, key: str,
+                   info, wav: str, t0: float) -> int:
     res = transcriber.transcribe(wav, cfg, progress=_Progress("转写 "))
     doc = CueDocument(source_video=video, duration=info.duration,
                       language=res.meta.get("language", ""), cues=res.cues,
