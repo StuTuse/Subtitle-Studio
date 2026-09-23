@@ -1109,4 +1109,18 @@ _c, _f = _pa67("[00:01.00][00:05.00]副歌", "a.lrc")
 check("LRC 同行双时间标签", _f == "lrc" and len(_c) == 2
       and _c[0].text == _c[1].text == "副歌")
 
+section("56. 主窗转写代际与进度节流语义（第 70 轮钉子）")
+import inspect as _insp70  # noqa: E402
+import sstudio.ui.main_window as _mw70  # noqa: E402
+_src70a = _insp70.getsource(_mw70.MainWindow._stale)
+check("代际不匹配丢弃迟到信号", "gen != getattr(self, \"_gen\", 0)" in _src70a)
+_src70b = _insp70.getsource(_mw70.MainWindow._on_progress)
+check("收尾帧立即上屏", "pct >= 1.0 or pct < 0" in _src70b)
+_src70c = _insp70.getsource(_mw70.MainWindow._flush_progress)
+check("0% 进度显式判 None 不再忙碌条", "pct is not None and pct >= 0" in _src70c)
+check("auto_save 序列化在工作线程",
+      "ThreadedCall" in _insp70.getsource(_mw70.MainWindow._auto_save))
+check("dropEvent 单文件语义（首个命中即开）",
+      "return" in _insp70.getsource(_mw70.MainWindow.dropEvent))
+
 raise SystemExit(finish())
