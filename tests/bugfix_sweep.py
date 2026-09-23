@@ -1019,4 +1019,16 @@ check("text 进快照", _d58r.cues[0].text == "改")
 check("快照只含 cues（元数据不参与 undo）",
       set(_d58.snapshot().keys()) == {"cues"})
 
+section("50. 编辑页筛选跳转与状态口径（第 62 轮钉子）")
+import re as _re50  # noqa: E402
+_m50 = _re50.fullmatch(r"#(\d{1,7})", "#12")
+check("#N 正则命中", _m50 and _m50.group(1) == "12")
+check("# 裸井号不命中", _re50.fullmatch(r"#(\d{1,7})", "#") is None)
+check("# 超长位数不命中", _re50.fullmatch(r"#(\d{1,7})", "#12345678") is None)
+_n50 = int(_re50.fullmatch(r"#(\d{1,7})", "#1").group(1)) - 1
+check("#1 → 行 0", _n50 == 0)
+from sstudio.ui.editor_page import EditorInterface as _EI50  # noqa: E402
+check("_TransportKeyFilter 存在（导航键豁免输入框）",
+      hasattr(_EI50, "__module__") and _EI50.__module__.endswith("editor_page"))
+
 raise SystemExit(finish())
