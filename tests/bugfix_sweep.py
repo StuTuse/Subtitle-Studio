@@ -1250,4 +1250,15 @@ _src86c = _insp86.getsource(_ww86.WelcomeWizard.reject)
 check("Esc 中途关闭也取消线程", "_shutdown_worker()" in _src86c)
 check("完成后写 setup_done", "setup_done = True" in _src86b)
 
+section("67. 纠错页运行/回填链（第 87 轮钉子）")
+import inspect as _insp87  # noqa: E402
+from sstudio.ui.fix_page import FixInterface as _FI87  # noqa: E402
+_src87 = _insp87.getsource(_FI87.run)
+check("运行前记文档身份防串台", "self._run_doc = doc" in _src87)
+check("运行前 push_undo 可撤销", "self.main.editor.push_undo()" in _src87)
+_src87b = _insp87.getsource(_FI87._on_cue)
+check("回填身份不符丢弃", "doc is not getattr(self, \"_run_doc\", None):" in _src87b)
+_src87c = _insp87.getsource(_FI87.run)
+check("本轮指令传参不进 cfg", "extra=self.extra.toPlainText()" in _src87c)
+
 raise SystemExit(finish())
