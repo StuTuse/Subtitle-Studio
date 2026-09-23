@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.66] - 2026-09-23
+
+v1.17.66：日志卫生——Qt DEBUG 级消息不再写入 crash.log：长会话中每秒一条的 tick 警告会撑爆日志且无诊断价值，诊断下限取 WARN；错误级消息照常完整保留
+
 ## [1.17.65] - 2026-09-23
 
 v1.17.65：测试加固——bugfix_sweep 第 49 节钉住 CueDocument.snapshot 字段完备（speaker/confidence/words/text）与快照仅含 cues 的设计语义；undo/redo 与 split/merge 快照链复检无新缺陷
