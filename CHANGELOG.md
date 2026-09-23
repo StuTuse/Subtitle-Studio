@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.152] - 2026-09-24
+
+v1.17.152：测试加固——bugfix_sweep 第 126 节钉住 CUDA 运行库探测语义（发现 CUDA 13 cublas 时给专属换装提示、cublas 与 cudart 双必需齐备才判可用、注册缓存按 extra 目录区分防设置项整会话不生效、add_dll_directory 失败回退 PATH 前插、probe 真加载验证防依赖树不全假阳性、候选目录同时覆盖新旧 pip wheel 包名）；cuda_rt.py 全文三轮深读完成无新缺陷
+
 ## [1.17.151] - 2026-09-24
 
 v1.17.151：测试加固——bugfix_sweep 第 125 节钉住音频抽取与缓存命名语义（ffmpeg out_time 与 out_time_us 双格式进度解析、取消与异常路径回收 ffmpeg 进程并清半成品 wav、成品 1KB 大小下限校验防半截文件误判、PyAV 重采样 flush 保音频尾部、缓存名 md5 稳定 tag 跨启动命中、孤儿缓存超 24 小时才清理）；media.py 全文三轮深读完成无新缺陷
