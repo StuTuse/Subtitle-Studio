@@ -978,4 +978,13 @@ check("1 小时媒体取 600 档", _ns45(3600, 600) == 600)
 check("24 小时媒体钳 3600 上限", _ns45(86400, 600) == 3600.0)
 check("窄宽度步长变大", _ns45(10, 100) >= _ns45(10, 600))
 
+section("46. _model_key 归一化边界（第 52 轮钉子）")
+from sstudio.core.transcriber import _model_key as _mk46  # noqa: E402
+check("完整仓库名剥前缀", _mk46("faster-whisper-large-v3-turbo") == "large-v3-turbo")
+check("HF 缓存目录取末段", _mk46("models--pengzhendong--faster-whisper-large-v3/snapshots/x") == "x")
+check("turbo 别名映射", _mk46("Turbo") == "large-v3-turbo")
+check("large 别名映射", _mk46("large") == "large-v3")
+check("空串归空", _mk46("  ") == "")
+check("v3 与 turbo 键不同（防误配）", _mk46("large-v3") != _mk46("large-v3-turbo"))
+
 raise SystemExit(finish())
