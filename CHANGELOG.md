@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.90] - 2026-09-23
+
+v1.17.90：测试加固——bugfix_sweep 第 64 节钉住配置目录回退链（data/config/models 布局）与 recent_files 裁剪/去重置顶语义；config.py 二轮深读无新缺陷
+
 ## [1.17.89] - 2026-09-23
 
 v1.17.89：测试加固——bugfix_sweep 第 63 节钉住导出器语义（to_txt 段落/to_json 读回往返/to_lrc 时间格式）；formats.py 导出段二轮深读无新缺陷
