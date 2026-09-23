@@ -1261,4 +1261,15 @@ check("回填身份不符丢弃", "doc is not getattr(self, \"_run_doc\", None):
 _src87c = _insp87.getsource(_FI87.run)
 check("本轮指令传参不进 cfg", "extra=self.extra.toPlainText()" in _src87c)
 
+section("68. 导出页写盘/回包链（第 88 轮钉子）")
+import inspect as _insp88  # noqa: E402
+from sstudio.ui.export_page import ExportInterface as _EI88, _safe_enc as _se88  # noqa: E402
+_src88 = _insp88.getsource(_EI88._export)
+check("渲染留主线程（写盘才进线程）", "formats.export_text(doc, key)" in _src88)
+check("运行中防重入", "is not None:\n            return" in _src88)
+_src88b = _insp88.getsource(_EI88._on_export_done)
+check("回包后才记录实际编码", "getattr(self, \"_used_enc\", self._enc())" in _src88b)
+check("gbk 不可编码字符回退 utf-8", _se88("gbk", "字幕✓") == "utf-8")
+check("gbk 可编码保持 gbk", _se88("gbk", "字幕") == "gbk")
+
 raise SystemExit(finish())
