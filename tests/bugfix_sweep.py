@@ -1632,4 +1632,17 @@ _src116c = _insp116.getsource(_rl116._gh_token)
 check("token 拼接串取首段", "parts[0]" in _src116c)
 check("bump patch 档位", _rl116._bump_version("1.17.122", "patch") == "1.17.123")
 
+section("98. headless 流水线语义（第 117 轮钉子）")
+import inspect as _insp117  # noqa: E402
+import sstudio.cli_pipeline as _cp117  # noqa: E402
+_src117 = _insp117.getsource(_cp117.run_pipeline)
+check("--out 前置校验防跑完才报错", "不支持的输出扩展名" in _src117)
+check("KeyboardInterrupt 退出码 130", "return 130" in _src117)
+_src117b = _insp117.getsource(_cp117._pipeline)
+check("异常路径 finally 清 wav", "finally:" in _src117b and "os.remove(wav)" in _src117b)
+_src117c = _insp117.getsource(_cp117._pipeline_rest)
+check("成品原子替换不截断", "os.replace(tmp, out)" in _src117c)
+check("纠错整轮失败退出码 3", "return 3 if not fix_ok else 0" in _src117c)
+check("close_gaps 与 GUI 对齐", "auto_close_gaps" in _src117c)
+
 raise SystemExit(finish())
