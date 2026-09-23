@@ -1427,4 +1427,15 @@ check("真 LoadLibrary 验证可加载", "ctypes.WinDLL" in _src101c)
 _d101 = _cr101.discover()
 check("discover 返回 CudaRuntime", isinstance(_d101, _cr101.CudaRuntime))
 
+section("82. 崩溃报告与预览框（第 102 轮钉子）")
+import inspect as _insp102  # noqa: E402
+import run as _run102  # noqa: E402
+from sstudio.ui.preview import TextPreviewDialog as _TP102  # noqa: E402
+_src102 = _insp102.getsource(_run102._report)
+check("stderr 为 None/无效时不二次抛", "except (AttributeError, ValueError, OSError):" in _src102)
+check("崩溃日志追加不覆盖", "with open(path, \"a\", encoding=\"utf-8\")" in _src102)
+check("headless/check 模式不弹窗", '"--headless", "--check", "--version"' in _src102)
+_src102b = _insp102.getsource(_TP102._save)
+check("预览另存失败明确提示", "QMessageBox.warning" in _src102b)
+
 raise SystemExit(finish())

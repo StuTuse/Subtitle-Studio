@@ -53,7 +53,12 @@ def _report(exc: BaseException) -> None:
     except Exception:
         pass
 
-    print(text, file=sys.stderr)
+    # pythonw / windowed 模式 sys.stderr 可能为 None：print 会抛
+    # AttributeError，把本该温和的崩溃报告变成二次异常（弹窗也没了）
+    try:
+        print(text, file=sys.stderr)
+    except (AttributeError, ValueError, OSError):
+        pass
     # 命令行/自检/无界面模式下不能弹窗，会把脚本卡死
     blocking = ("--headless", "--check", "--version")
     if not any(a in sys.argv for a in blocking):
