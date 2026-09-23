@@ -2105,4 +2105,34 @@ _d148.meta["k"] = 2
 _d148.restore(_s148b)
 check("快照只管 cues 不管 meta（有意设计）", _d148.meta.get("k") == 2)
 
+section("130. LLM 解析层边界实测（第 149 轮钉子）")
+from sstudio.core import llm as _llm149  # noqa: E402
+_r149 = _llm149.parse_numbered("1. 你好\n2. 世界", range(1, 3))
+check("正常编号解析", _r149.get(1) == "你好" and _r149.get(2) == "世界")
+_r149 = _llm149.parse_numbered("```\n[1] 甲\n[2] 乙\n```", range(1, 3))
+check("围栏方括号解析", _r149.get(1) == "甲" and _r149.get(2) == "乙")
+_r149 = _llm149.parse_numbered("4. 前一句\n[5]", range(4, 6))
+check("空回显存空串不粘上一条", _r149.get(5) == "" and _r149.get(4) == "前一句")
+_r149 = _llm149.parse_numbered("1. 甲\n9. 越界\n2. 乙", range(1, 3))
+check("范围外编号当续行不占键", 9 not in _r149 and _r149.get(1) == "甲 9. 越界"
+      and _r149.get(2) == "乙")
+_r149 = _llm149.parse_numbered("1. 第一条完。\n希望对你有帮助！", range(1, 2))
+check("礼貌收尾丢弃", _r149.get(1) == "第一条完。")
+_r149 = _llm149.parse_numbered("好的，以下是修正结果：\n1. 内容", range(1, 2))
+check("开头寒暄丢弃", _r149.get(1) == "内容")
+_r149 = _llm149.parse_numbered("1. 第一段\n第二段续", range(1, 2))
+check("续行并回上一条", _r149.get(1) == "第一段 第二段续")
+_r149 = _llm149.parse_numbered("1. 已完句。\n意外的下一行", range(1, 2))
+check("完整句后不再并", _r149.get(1) == "已完句。")
+check("整句翻译被拦", _llm149.looks_translated(
+    "今天天气很好我们一起出去玩吧",
+    "The weather is nice today and we should go out together"))
+check("术语替换不误杀", not _llm149.looks_translated(
+    "用达芬奇调色软件剪辑", "用 DaVinci Resolve 调色软件剪辑"))
+check("sanity 空输出拒绝", _llm149.sanity_check("原文", "") is not None)
+check("sanity 原样返回放行", _llm149.sanity_check("同一段话", "同一段话") is None)
+check("中文占比空串为零", _llm149._zh_ratio("") == 0.0)
+check("本机网关免 Key", _llm149._is_local_base("http://127.0.0.1:11434/v1")
+      and _llm149._is_local_base("http://localhost:1234") and not _llm149._is_local_base("https://api.deepseek.com"))
+
 raise SystemExit(finish())
