@@ -1794,4 +1794,16 @@ check("单 widget 只挂一个 effect 语义", "第二次 setGraphicsEffect" in 
 _src128e = _insp128.getsource(_wf128.page_in)
 check("页面推入后清 effect", "clear_effect(widget)" in _src128e)
 
+section("110. 主窗退出收尾语义（第 129 轮钉子）")
+import inspect as _insp129  # noqa: E402
+from sstudio.ui import main_window as _mw129  # noqa: E402
+_src129 = _insp129.getsource(_mw129.MainWindow.closeEvent)
+check("三线程共享 6s 总预算", "deadline = time.monotonic() + 6.0" in _src129)
+check("未收尾兜底删临时 wav", 'getattr(tw, "current_wav", "")' in _src129)
+check("残留线程强退防挂死", "os._exit(0)" in _src129)
+check("先拆媒体后端再退出", "self.editor.player.shutdown()" in _src129)
+check("几何保存 base64", 'saveGeometry().toBase64()' in _src129)
+_src129b = _insp129.getsource(_mw129.MainWindow._ensure_on_screen)
+check("跨屏拉回+超大收回双修", "too_big" in _src129b and "intersects(geo)" in _src129b)
+
 raise SystemExit(finish())
