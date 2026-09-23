@@ -12,7 +12,7 @@ from qfluentwidgets import (BodyLabel, CaptionLabel, CardWidget, CheckBox, Fluen
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QGuiApplication
 from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QProgressBar,
-                             QSplitter, QVBoxLayout, QWidget)
+                             QSizePolicy, QSplitter, QVBoxLayout, QWidget)
 
 from ..core.config import Config
 from .safe_spin import SafeSpinBox
@@ -42,6 +42,8 @@ class FixInterface(QWidget):
         left = ScrollArea(split)
         left.setWidgetResizable(True)
         left.setStyleSheet("QScrollArea{background:transparent;border:none}")
+        left.setMinimumWidth(240)     # 下限防挤没：splitter 收窄到 240 就停，
+        #                              再窄由横向滚动条接管，内容不会被裁
         lh = QWidget(left)
         lh.setStyleSheet("background:transparent")
         lv = QVBoxLayout(lh)
@@ -117,7 +119,15 @@ class FixInterface(QWidget):
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # 当前接入点一行：name · model · base_url 可能很长。BodyLabel 默认
+        # 不换行，minimumSizeHint 会随文本涨到 850~1150px，把整个右栏撑爆——
+        # 窗口不宽时 QSplitter 只能把左栏挤没，两边内容都被裁（截断 bug）。
+        # 设 Ignored 水平策略 + 允许换行：标签不再参与最小宽计算，超长时
+        # 换行显示（Qt 会对过长的 URL 自动断行）。
         self.profile_label = BodyLabel("—", right)
+        self.profile_label.setWordWrap(True)
+        self.profile_label.setMinimumWidth(0)
+        self.profile_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         form.addRow("当前接入点", self.profile_label)
         self.btn_switch = PushButton("切换/编辑接入点", right)
         self.btn_switch.clicked.connect(lambda: self.main.switch_to("settings"))
@@ -183,11 +193,19 @@ class FixInterface(QWidget):
         bar2.addWidget(self.btn_next_review)
         bar2.addStretch(1)
         rv.addLayout(bar2)
-        rv.addWidget(CaptionLabel(
+        # 底部说明：长文案 CaptionLabel 默认按整行不换行量最小宽（816px），
+        # 同样会把右栏撑爆。开换行 + Ignored 水平策略，跟随栏宽自适应折行。
+        self._hint = CaptionLabel(
             "纠错只替换文本，绝不动时间轴。严格模式下若模型少给/多给行、或某行长度突变、"
-            "疑似被翻译，都会自动重试；仍不合格的行会标红留在「待复查」。", right))
+            "疑似被翻译，都会自动重试；仍不合格的行会标红留在「待复查」。", right)
+        self._hint.setWordWrap(True)
+        self._hint.setMinimumWidth(0)
+        self._hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        rv.addWidget(self._hint)
         split.addWidget(right)
         split.setSizes([520, 520])
+        split.setStretchFactor(0, 1)   # 富余宽度两侧均分，不偏向某一栏
+        split.setStretchFactor(1, 1)
 
         QTimer.singleShot(0, self.sync_from_cfg)
 
