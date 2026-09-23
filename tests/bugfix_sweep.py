@@ -2135,4 +2135,45 @@ check("中文占比空串为零", _llm149._zh_ratio("") == 0.0)
 check("本机网关免 Key", _llm149._is_local_base("http://127.0.0.1:11434/v1")
       and _llm149._is_local_base("http://localhost:1234") and not _llm149._is_local_base("https://api.deepseek.com"))
 
+section("131. ssp 工程存取回环实测（第 150 轮钉子）")
+import json as _json150  # noqa: E402
+import tempfile as _tf150  # noqa: E402
+import os as _os150  # noqa: E402
+_td150 = _tf150.mkdtemp()
+_d150 = _CD147(source_video="D:/vid/a.mp4", duration=120.5, language="zh")
+_d150.cues = [_Cue147(start=0, end=1.5, text="第一条", original_text="原文一", state="llm"),
+              _Cue147(start=2, end=3.5, text="第二条\n第二行", speaker="张三")]
+_d150.meta["imported_from"] = "x.srt"
+_d150b = _CD147.from_dict(_json150.loads(_d150.to_json()))
+check("回环字段完整", _d150b.source_video == "D:/vid/a.mp4"
+      and abs(_d150b.duration - 120.5) < 1e-9 and _d150b.language == "zh"
+      and len(_d150b.cues) == 2)
+check("回环状态与原文", _d150b.cues[0].state == "llm"
+      and _d150b.cues[0].original_text == "原文一")
+check("回环换行与说话人", _d150b.cues[1].text == "第二条\n第二行"
+      and _d150b.cues[1].speaker == "张三")
+check("回环 meta", _d150b.meta.get("imported_from") == "x.srt")
+_p150 = _os150.path.join(_td150, "bad.ssp")
+with open(_p150, "w", encoding="utf-8") as _f150:
+    _f150.write("{not json!!!")
+try:
+    _json150.load(open(_p150, encoding="utf-8"))
+    check("坏 JSON 上层接住", False)
+except Exception:
+    check("坏 JSON 上层接住", True)
+_d150c = _CD147.from_dict({})
+check("空字典空文档", _d150c.cues == [] and _d150c.source_video == "")
+_d150d = _CD147.from_dict({"cues": None, "meta": None})
+check("None 字段容错", _d150d.cues == [] and _d150d.meta == {})
+_d150e = _CD147.from_dict({"cues": [{"start": "1.25", "end": "3.0", "text": "T"}]})
+check("字符串数值容错", abs(_d150e.cues[0].start - 1.25) < 1e-9
+      and abs(_d150e.cues[0].end - 3.0) < 1e-9)
+_d150f = _CD147.from_dict(_json150.loads(_CD147().to_json()))
+check("空文档回环", _d150f.cues == [] and _d150f.duration == 0.0)
+_d150g = _CD147()
+_d150g.cues = [_Cue147(start=_i * 2, end=_i * 2 + 1.8, text=f"第{_i}条测试字幕内容")
+               for _i in range(5000)]
+_d150h = _CD147.from_dict(_json150.loads(_d150g.to_json()))
+check("5000 条大文档回环", len(_d150h.cues) == 5000)
+
 raise SystemExit(finish())
