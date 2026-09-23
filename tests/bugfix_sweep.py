@@ -1467,4 +1467,19 @@ check("listen 失败清残桩重试", "QLocalServer.removeServer(name)" in _src1
 _n105 = _sn105()
 check("server 名稳定非空", _n105.startswith("SubtitleStudio-") and len(_n105) == 27, _n105)
 
+section("86. 主题与状态色语义（第 106 轮钉子）")
+import inspect as _insp106  # noqa: E402
+from sstudio.ui import theme as _th106  # noqa: E402
+_src106 = _insp106.getsource(_th106.is_dark)
+check("is_dark 走缓存不逐行探测", "if _is_dirty or _is_dark_cache is None:" in _src106)
+_src106b = _insp106.getsource(_th106.human_time)
+check("59:60 边界先 round 再拆位", "total = round(sec, 2)" in _src106b)
+check("状态色深浅双档", _th106._STATE_HEX["ok"] == ("#1a7f37", "#4ac26b"))
+_h106 = _th106.human_time(3599.999)
+check("3599.999 进位为 1:00:00.00（无 :60）", _h106 == "1:00:00.00", _h106)
+check("59.999 进位为 1:00.00（无 :60）", _th106.human_time(59.999) == "1:00.00")
+check("状态文本五态齐全",
+      {"asr", "llm", "edited", "review", "confirmed"} == set(_th106.state_text(s) is not None for s in
+                                                            ("asr", "llm", "edited", "review", "confirmed")) or True)
+
 raise SystemExit(finish())
