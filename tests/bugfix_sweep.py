@@ -2030,4 +2030,15 @@ check("真加载验证防假阳性", "ctypes.WinDLL(os.path.join(found, name))" 
 _src145d = _insp145.getsource(_cr145._candidate_dirs)
 check("候选目录覆盖新旧 wheel 名", "\"nvidia\", \"cuda_runtime\", \"bin\"" in _src145d and "\"nvidia\", \"cudart\", \"bin\"" in _src145d)
 
+section("127. 发版脚本主流程语义（第 146 轮钉子）")
+import inspect as _insp146  # noqa: E402
+_src146 = open("release.py", encoding="utf-8").read()
+check("Release 已存在补传用 upload --clobber", "[gh, \"release\", \"upload\", tag, setup, \"--clobber\"]" in _src146)
+check("发布失败不阻断发版", "不阻断发版" in _src146)
+check("工作区必须干净才发版", "工作区有未提交改动" in _src146)
+check("tag 已存在拒绝重复发版", "tag {tag} 已存在，请勿重复发版" in _src146)
+check("bump 与版本号互斥", "--bump 与直接给版本号二选一" in _src146)
+check("同版本跳过仅打包", "版本未变" in _src146)
+check("dry-run 不写入", "(dry-run) 将写入" in _src146)
+
 raise SystemExit(finish())
