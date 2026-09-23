@@ -122,6 +122,9 @@ def parse_lrc(text: str) -> List[Cue]:
         for h_or_m, s, ms in stamps:
             t = int(h_or_m) * 60 + int(s) + (int((ms or "0").ljust(3, "0")[:3]) / 1000.0)
             marks.append((t, body))
+    # 先按时间排序再配对 end：LRC 允许多时间标签/乱序行，乱序配对会产出
+    # end < start 的倒挂 cue，导入后整条时间轴错乱
+    marks.sort(key=lambda x: x[0])
     cues: List[Cue] = []
     for i, (t, body) in enumerate(marks):
         end = marks[i + 1][0] if i + 1 < len(marks) else t + 4.0
@@ -338,15 +341,24 @@ def parse_any(text: str, filename: str = "") -> Tuple[List[Cue], str]:
 
     try:
         if ext == ".vtt" or stripped.startswith("WEBVTT"):
-            return parse_vtt(text), "vtt"
+            cues = parse_vtt(text)
+            if cues:
+                return cues, "vtt"
+            # 认领了格式但 0 条：别把"空结果"当成功，回落兜底再试一轮
         if ext == ".ass" or "[Events]" in head:
-            return parse_ass(text), "ass"
+            cues = parse_ass(text)
+            if cues:
+                return cues, "ass"
         # 扩展名是 .lrc 就直接按 LRC 解析；混了 [hh:mm:ss] 加强时间戳的
         # LRC 文件很常见，不能因此放弃认领
         if ext == ".lrc" or (_LRC_RE.search(head) and not _HMS_RE.search(head)):
-            return parse_lrc(text), "lrc"
+            cues = parse_lrc(text)
+            if cues:
+                return cues, "lrc"
         if "-->" in head:
-            return parse_srt(text), "srt"
+            cues = parse_srt(text)
+            if cues:
+                return cues, "srt"
         timed = parse_timed_text(text)
         if len(timed) >= 2:
             return timed, "timed_text"

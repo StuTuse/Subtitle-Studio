@@ -20,13 +20,20 @@ from .workers import ThreadedCall
 
 def _write_exports(pairs, out_dir, enc):
     """后台线程里跑：试探编码 → 写盘。pairs 是主线程渲染好的 [(名字, 文本)]，
-    线程不碰 doc——导出期间用户还能在编辑页改字幕，跨线程读会读到半截。"""
+    线程不碰 doc——导出期间用户还能在编辑页改字幕，跨线程读会读到半截。
+    每个文件走 tmp + os.replace 原子落盘：退出路径的 os._exit(0) 不等线程
+    finally，裸 open 写一半正好被强杀的话，目标位置就留下截断的成品；
+    原子替换保证盘上要么没有、要么是完整文件。"""
     written, errors = [], []
     for name, text in pairs:
         try:
             fp = os.path.join(out_dir, name)
-            with open(fp, "w", encoding=_safe_enc(enc, text), newline="") as f:
+            tmp = fp + ".tmp"
+            with open(tmp, "w", encoding=_safe_enc(enc, text), newline="") as f:
                 f.write(text)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, fp)
             written.append(fp)
         except Exception as e:
             errors.append((name, str(e)))

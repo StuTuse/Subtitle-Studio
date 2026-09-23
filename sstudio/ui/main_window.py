@@ -115,7 +115,9 @@ class MainWindow(FluentWindow):
         self.stackedWidget.currentChanged.connect(self._on_page)
 
         self._restore_geometry()
-        QTimer.singleShot(200, self._maybe_open_cli_file)
+        # 命令行文件由 __main__ 统一 singleShot 打开（带 isfile 校验）；
+        # 这里不再扫 sys.argv——曾导致同一文件被两个定时器各开一次
+        # （双 probe、双 InfoBar），且 "--out 路径" 这类旗标值会被误当目标。
 
     # ------------------------------------------------------------ 底部悬浮进度
     def resizeEvent(self, e) -> None:  # noqa: N802
@@ -246,13 +248,6 @@ class MainWindow(FluentWindow):
             self.mark_dirty()
         except Exception as e:
             self._warn("打开失败", str(e))
-
-    def _maybe_open_cli_file(self) -> None:
-        import sys
-        for a in sys.argv[1:]:
-            if os.path.isfile(a):
-                self._load_any(a) if not media.is_media(a) else self.open_media(a)
-                return
 
     # ------------------------------------------------------------ 工程
     def save_project(self, force_dialog: bool = False) -> bool:
@@ -602,38 +597,57 @@ class MainWindow(FluentWindow):
             self.cfg.save()
         except Exception:
             pass
-        stragglers = False
-        if self._worker:
-            self._worker.cancel()
-            # 退出时不能把还在跑的线程丢给 GC：等它自己收尾（最多 5s）
-            try:
-                stragglers = not self._worker.wait(5000)
-            except RuntimeError:
-                pass
-        # AI 纠错线程同样要等：否则关窗后它还在往已销毁的页面发信号、
-        # 网络请求继续跑，进程迟迟不退出。
+        # 先请求三个后台任务协作取消，再统一等待：导出/纠错线程收到后会在
+        # 批次边界收尾，比干等 5s 超时快得多
+        try:
+            if self._worker:
+                self._worker.cancel()
+        except RuntimeError:
+            pass
         try:
             fw = getattr(self.fix, "worker", None)
             if fw is not None:
                 fw.cancel()
-                if not fw.wait(5000):
-                    stragglers = True
         except RuntimeError:
             pass
-        # 导出线程可能正在网络盘上写文件：给它同样的收尾窗口
         try:
             ew = getattr(self.export, "_worker", None)
-            if ew is not None and ew.isRunning():
-                if not ew.wait(5000):
-                    stragglers = True
+            if ew is not None:
+                ew.cancel()
         except RuntimeError:
             pass
+        stragglers = False
+        # 三个线程统一走一个 6s 总预算：原来最坏 3×5s 串行等 15s，
+        # 期间 UI 冻结，看起来像死机
+        deadline = time.monotonic() + 6.0
+        for w in (self._worker,
+                  getattr(self.fix, "worker", None),
+                  getattr(self.export, "_worker", None)):
+            if w is None:
+                continue
+            try:
+                remain = int((deadline - time.monotonic()) * 1000)
+                if remain <= 0 or not w.wait(max(100, remain)):
+                    stragglers = True
+            except RuntimeError:
+                pass
+        # 转写线程 5s 内没收尾时 os._exit 会跳过它的 finally，临时 wav
+        # （可达数百 MB）就永久留在 %TEMP%：这里兜底删掉
+        tw = self._worker
+        if stragglers and tw is not None:
+            try:
+                wav = getattr(tw, "current_wav", "")
+                if wav and os.path.isfile(wav):
+                    os.remove(wav)
+            except OSError:
+                pass
         super().closeEvent(e)
         if stragglers:
             # cancel 是协作式的：在途 HTTP 要等超时才返回，线程池线程又不是
             # daemon——解释器拆机会 join 它们，表现为"窗口关了进程还挂几分钟"，
             # 期间线程再碰已销毁的 Qt 对象就是随机 0xC0000005。
-            # 此刻配置已保存、播放器已拆、窗口已关，强杀进程不丢任何东西。
+            # 此刻配置已保存、播放器已拆、窗口已关；导出走 tmp+os.replace
+            # 原子落盘，强杀最多丢一个 .tmp，不丢任何已完成的数据。
             try:
                 sys.stdout.flush()
                 sys.stderr.flush()

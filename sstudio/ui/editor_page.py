@@ -41,6 +41,11 @@ class EditorInterface(QWidget):
         self._redo: List[dict] = []
         self._follow = True
         self._editing_row = -1
+        # 编辑缓冲归属：缓冲里装的是哪一行的内容、是否带未落盘的用户输入。
+        # 程序化换行（播放跟随/选中切换）覆盖缓冲前必须查这两个标志，
+        # 否则「新行原文+我打的字」会被写进别的行（丢输入类 P0）
+        self._edit_buf_row = -1
+        self._edit_buf_dirty = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 8, 12, 6)
@@ -81,7 +86,14 @@ class EditorInterface(QWidget):
         self.search = SearchLineEdit(self.filter_row)
         self.search.setPlaceholderText("搜索字幕文本 / 输入 #数字 跳到第 N 条 / 支持正则")
         self.search.setMaximumWidth(420)
-        self.search.textChanged.connect(self._filter)
+        # 每 keystroke 全表 setRowHidden + 正则匹配：5000 条时中文输入法
+        # 连续上字明显掉帧。180ms 防抖，末键才真正过滤
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(180)
+        self._search_timer.timeout.connect(self._filter)
+        self.search.textChanged.connect(
+            lambda _t: self._search_timer.start())
         fr.addWidget(self.search)
         self.chk_only_problem = PushButton(self.filter_row)
         self.chk_only_problem.setCheckable(True)
@@ -339,10 +351,12 @@ class EditorInterface(QWidget):
         self.follow_btn.toggled.connect(lambda v: setattr(self, "_follow", bool(v)))
         self.player.positionChanged.connect(self._on_position)
         self.player.durationChanged.connect(self._on_duration)
+        self.player.durationChanged.connect(self._on_media_state)
+        self.player.stateChanged.connect(self._on_media_state)
         self.player.error.connect(lambda m: self._say(m, 6000))
         self.timeline.seek_requested.connect(self.player.seek)
         self.timeline.cue_clicked.connect(self._select_row)
-        self.timeline.cue_range.connect(lambda a, b: self._select_range(a, b))
+        self.timeline.cue_range.connect(self._select_range)
         self.table.cue_changed.connect(self._on_text_changed)
         self.table.cue_selected.connect(self._on_select)
         self.table.cue_activated.connect(self._jump_to)
@@ -381,6 +395,8 @@ class EditorInterface(QWidget):
         if not self.doc or row < 0 or row >= len(self.doc.cues):
             return
         self._on_text_changed(row, self.edit_area.toPlainText().strip("\n"))
+        self._edit_buf_row = row        # 已落盘：缓冲现在干净地属于这一行
+        self._edit_buf_dirty = False
 
     def _shortcuts(self) -> None:
         # 组合键类：不会与打字冲突，直接做 QShortcut
@@ -553,6 +569,7 @@ class EditorInterface(QWidget):
         self.timeline.update()
         self.update_status()
         self.main.mark_dirty()
+        self._edit_buf_dirty = False    # 该行已消费：缓冲重新干净
 
     def _update_pos_bar(self, row: int) -> None:
         """位置进度条：当前第几条 / 总条数，改到哪儿一眼可见。"""
@@ -571,9 +588,14 @@ class EditorInterface(QWidget):
             c = self.doc.cues[row]
             self.cur_row.setText(f"第 {row + 1} 条 · {human_time(c.start)} → {human_time(c.end)}"
                                  f" · {c.duration:.2f}s")
-            # 编辑中不要把用户正在打的字冲掉（点击别行时由 focusOut 先落盘）
-            if not self.edit_area.hasFocus():
+            # 编辑中不要把用户正在打的字冲掉（点击别行时由 focusOut 先落盘）。
+            # 缓冲归属追踪：缓冲 dirty（有未落盘的输入）且焦点还在编辑框时，
+            # 程序化换行绝不能覆盖它——否则「新行原文+我打的字」会被写进别的行
+            if not self.edit_area.hasFocus() or (
+                    not self._edit_buf_dirty and self._edit_buf_row == row):
                 self.edit_area.setPlainText(c.display_text)
+                self._edit_buf_row = row
+                self._edit_buf_dirty = False
             if self._follow:
                 self.timeline._sel = row
                 self.timeline.update()
@@ -590,6 +612,8 @@ class EditorInterface(QWidget):
         # 这里显式把下一条装进来，让用户连续改。
         if self.doc and 0 <= nxt < len(self.doc.cues):
             self.edit_area.setPlainText(self.doc.cues[nxt].display_text)
+            self._edit_buf_row = nxt
+            self._edit_buf_dirty = False
             self.edit_area.setFocus()
 
     def _act(self, action: str, rows: Optional[List[int]] = None) -> None:
@@ -602,6 +626,9 @@ class EditorInterface(QWidget):
         if not rows and action not in ("insert", "close_gaps"):
             self._say("先选中字幕条目。", 2000)
             return
+        # 行号不是身份：去重+排序。来自右键菜单/框选/快捷键的列表可能
+        # 乱序带重复，后面按 rows[0] 定位锚点会落在意想不到的行上
+        rows = sorted(set(int(r) for r in rows))
         doc = self.doc
 
         if action == "delete":
@@ -618,8 +645,11 @@ class EditorInterface(QWidget):
             self._after_struct(at)
         elif action == "merge":
             self.push_undo()
-            doc.merge(rows)
-            self._after_struct(rows[0])
+            merged = doc.merge(rows)
+            # merge 后 normalize_cues 会重排：用合并结果对象找回新行号，
+            # 而不是拿 rows[0] 当锚点（不连续选择时必错行）
+            anchor_row = doc.index_of(merged) if merged is not None else rows[0]
+            self._after_struct(max(0, anchor_row))
         elif action == "split":
             self.push_undo()
             r = rows[0]
@@ -635,15 +665,19 @@ class EditorInterface(QWidget):
             self.push_undo()
             for r in rows:
                 doc.cues[r].shift(d)
-            self._after_struct(rows[0])
+            # normalize_cues 内部会 sorted() 重排：按旧下标取 cue 会错行。
+            # 先记住操作对象的 id，重排后用 index_of 找回。
+            anchor = doc.cues[rows[0]]
+            self._after_struct(doc.index_of(anchor))
         elif action.startswith("extend:"):
             d = float(action.split(":", 1)[1])
             self.push_undo()
             for r in rows:
                 c = doc.cues[r]
                 c.end = max(c.start + 0.2, c.end + d)
+            anchor = doc.cues[rows[0]]
             normalize_cues(doc)
-            self._after_struct(rows[0])
+            self._after_struct(doc.index_of(anchor))
         elif action.startswith("set_time:"):
             _, r, col = action.split(":")
             r, col = int(r), int(col)
@@ -792,11 +826,14 @@ class EditorInterface(QWidget):
             self.table.scrollToItem(self.table.item(row, 5), QAbstractItemView.PositionAtCenter)
             self.table.blockSignals(False)
             self._editing_row = row
-            # 无条件刷新编辑缓冲：刚才若落了盘，缓冲已被消费，刷成新行是安全的；
-            # 若带着焦点跳过这步，缓冲里还是旧行文本，用户接着打字按 Enter
-            # 就会把"旧行内容+新字"整体覆盖到新行。
+            # 刷新编辑缓冲：刚才若落了盘，缓冲已被消费（_edit_buf_dirty=False），
+            # 刷成新行是安全的；若带着焦点但没落盘（_apply_inline_silent 因
+            # 等值守卫跳过），缓冲本来就是新行内容，重装一遍也无害——
+            # 无论如何，这里之后缓冲必须干净地属于新行
             if self.doc and 0 <= row < len(self.doc.cues):
                 self.edit_area.setPlainText(self.doc.cues[row].display_text)
+                self._edit_buf_row = row
+                self._edit_buf_dirty = False
 
     def _on_duration(self, sec: float) -> None:
         if self.doc and sec > 0:
@@ -812,10 +849,20 @@ class EditorInterface(QWidget):
             self._on_select(row)
             self.player.seek(self.doc.cues[row].start)
 
-    def _select_range(self, a: int, b: int) -> None:
+    def _select_range(self, rows) -> None:
+        """时间轴框选回传的行列表精确选行。
+
+        曾按 (首,尾) 连续区间选：框选划过一段含空隙的区域时，空隙里用户
+        没覆盖到的字幕也被一并选中，随后的删除/移动误伤。"""
         self.table.clearSelection()
-        for r in range(a, min(b + 1, self.table.rowCount())):
-            self.table.selectRow(r)
+        from PyQt5.QtWidgets import QAbstractItemView as _AIV
+        from PyQt5.QtCore import QItemSelectionModel as _ISM
+        from PyQt5.QtCore import QModelIndex as _MI
+        for r in rows:
+            if 0 <= r < self.table.rowCount():
+                idx = self.table.model().index(r, 0)
+                self.table.selectionModel().select(
+                    idx, _ISM.Select | _ISM.Rows)
 
     def _jump_to(self, row: int) -> None:
         if self.doc and 0 <= row < len(self.doc.cues):
@@ -829,9 +876,6 @@ class EditorInterface(QWidget):
         nxt = max(0, min(len(self.doc.cues) - 1, (cur if cur >= 0 else 0) + d))
         self._select_row(nxt)
 
-    def _on_dur(self, *_a) -> None:
-        pass
-
     # ------------------------------------------------------------ 筛选
     def _toggle_filter(self) -> None:
         self.filter_row.setVisible(not self.filter_row.isVisible())
@@ -843,7 +887,10 @@ class EditorInterface(QWidget):
         self.search.setFocus()
         self.search.selectAll()
 
-    def _filter(self, text: str) -> None:
+    def _filter(self, text=None) -> None:
+        # 兼容两种调用：textChanged 直连（防抖定时器无参触发）与显式传参
+        if text is None or not isinstance(text, str):
+            text = self.search.text()
         text = (text or "").strip()
         only_bad = self.chk_only_problem.isChecked()
         if not self.doc:
@@ -856,6 +903,8 @@ class EditorInterface(QWidget):
             except _re.error:
                 rx = _re.compile(_re.escape(text), _re.I)
         shown = 0
+        # 只在"隐藏了行"的会话里批量包 setUpdatesEnabled：正常无过滤时
+        # 不额外触发全视口重绘
         for r in range(self.table.rowCount()):
             if r >= len(self.doc.cues):
                 break
@@ -876,17 +925,16 @@ class EditorInterface(QWidget):
             shown += 1 if ok else 0
         total = self.table.rowCount()
         self.stat_label.setText(f"显示 {shown} / {total} 条" if (text or only_bad) else f"共 {total} 条")
-        # "#12" 是跳转指令（placeholder 就这么承诺的）：选中并滚过去，
-        # 而不是把其它行过滤掉后停在原地；跳完清空，恢复完整列表。
-        import re as _re2
-        m = _re2.fullmatch(r"#(\d{1,7})", text) if text else None
+        # "#12" 是跳转指令（placeholder 就这么承诺的）：直接定位并滚过去，
+        # 不把其它行过滤掉后停在原地；跳完清空，恢复完整列表。
+        m = _re.fullmatch(r"#(\d{1,7})", text) if text else None
         if m:
             n = int(m.group(1)) - 1
             if 0 <= n < total:
                 self.search.blockSignals(True)
                 self.search.clear()
                 self.search.blockSignals(False)
-                self._filter(self.search.text())
+                self._filter("")
                 self._select_row(n)
 
     # ------------------------------------------------------------ 文件
@@ -949,6 +997,17 @@ class EditorInterface(QWidget):
         self.edit_area.setEnabled(has)
         self.b_play.setEnabled(self.player.duration() > 0)
 
+    def _on_media_state(self, *_a) -> None:
+        """媒体后端状态变化时刷新按钮可用性。
+
+        _refresh_enabled 只在结构编辑路径被调：load 失败/换视频后
+        播放按钮的可用态就一直停在旧值——有媒体时禁用、没媒体时
+        点了没反应。接上 durationChanged/stateChanged 后自动跟上。"""
+        try:
+            self.b_play.setEnabled(self.player.duration() > 0)
+        except RuntimeError:
+            pass
+
     def _say(self, msg: str, ms: int = 3000) -> None:
         self.status.setText(msg)
         QTimer.singleShot(ms, self.update_status)
@@ -968,6 +1027,9 @@ class EditorInterface(QWidget):
         c.text = text
         c.state = "llm"
         self.table.mark_row_llm(row, text)
+        # 只递增 token 不清 pixmap：LLM 流式逐条回调 5000 次时，
+        # 色块层仍按 paintEvent 的 key 比对懒重建，不会 10Hz 重跑全量
+        self.timeline._content_token += 1
         self.main.mark_dirty()
 
     def mark_all_llm(self) -> None:

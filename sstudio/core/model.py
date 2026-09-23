@@ -21,7 +21,11 @@ TIME_STATES = ("asr", "llm", "edited", "review", "confirmed")
 
 
 def sec_to_ts(seconds: float, sep: str = ",", millis: bool = True) -> str:
-    """秒 -> ``HH:MM:SS,mmm``（sep="," 用于 SRT，"." 用于 VTT/ASS）。"""
+    """秒 -> ``HH:MM:SS,mmm``（sep="," 用于 SRT，"." 用于 VTT/ASS）。
+
+    写出侧固定位宽（SRT/VTT 社区惯例，播放器兼容性最好）；解析侧 _TS_RE
+    小时段放开到 3 位，能读回别家工具产出的 100h+ 时间码。
+    """
     if seconds is None or seconds < 0:
         seconds = 0.0
     total_ms = int(round(seconds * 1000.0))
@@ -35,7 +39,7 @@ def sec_to_ts(seconds: float, sep: str = ",", millis: bool = True) -> str:
 
 
 _TS_RE = re.compile(
-    r"^\s*(?:(?P<h>\d{1,2}):)?(?P<m>\d{1,2}):(?P<s>\d{1,2})(?:[.,;](?P<ms>\d{1,3}))?\s*$"
+    r"^\s*(?:(?P<h>\d{1,3}):)?(?P<m>\d{1,2}):(?P<s>\d{1,2})(?:[.,;](?P<ms>\d{1,3}))?\s*$"
 )
 
 

@@ -503,21 +503,37 @@ class FasterWhisperEngine:
 
         # faster-whisper 返回的是惰性生成器，缺 cublas 这类运行时错误要等到
         # 真正迭代时才抛出；而完整消费一次又不该重复跑模型。因此把「跑一次 +
-        # 收 segment」封装成 _consume，GPU 失败时整段用 CPU 重来一遍。
-        def _consume(mdl) -> Tuple[List[Any], Any]:
+        # 边跑边转成 Cue」封装成 _consume，GPU 失败时整段用 CPU 重来一遍。
+        # 注意不在这一步缓存 segment 列表：大视频（4h）的 segment 对象与
+        # 随后的 Cue 列表同时驻留会让峰值内存翻倍——直接边迭代边建 Cue。
+        def _consume(mdl) -> Tuple[List[Cue], Any]:
             segments, info = mdl.transcribe(audio_path, **kw)
-            out: List[Any] = []
+            cues: List[Cue] = []
             for seg in segments:
                 if cancel and cancel():
                     raise TranscribeError("已取消。")
-                out.append(seg)
-                if progress and total and out:
-                    pos = float(out[-1].end)
+                text = (seg.text or "").strip()
+                if text:
+                    words = []
+                    for w in (seg.words or []):
+                        words.append({"start": round(float(w.start), 3),
+                                      "end": round(float(w.end), 3),
+                                      "word": w.word,
+                                      "prob": round(float(getattr(w, "probability", 0) or 0), 3)})
+                    probs = [w["prob"] for w in words if w["prob"]]
+                    cues.append(Cue(
+                        start=round(float(seg.start), 3), end=round(float(seg.end), 3),
+                        text=text, original_text=text, state="asr",
+                        confidence=round(sum(probs) / len(probs), 3) if probs else None,
+                        words=words,
+                    ))
+                if progress and total and cues:
+                    pos = float(seg.end)
                     progress(f"识别中 {pos / total * 100:.0f}%", min(0.999, pos / total))
-            return out, info
+            return cues, info
 
         try:
-            seg_list, info = _consume(model)
+            cues, info = _consume(model)
         except TranscribeError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -529,7 +545,7 @@ class FasterWhisperEngine:
                 try:
                     model, device, compute, note = _load_model(
                         WhisperModel, model_path, "cpu", "int8", cfg)
-                    seg_list, info = _consume(model)
+                    cues, info = _consume(model)
                 except TranscribeError:
                     raise
                 except Exception as e2:  # noqa: BLE001
@@ -544,22 +560,6 @@ class FasterWhisperEngine:
                     f"识别失败：{e}\n\n可尝试：设置 → 计算设备改成 cpu，"
                     "或把量化精度改成 int8。") from e
 
-        cues: List[Cue] = []
-        for seg in seg_list:
-            text = (seg.text or "").strip()
-            if not text:
-                continue
-            words = []
-            for w in (seg.words or []):
-                words.append({"start": round(float(w.start), 3), "end": round(float(w.end), 3),
-                              "word": w.word, "prob": round(float(getattr(w, "probability", 0) or 0), 3)})
-            probs = [w["prob"] for w in words if w["prob"]]
-            cues.append(Cue(
-                start=round(float(seg.start), 3), end=round(float(seg.end), 3),
-                text=text, original_text=text, state="asr",
-                confidence=round(sum(probs) / len(probs), 3) if probs else None,
-                words=words,
-            ))
         if progress:
             progress("整理时间轴…", 0.999)
 
@@ -719,14 +719,25 @@ class WhisperCppEngine:
                 if m and progress:
                     progress(f"whisper.cpp: {m.group(1)}", -1)
             p.wait()
+            # stdout 读毕但 cancel 在最后一段进度后才发生：补一次检查，
+            # 否则取消请求被"stdout 已无行可读"吞掉，白等到底
+            if cancel and cancel():
+                raise TranscribeError("已取消。")
         finally:
             if p.poll() is None:
                 p.kill()
                 p.wait()
         if not os.path.isfile(out):
             raise TranscribeError("whisper.cpp 未产出结果文件。")
-        with open(out, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(out, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        finally:
+            # 取消/解析异常路径也要清掉临时结果，否则泄漏在音频旁
+            try:
+                os.remove(out)
+            except OSError:
+                pass
         cues = []
         for tr in data.get("transcription", []):
             text = (tr.get("text") or "").strip()
@@ -739,8 +750,6 @@ class WhisperCppEngine:
             except (TypeError, ValueError):
                 continue
             cues.append(Cue(start=st, end=en, text=text, original_text=text))
-        if os.path.isfile(out):
-            os.remove(out)
         return TranscriptResult(cues=cues, meta={"engine": self.key, "model": model,
                                                  "elapsed": round(time.time() - t0, 1)})
 
@@ -760,12 +769,17 @@ class OpenAIApiEngine:
         client = load_client(prof)
         if progress:
             progress("上传音频到云端转写…", 0.2)
+        # 与 faster-whisper 引擎同一套约定：translate:xx 表示「翻译成 xx 语」；
+        # API 的 language 参数只认纯语言码，带前缀直接 400
+        lang = self.cfg.language or "auto"
+        if lang.startswith("translate:"):
+            lang = lang.split(":", 1)[1] or "en"
         with open(audio_path, "rb") as f:
             resp = client.audio.transcriptions.create(
                 model=self.cfg.openai_transcribe_model, file=f,
                 response_format="verbose_json",
                 timestamp_granularities=["word"] if self.cfg.word_timestamps else ["segment"],
-                language=None if self.cfg.language == "auto" else self.cfg.language,
+                language=None if lang == "auto" else lang,
             )
         cues: List[Cue] = []
         for s in getattr(resp, "segments", None) or []:

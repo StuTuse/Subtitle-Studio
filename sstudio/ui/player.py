@@ -104,16 +104,23 @@ class PlayerWidget(QWidget):
     def duration(self) -> float:
         return self.player.duration() / 1000.0
 
-    def seek(self, seconds: float) -> None:
+    def seek(self, seconds: float) -> float:
+        """定位。返回实际生效的秒数；未加载媒体时返回 -1 且不发信号——
+        曾无条件 emit positionChanged，把播放头/时间标签推到一个从未
+        真正生效的位置，且 dur 会回落到上一个工程的残留时长。"""
         sec = max(0.0, seconds)
-        # 未加载媒体时 setPosition 会在原生层崩溃（offscreen / 无解码器机器）；
-        # 时间轴游标靠信号驱动，照常发即可。
+        dur = 0.0
         try:
-            if self.duration() > 0:
+            dur = self.duration()
+            if dur > 0:
+                sec = min(sec, dur)           # 夹回实际媒体长度
                 self.player.setPosition(int(sec * 1000))
+            else:
+                return -1.0                   # 没有媒体：不下发、不广播
         except Exception:
-            pass
+            return -1.0
         self.positionChanged.emit(sec)
+        return sec
 
     def nudge(self, delta: float) -> None:
         self.seek(self.position() + delta)
@@ -150,9 +157,17 @@ class PlayerWidget(QWidget):
     # ------------------------------------------------------------ A/B 循环
     def set_loop_a(self, t: Optional[float] = None) -> None:
         self._loop_a = self.position() if t is None else t
+        # A>B 会让 _on_pos 每个 tick 从 loop_a 反复 seek——表现为播放头
+        # 原地抖动。校验兜底，必要时先清掉另一端。
+        if self._loop_b is not None and self._loop_a is not None \
+                and self._loop_b < self._loop_a:
+            self._loop_b = None
 
     def set_loop_b(self, t: Optional[float] = None) -> None:
         self._loop_b = self.position() if t is None else t
+        if self._loop_a is not None and self._loop_b is not None \
+                and self._loop_b < self._loop_a:
+            self._loop_a = None
 
     def clear_loop(self) -> None:
         self._loop_a = self._loop_b = None

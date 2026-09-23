@@ -89,6 +89,7 @@ class TranscribeWorker(_BaseWorker):
         self.video_path = video_path
         self.cfg = cfg
         self.keep_audio = keep_audio
+        self.current_wav = ""          # 提取出的临时 wav 路径，供退出兜底清理
 
     def run(self) -> None:
         wav = ""
@@ -106,6 +107,7 @@ class TranscribeWorker(_BaseWorker):
 
             wav = media.extract_audio(self.video_path, progress=_ext,
                                       cancel=self.cancelled)
+            self.current_wav = wav
             if self.cancelled():
                 self.sig_failed.emit("已取消。")
                 return
@@ -137,6 +139,7 @@ class TranscribeWorker(_BaseWorker):
             tb = traceback.format_exc()
             self.sig_failed.emit(str(e) or tb.splitlines()[-1])
         finally:
+            self.current_wav = ""
             if wav and not self.keep_audio:
                 try:
                     if os.path.isfile(wav) and "audio" in wav:

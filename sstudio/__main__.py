@@ -207,26 +207,65 @@ def main(argv=None) -> int:
     # 加载文件回调里）抛出的异常不走那条路径。打包版是窗口程序、没有控制台，
     # 用户只会看到窗口突然消失，什么线索都不剩。这里挂一个钩子，至少把完整
     # traceback 落到 crash.log，并提示日志位置。
+    from sstudio.core.config import data_dir as _dd
+    _crash_log = os.path.join(_dd(), "crash.log")
+
+    def _append_crash(title: str, text: str) -> None:
+        # 追加而不是覆盖：连续两次崩溃时上一次的现场还在，别抹掉
+        try:
+            import datetime as dt
+            with open(_crash_log, "a", encoding="utf-8") as f:
+                f.write(f"\n# {title}  {dt.datetime.now().isoformat(timespec='seconds')}\n")
+                f.write(text)
+        except Exception:
+            pass
+
     def _hook(etype, value, tb):
         import traceback
         traceback.print_exception(etype, value, tb)
         try:
-            import datetime as dt
-            from sstudio.core.config import data_dir
-            p = os.path.join(data_dir(), "crash.log")
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(f"# 运行期异常  {dt.datetime.now().isoformat(timespec='seconds')}\n\n")
-                traceback.print_exception(etype, value, tb, file=f)
+            _append_crash("运行期异常", traceback.format_exc())
             try:
                 from PyQt5.QtWidgets import QMessageBox
                 QMessageBox.critical(win if win.isVisible() else None,
                                      "Subtitle Studio 遇到问题",
-                                     "操作触发了一个错误，详情已保存到：\n\n" + p)
+                                     "操作触发了一个错误，详情已保存到：\n\n" + _crash_log)
             except Exception:
                 pass
         except Exception:
             pass
     sys.excepthook = _hook
+
+    def _unraisable_hook(ua):
+        # 解释器拆机阶段 Qt 调不进 Python 的异常走 unraisablehook，此前无人接
+        try:
+            import traceback
+            obj = getattr(ua, "object", None)
+            exc = getattr(ua, "exc_value", None)
+            _append_crash("析构期异常", "".join(
+                traceback.format_exception(type(exc), exc, getattr(exc, "__traceback__", None))
+            ) if exc else f"{ua!r}  (对象: {obj!r})\n")
+        except Exception:
+            pass
+    sys.unraisablehook = _unraisable_hook
+
+    # Qt 侧消息（qWarning/qCritical）也要落盘：窗口 exe 没有控制台，
+    # "DirectShow player service not found" 这类 0xC0000005 前兆只出现在
+    # 这里，不接住的话 crash.log 里一个字都不会有
+    try:
+        from PyQt5.QtCore import qInstallMessageHandler
+
+        def _qt_msg(mode, ctx, message):
+            try:
+                label = {0: "DEBUG", 1: "WARN", 2: "CRIT", 3: "FATAL", 4: "INFO"}.get(
+                    int(mode), "MSG")
+                _append_crash(f"Qt {label}",
+                              f"{message}  (文件 {ctx.file}:{ctx.line})\n")
+            except Exception:
+                pass
+        qInstallMessageHandler(_qt_msg)
+    except Exception:
+        pass
 
     return app.exec_()
 

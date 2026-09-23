@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu
                              QTextEdit)
 
 from ..core.model import Cue, sec_to_ts
-from .theme import _crisp, is_dark, monospace, state_color, state_text, status_hex
+from .theme import is_dark, monospace, state_color, state_text, status_hex
 
 COL_NO, COL_S, COL_E, COL_D, COL_STATE, COL_TEXT = range(6)
 
@@ -87,12 +87,27 @@ class CueTable(QTableWidget):
         self._suppress_rows = set()
 
     # ------------------------------------------------------------ 渲染
+    # 模块级样式缓存：(state, dark) → (QColor badge, QColor text-bg)。
+    # 渲染热路径每行 2~3 次新建 dict+QColor+QBrush（5000 行即上万个临时
+    # 对象），LLM 流式回填又走 mark_row_llm 逐条触发——统一查这里
+    _style_cache: dict = {}
+
+    @classmethod
+    def _styles(cls, state: str, dark: bool):
+        ck = (state, dark)
+        v = cls._style_cache.get(ck)
+        if v is None:
+            v = (_state_badge(state, dark), state_color(state, dark))
+            cls._style_cache[ck] = v
+        return v
+
     def render(self, cues: List[Cue], select_row: int = -1) -> None:
         self._suspend = True
         prev_sel = self.currentRow()
         self.clearContents()
         self.setRowCount(len(cues))
         dark = is_dark()
+        err_hex = status_hex("err")
         for r, c in enumerate(cues):
             no = QTableWidgetItem(str(r + 1))
             no.setFont(self._mono)
@@ -115,10 +130,11 @@ class CueTable(QTableWidget):
                 d.setForeground(QBrush(QColor("#ff6b6b") if dark else QColor("#d13438")))
             self.setItem(r, COL_D, d)
 
+            badge, bg = self._styles(c.state, dark)
             st = QTableWidgetItem(state_text(c.state))
             st.setTextAlignment(Qt.AlignCenter)
             st.setFlags(st.flags() & ~Qt.ItemIsEditable)
-            st.setBackground(QBrush(_state_badge(c.state, dark)))
+            st.setBackground(QBrush(badge))
             self.setItem(r, COL_STATE, st)
 
             tx = QTableWidgetItem(c.display_text)
@@ -126,13 +142,11 @@ class CueTable(QTableWidget):
             tx.setFont(self._body)
             tx.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap)
             tx.setToolTip(_tip(c))
-            col = state_color(c.state, dark)
-            if col.alpha():
-                tx.setBackground(QBrush(col))
+            if bg.alpha():
+                tx.setBackground(QBrush(bg))
             if c.state == "review":
                 # 待复查：暗色亮红 / 浅色深红，两种皮肤都保持高对比
-                tx.setForeground(QBrush(QColor(status_hex("err"))))
-                f2 = QFont(tx.font()); _crisp(f2); tx.setFont(f2)
+                tx.setForeground(QBrush(QColor(err_hex)))
             self.setItem(r, COL_TEXT, tx)
 
             h = max(34, min(150, 20 + 16 * (c.display_text.count("\n") + 1)
@@ -148,8 +162,9 @@ class CueTable(QTableWidget):
             self._suppress_rows.add(row)
             self.item(row, COL_TEXT).setData(Qt.EditRole, cue.display_text)
             self.item(row, COL_TEXT).setText(cue.display_text)
+            badge, _ = self._styles(cue.state, is_dark())
             self.item(row, COL_STATE).setText(state_text(cue.state))
-            self.item(row, COL_STATE).setBackground(QBrush(_state_badge(cue.state, is_dark())))
+            self.item(row, COL_STATE).setBackground(QBrush(badge))
             self._suppress_rows.discard(row)
 
     def mark_row_llm(self, row: int, text: str) -> None:
@@ -157,12 +172,13 @@ class CueTable(QTableWidget):
         if not (0 <= row < self.rowCount()):
             return
         it = self.item(row, COL_TEXT)
+        badge, bg = self._styles("llm", is_dark())
         self._suppress_rows.add(row)
         it.setData(Qt.EditRole, text)
         it.setText(text)
         self.item(row, COL_STATE).setText(state_text("llm"))
-        self.item(row, COL_STATE).setBackground(QBrush(_state_badge("llm", is_dark())))
-        it.setBackground(QBrush(state_color("llm", is_dark())))
+        self.item(row, COL_STATE).setBackground(QBrush(badge))
+        it.setBackground(QBrush(bg))
         self._suppress_rows.discard(row)
 
     def jump(self, row: int) -> None:

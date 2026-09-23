@@ -128,11 +128,17 @@ def _parse_dur(line: str) -> float:
         return 0.0
 
 
-def _run(cmd: List[str], merge_stderr: bool = False) -> str:
+def _run(cmd: List[str], merge_stderr: bool = False, timeout: float = 30.0) -> str:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", creationflags=_flags())
+                           errors="replace", timeout=timeout,
+                           creationflags=_flags())
         return (r.stdout or "") + ((r.stderr or "") if merge_stderr else "")
+    except subprocess.TimeoutExpired:
+        # 损坏/网络流文件会让 ffmpeg 挂死：超时返回错误标记，
+        # 上层当探测失败处理（没有时长 → 走 PyAV 兜底或报错），
+        # 绝不能在 cancel 生效之前把整条转写链挂死
+        return "__ERR__timeout"
     except Exception as e:
         return f"__ERR__{e}"
 
@@ -242,6 +248,10 @@ def _extract_with_pyav(path: str, out_wav: str, sr: int,
                         last_report = pos
                         progress(f"正在解码音频… {_si(pos)} / {_si(total)}",
                                  min(0.999, pos / total))
+            # flush 重采样器：否则缓冲区里残留的音频尾部（最后不足一帧的
+            # 部分）被丢掉——字幕最后一条的结束时间会超出音频长度零点几秒
+            for rf in resampler.resample(None):
+                wf.writeframes(rf.to_ndarray().tobytes())
     finally:
         c.close()
     return out_wav

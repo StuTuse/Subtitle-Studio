@@ -15,7 +15,7 @@ from .theme import is_dark
 class Timeline(QWidget):
     seek_requested = pyqtSignal(float)
     cue_clicked = pyqtSignal(int)
-    cue_range = pyqtSignal(int, int)     # 框选 (start_idx, end_idx)
+    cue_range = pyqtSignal(list)         # 框选命中的完整行列表（含空隙剔除）
 
     HEIGHT = 74
 
@@ -35,13 +35,22 @@ class Timeline(QWidget):
         # 一根线，不必重跑几千条色块的循环（实测 8000 条 16.8ms/帧 → <1ms）。
         self._cache: Optional[QPixmap] = None
         self._cache_key = None
+        self._content_token = 0       # 字幕内容变更计数（含时间），缓存据此失效
 
     # ------------------------------------------------------------ API
     def set_document(self, doc: Optional[CueDocument]) -> None:
         self.doc = doc
         if doc:
             self.duration = max(1.0, doc.duration or doc.end_time or 1.0)
-        self.update()
+        self.content_changed()
+
+    def content_changed(self) -> None:
+        """字幕内容/时间变了：递增 token。paintEvent 比对 key 时才真正
+        重建 pixmap——把"清缓存"和"重建"分开，避免重建本身又把 key 刷新、
+        旧内容从此赖在缓存里不走的死循环。"""
+        self._content_token += 1
+        self._cache = None
+        self._repaint()
 
     def set_position(self, sec: float) -> None:
         if abs(sec - self.position) < 0.01:
@@ -51,9 +60,11 @@ class Timeline(QWidget):
         self._repaint()
 
     def update(self) -> None:  # noqa: A003
-        # 外部调 update() 都表示"字幕内容/尺寸变了"：作废静态层缓存。
-        # 播放头每帧的移动走 _repaint()，不走到这里。
-        self._cache = None
+        # 外部调 update() 都表示"字幕内容变了"：与 content_changed() 等价。
+        # 不清 pixmap、只递增 token——曾被滥用为"重画请求"，LLM 纠错期间
+        # 每个 position tick 都把缓存清掉，几千条色块以 10Hz 重跑，
+        # 缓存形同虚设。真正的内容变化走 content_changed()。
+        self._content_token += 1
         self._repaint()
 
     def _repaint(self) -> None:
@@ -125,8 +136,12 @@ class Timeline(QWidget):
             return
         dark = is_dark()
         dur = max(1.0, self.duration)
-        key = (w, h, dark, dur, id(self.doc),
-               len(self.doc.cues) if self.doc else -1)
+        # 内容 token 是缓存失效的唯一权威：任何一次 resize/重 polish 引发的
+        # update() 只递增 token 不清 pixmap；只有 token/尺寸/主题真变了才重建。
+        # 旧实现"update() 清缓存 + paintEvent 重建后写回 key"会互相把 key
+        # 刷新，改了 cues 但没调 update() 的路径（split/merge/apply_llm_text）
+        # 色块就一直停在旧内容。
+        key = (self._content_token, w, h, dark, dur, id(self.doc))
         if self._cache is None or self._cache_key != key:
             self._cache = self._build_static(w, h, dark)
             self._cache_key = key
@@ -183,7 +198,9 @@ class Timeline(QWidget):
             a, b = sorted([self._drag_start or 0.0, self._sec_at(e.x())])
             idx = [i for i, c in enumerate(self.doc.cues) if c.start < b and c.end > a]
             if idx:
-                self.cue_range.emit(idx[0], idx[-1])
+                # 传完整命中列表：按 (首,尾) 区间选会把空隙里没覆盖到的
+                # 字幕一并选中，后续删除/移动误伤
+                self.cue_range.emit(idx)
         self._press_x = None
         self._drag_start = None
 

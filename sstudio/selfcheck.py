@@ -45,7 +45,27 @@ def run_check() -> int:
         row("PyQt-Fluent-Widgets", False, f"pip install PyQt-Fluent-Widgets  ({e})")
     try:
         import PyQt5.QtMultimedia  # noqa
-        row("QtMultimedia", True, "视频预览可用")
+        # import 成功 ≠ 能放视频：DirectShow/WMF 是运行期插件，真正决定
+        # 预览可用的是 mediaservice 后端 dll 是否在位（本项目已知其拆机
+        # 崩溃史）。这里按"后端插件在位"给结论，措辞相应降级。
+        import PyQt5.QtCore as _qc
+        plugin_roots = []
+        if getattr(sys, "frozen", False):
+            plugin_roots.append(os.path.join(sys._MEIPASS, "PyQt5", "Qt5", "plugins")
+                                if hasattr(sys, "_MEIPASS") else
+                                os.path.join(os.path.dirname(sys.executable)))
+        plugin_roots.append(os.path.join(os.path.dirname(_qc.__file__), "Qt5", "plugins"))
+        plugin_roots.append(os.path.join(os.path.dirname(_qc.__file__), "plugins"))
+        found_backend = any(
+            os.path.isdir(os.path.join(root, "mediaservice"))
+            and any(f.lower().startswith(("dsengine", "wmfengine", "qwindows"))
+                    for f in os.listdir(os.path.join(root, "mediaservice")))
+            for root in plugin_roots)
+        if found_backend:
+            row("QtMultimedia", True, "后端插件在位（预览通常可用）")
+        else:
+            warn("QtMultimedia", False,
+                 "未找到 DirectShow/WMF 后端插件——视频预览可能不可用（不影响字幕功能）")
     except Exception as e:
         row("QtMultimedia", False, "pip install PyQt5（含 Multimedia）")
 
