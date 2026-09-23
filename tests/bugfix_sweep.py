@@ -1282,4 +1282,14 @@ check("rc==0 且体积 >1KB 才认成品", "getsize(out_wav) > 1024" in _src89)
 _src89b = _insp89.getsource(_md89._run)
 check("probe 超时返回错误标记不挂死", "__ERR__timeout" in _src89b)
 
+section("70. 撤销栈语义（第 90 轮钉子）")
+import inspect as _insp90  # noqa: E402
+from sstudio.ui.editor_page import EditorInterface as _ED90  # noqa: E402
+_src90 = _insp90.getsource(_ED90.push_undo)
+check("上限 60 保留最近步骤", "del self._undo[:-60]" in _src90)
+check("新步骤清空 redo", "self._redo.clear()" in _src90)
+_src90b = _insp90.getsource(_ED90._on_text_changed)
+check("改文本先 push_undo 再落", "self.push_undo()" in _src90b)
+check("内容相同不产生空步骤", "if cue.display_text == text:" in _src90b)
+
 raise SystemExit(finish())
