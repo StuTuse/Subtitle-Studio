@@ -538,7 +538,9 @@ class FasterWhisperEngine:
                         confidence=round(sum(probs) / len(probs), 3) if probs else None,
                         words=words,
                     ))
-                if progress and total and cues:
+                if progress and total:
+                    # 不要求 cues 非空：长静音开头（VAD 后第一句在数分钟
+                    # 处）时 0% 挂几分钟，进度条看着像卡死
                     pos = float(seg.end)
                     progress(f"识别中 {pos / total * 100:.0f}%", min(0.999, pos / total))
             return cues, info
