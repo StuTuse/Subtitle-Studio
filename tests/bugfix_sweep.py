@@ -532,4 +532,36 @@ _frd2.close()
 check("必需组件缺失时 X 关窗被拦下（窗未销毁）", _frd2.isVisible() or not _frd2.testAttribute(1030))
 check("被拦下的关窗置了 abort_app（退出程序语义）", _frd2.abort_app is True)
 
+section("20. 本机网关空 Key 不拦（测试连接与运行纠错行为一致）")
+# 回归：手动填 http://127.0.0.1:11434/v1（Ollama）时 kind 仍是默认 "openai"，
+# fix_document 的空 Key 检查把它拦下——「测试连接」能过、「运行纠错」报
+# "尚未配置 API Key"，同一服务两个入口互相矛盾。
+from sstudio.core import llm as _llm  # noqa: E402
+_cfg_l = Config()
+_cfg_l.profiles[0].api_key = ""
+_cfg_l.profiles[0].base_url = "http://127.0.0.1:11434/v1"
+_cfg_l.profiles[0].kind = "openai"
+_doc_l = CueDocument(cues=[Cue(0, 1, "你好")])
+try:
+    _r = _llm.fix_document(_cfg_l, _doc_l.cues, progress=None, cancel=None)
+    _fails = " ".join(_r.failures)
+except _llm.LLMPartialError as e:
+    # 本机没跑 Ollama：连接被拒 → 全局止损是正常路径；关键是不能再报
+    # "尚未配置 API Key"（空 Key 拦截必须给本机网关放行）
+    _fails = str(e) + " ".join(e.partial_result.failures)
+check("本机网关空 Key 不再报『尚未配置 API Key』（连不上走正常失败路径）",
+      "API Key" not in _fails, _fails[:160])
+_cld = Config()
+_cld.profiles[0].api_key = ""
+_cld.profiles[0].base_url = "https://api.deepseek.com/v1"
+try:
+    _llm.fix_document(_cld, [Cue(0, 1, "你好")])
+    check("云端空 Key 仍被拦截", False, "未抛异常")
+except _llm.LLMError as e:
+    check("云端空 Key 仍被拦截", "API Key" in str(e), str(e))
+check("localhost / *.local 同样放行",
+      _llm._is_local_base("http://localhost:1234/v1")
+      and _llm._is_local_base("http://box.local:8080/v1")
+      and not _llm._is_local_base("https://api.deepseek.com/v1"))
+
 raise SystemExit(finish())

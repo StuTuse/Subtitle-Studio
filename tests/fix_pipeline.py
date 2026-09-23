@@ -138,11 +138,25 @@ except Exception as e:
 
 section("5. 取消与无 Key")
 llm.chat = good_chat
+# 空 Key 拦截只针对云端：本机网关（127.0.0.1）不设 Key 是常态，
+# 拦了会跟「测试连接」自相矛盾（见 bugfix_sweep 第 20 节）。这里换
+# 云端地址验证拦截仍然生效。
+_cfg_nk = make_cfg(api_key="")
+_cfg_nk.profiles[0].base_url = "https://api.deepseek.com/v1"
 try:
-    llm.fix_document(make_cfg(api_key=""), make_cues(), progress=None)
+    llm.fix_document(_cfg_nk, make_cues(), progress=None)
     check("未填 Key 时报可读错误", False, "没抛异常")
 except llm.LLMError as e:
     check("未填 Key 时报可读错误", "API Key" in str(e), str(e)[:40])
+# 本机地址 + 空 Key：放行（chat 已 stub 成功路径，应当正常跑完，
+# 绝不能在参数检查就报"尚未配置 API Key"挡死）
+try:
+    _r_loc = llm.fix_document(make_cfg(api_key=""), make_cues(), progress=None)
+    check("本机网关空 Key 不在参数检查被拦（正常跑完）",
+          _r_loc.changed > 0, f"changed={_r_loc.changed}")
+except llm.LLMError as e:
+    check("本机网关空 Key 不在参数检查被拦（正常跑完）",
+          "尚未配置" not in str(e), str(e)[:40])
 
 cancelled = {"n": 0}
 

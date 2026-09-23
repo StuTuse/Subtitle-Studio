@@ -491,13 +491,28 @@ def sanity_check(src: str, dst: str) -> Optional[str]:
 
 
 # ------------------------------------------------------------------ 修正流程
+def _is_local_base(base_url: str) -> bool:
+    """Ollama / LM Studio 这类本机网关不设 Key；空 Key 不该被拦。"""
+    try:
+        host = re.sub(r"^https?://", "", (base_url or "").strip().lower())
+        host = host.split("/")[0].rsplit("@", 1)[-1].split(":")[0]
+        return host in ("127.0.0.1", "localhost", "::1") or host.endswith(".local")
+    except Exception:
+        return False
+
+
 def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                  cancel: Cancel = None, on_cue: Optional[Callable[[int, str], None]] = None,
                  extra: str = "") -> FixResult:
     """批量纠错。extra 是"本轮补充指令"：只进本次提示词，不写回 cfg.glossary
     （曾经拼进术语表并保存，点一次运行就在持久配置里叠一份，越滚越大）。"""
     prof = cfg.profile()
-    if not prof.api_key and prof.kind != "ollama":
+    # 空 Key 拦截只该针对真·云端：本机网关（127.0.0.1 / localhost / *.local）
+    # 不需要 Key。此前只放行 kind=="ollama"，而 kind 只有走预设下拉才会被
+    # 标上——手动填本地地址时 kind 仍是 "openai"，于是「测试连接」能过、
+    # 一点「运行纠错」却报"尚未配置 API Key"，同一服务两个入口互相矛盾。
+    if (not prof.api_key and prof.kind != "ollama"
+            and not _is_local_base(prof.base_url)):
         raise LLMError("尚未配置 API Key。请到「模型设置」里填写。")
     bundle = PromptBundle.from_cfg(cfg)
     glossary = (cfg.glossary or "").strip()
