@@ -910,4 +910,20 @@ check("markdown 围栏剥离", _r39c[1] == "A" and _r39c[2] == "B")
 _r39d = _pn39("[1] 第一句。\n这不是续行", range(1, 2))
 check("完整句后的新内容不并回", _r39d[1] == "第一句。", repr(_r39d[1]))
 
+section("40. CHANGELOG 段落格式一致性（第 43 轮钉子）")
+import re as _re40  # noqa: E402
+import os as _os40  # noqa: E402
+_log40 = open(_os40.path.join(_os40.path.dirname(
+    _os40.path.dirname(_os40.path.abspath(__file__))), "CHANGELOG.md"),
+    encoding="utf-8").read()
+_heads40 = _re40.findall(r"^## \[([\d.]+)\]", _log40, _re40.M)
+check("CHANGELOG 至少 5 个版本段落", len(_heads40) >= 5, str(_heads40[:3]))
+_bad40 = []
+for _h in _heads40[:5]:
+    _m = _re40.search(r"## \[" + _re40.escape(_h) + r"\][^\n]*\n+([^\n#]+)", _log40)
+    _first = (_m.group(1) if _m else "").strip()
+    if not _first.startswith("v" + _h + "："):
+        _bad40.append(_h)
+check("近 5 版开头均为 vX.Y.Z： 格式", not _bad40, repr(_bad40))
+
 raise SystemExit(finish())
