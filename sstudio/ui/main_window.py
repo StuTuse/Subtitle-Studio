@@ -57,6 +57,8 @@ class MainWindow(FluentWindow):
         self._close_box = None         # 退出确认框（信号模式，须保引用）
         self._prog_pending = None      # 进度节流：被丢弃的最新一帧
         self._prog_timer = QTimer(self)   # 转写进度节流定时器
+        self._autosave_worker = None   # 自动保存线程（单飞，见 _auto_save）
+        self._dirty_gen = 0            # dirty 代数：自动保存完成时复核用
         self._prog_timer.setSingleShot(True)
         self._prog_timer.timeout.connect(self._flush_progress)
 
@@ -313,13 +315,36 @@ class MainWindow(FluentWindow):
             QTimer.singleShot(2500, self._auto_save)
 
     def _auto_save(self) -> None:
-        if self._dirty and self.doc and self.doc.path:
-            try:
-                _atomic_write_text(self.doc.path, self.doc.to_json())
-                self._dirty = False
-                self._update_title()
-            except OSError:
-                pass
+        if not (self._dirty and self.doc and self.doc.path):
+            return
+        if self._autosave_worker is not None:
+            return          # 上一次自动保存还没落地：下次 mark_dirty 会再排
+        doc, path = self.doc, self.doc.path
+        gen = self._dirty_gen          # 快照代数：线程跑序列化期间可能又脏了
+        self._dirty_gen += 1
+        # 5000 条字幕 to_json ~150ms（含词级时间戳更多），放 UI 线程每次
+        # 自动保存都卡一下；序列化是纯内存只读，丢给工作线程跑，写盘也在
+        # 线程里做（同一份字符串）。完成后按代数复核：期间没再编辑才清脏标。
+        from .workers import ThreadedCall
+
+        def _serialize_and_write() -> str:
+            _atomic_write_text(path, doc.to_json())
+            return path
+
+        w = ThreadedCall(_serialize_and_write)
+        self._autosave_worker = w
+        w.sig_done.connect(lambda _p: self._autosave_done(gen))
+        w.sig_failed.connect(lambda _m: self._autosave_done(gen))
+        w.start()
+
+    def _autosave_done(self, gen: int) -> None:
+        from .workers import reap
+        reap(self._autosave_worker)
+        self._autosave_worker = None
+        if gen == self._dirty_gen - 1 and self._dirty:
+            # 序列化期间没有新编辑：这次写盘内容就是最新状态
+            self._dirty = False
+            self._update_title()
 
     def _update_title(self) -> None:
         # 空字幕 doc 布尔为 False：统一用 is not None，否则导入后标题显示"未命名"
@@ -620,6 +645,15 @@ class MainWindow(FluentWindow):
         except RuntimeError:
             pass
         stragglers = False
+        # 自动保存线程也要等：它持有 doc 引用在后台序列化，不等就 os._exit
+        # 的话写盘可能落在半截（tmp+replace 保证不会截断目标文件，但还是等）
+        aw = self._autosave_worker
+        if aw is not None:
+            try:
+                if not aw.wait(1500):
+                    stragglers = True
+            except RuntimeError:
+                pass
         # 三个线程统一走一个 6s 总预算：原来最坏 3×5s 串行等 15s，
         # 期间 UI 冻结，看起来像死机
         deadline = time.monotonic() + 6.0

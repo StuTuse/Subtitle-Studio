@@ -855,9 +855,7 @@ class EditorInterface(QWidget):
         曾按 (首,尾) 连续区间选：框选划过一段含空隙的区域时，空隙里用户
         没覆盖到的字幕也被一并选中，随后的删除/移动误伤。"""
         self.table.clearSelection()
-        from PyQt5.QtWidgets import QAbstractItemView as _AIV
         from PyQt5.QtCore import QItemSelectionModel as _ISM
-        from PyQt5.QtCore import QModelIndex as _MI
         for r in rows:
             if 0 <= r < self.table.rowCount():
                 idx = self.table.model().index(r, 0)

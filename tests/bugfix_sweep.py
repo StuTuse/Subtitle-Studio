@@ -571,4 +571,44 @@ check("<0.5s 过短标警（此前编辑器里看不见）", _dw(Cue(0, 0.3, "x"
 check(">9 字/秒过快标警", _dw(Cue(0, 1.0, "这是一段非常长的文本内容超快")) != "")
 check("正常条目不标警", _dw(Cue(0, 2.0, "正常字幕")) == "")
 
+section("22. 自动保存移出 UI 线程（5000 条 to_json ~150ms 不再卡编辑）")
+import os as _os  # noqa: E402
+import json as _json  # noqa: E402
+ROOT_MW = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                        "sstudio", "ui", "main_window.py")
+src_mw = open(ROOT_MW, encoding="utf-8").read()
+check("_auto_save 走 ThreadedCall",
+      "ThreadedCall(_serialize_and_write)" in src_mw)
+check("自动保存完成按代数复核，编辑中不误清脏标",
+      "_autosave_done" in src_mw and "_dirty_gen" in src_mw)
+check("closeEvent 等待自动保存线程收尾",
+      "aw.wait(1500)" in src_mw)
+# 行为冒烟：offscreen 下真跑一次自动保存（临时工程文件）
+_qapp = QApplication.instance() or QApplication([])
+from PyQt5.QtCore import QEventLoop, QTimer  # noqa: E402
+from sstudio.core.model import Cue as _Cue, CueDocument as _CD  # noqa: E402
+from sstudio.ui.main_window import MainWindow as _MW  # noqa: E402
+with TempDir() as _td:
+    _mw = _MW.__new__(_MW)     # 跳过完整 UI 构建，只挂自动保存所需状态
+    _mw._dirty = True
+    _mw._dirty_gen = 0
+    _mw._autosave_worker = None
+    _mw._closing = False
+    _doc = _CD(cues=[_Cue(0.0, 1.0, "自动保存冒烟")])
+    _doc.path = _os.path.join(_td, "autosave.ssp")
+    _mw.doc = _doc
+    _mw.cfg = type("C", (), {"auto_save": True})()
+    _mw._update_title = lambda: None
+    _mw._auto_save()
+    check("自动保存线程已启动", _mw._autosave_worker is not None)
+    _loop = QEventLoop()
+    QTimer.singleShot(3000, _loop.quit)
+    _mw._autosave_worker.sig_done.connect(lambda _o: _loop.quit())
+    _loop.exec_()
+    _disk = _json.loads(open(_doc.path, encoding="utf-8").read())
+    check("字幕落盘且内容完整",
+          len(_disk.get("cues", [])) == 1 and
+          _disk["cues"][0]["text"] == "自动保存冒烟")
+    check("完成后清脏标", _mw._dirty is False)
+
 raise SystemExit(finish())
