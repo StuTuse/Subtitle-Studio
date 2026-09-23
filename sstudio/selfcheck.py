@@ -54,6 +54,11 @@ def run_check() -> int:
             plugin_roots.append(os.path.join(sys._MEIPASS, "PyQt5", "Qt5", "plugins")
                                 if hasattr(sys, "_MEIPASS") else
                                 os.path.join(os.path.dirname(sys.executable)))
+        # onedir 布局的 PyInstaller 6.x 不保证设置 sys._MEIPASS（有时只在
+        # onefile 有）：无论哪种形态，dist 根下的 PyQt5/Qt5/plugins 都是
+        # 真实安装位置，补一条兜底避免误报"后端插件未找到"
+        plugin_roots.append(os.path.join(os.path.dirname(sys.executable),
+                                         "PyQt5", "Qt5", "plugins"))
         plugin_roots.append(os.path.join(os.path.dirname(_qc.__file__), "Qt5", "plugins"))
         plugin_roots.append(os.path.join(os.path.dirname(_qc.__file__), "plugins"))
         found_backend = any(
