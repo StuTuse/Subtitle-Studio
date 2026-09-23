@@ -761,4 +761,16 @@ with TempDir() as _td28:
         _doc28.cues[1].text = _doc28.cues[1].text + "x"
     check("undo 栈封顶 60", len(_ed._undo) == 60, len(_ed._undo))
 
+section("29. revert 不清空从未改过的行（第 26 轮修复钉子）")
+_mix = _CD(cues=[
+    _Cue(0, 1, "被 LLM 改过", original_text="原始甲", state="llm"),
+    _Cue(2, 3, "从未改过", state="asr"),
+])
+for _c29 in _mix.cues:
+    if _c29.original_text:
+        _c29.text = _c29.original_text
+    _c29.state = "asr"
+check("改过的行回到原始文本", _mix.cues[0].text == "原始甲")
+check("从未改过的行文本保留", _mix.cues[1].text == "从未改过", repr(_mix.cues[1].text))
+
 raise SystemExit(finish())

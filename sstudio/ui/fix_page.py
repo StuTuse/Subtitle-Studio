@@ -385,7 +385,9 @@ class FixInterface(QWidget):
             return
         self.main.editor.push_undo()
         for c in doc.cues:
-            c.text = c.original_text
+            # original_text 为空 = 这行从未被改过；直接赋值会清空文本
+            if c.original_text:
+                c.text = c.original_text
             c.state = "asr"
         self.main.editor.table.render(doc.cues)
         self.main.editor.mark_all_llm()

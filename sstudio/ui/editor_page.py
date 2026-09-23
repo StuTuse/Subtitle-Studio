@@ -705,7 +705,10 @@ class EditorInterface(QWidget):
             self.push_undo()
             for r in rows:
                 c = doc.cues[r]
-                c.text = c.original_text
+                # original_text 为空 = 这行从未被改过（LLM/手动编辑都会先
+                # 补 original）；此时直接赋值会把文本清成空串
+                if c.original_text:
+                    c.text = c.original_text
                 c.state = "asr"
             self.table.render(doc.cues, rows[0])
         elif action == "strip_punct":
