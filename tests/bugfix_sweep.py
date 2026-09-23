@@ -789,4 +789,15 @@ _pw.toggle_mute()
 _pw.toggle_mute()
 check("多次切换后仍记住最近非零音量", _pw.volume() == 65, _pw.volume())
 
+section("31. 负时间戳导出钳 0：ASS/LRC 与 SRT/VTT 一致（第 28 轮修复钉子）")
+from sstudio.core.formats import to_srt as _to_srt31, to_ass as _to_ass31, \
+    to_lrc as _to_lrc31, _ass_time as _at31  # noqa: E402
+_doc31 = _CD(cues=[_Cue(-2.5, 1, "负开始")])
+check("SRT 时间码钳 0", "00:00:00,000" in _to_srt31(_doc31))
+check("ASS 时间码钳 0", _at31(-2.5) == "0:00:00.00", _at31(-2.5))
+check("ASS Dialogue 不再负时间", "-1:" not in _to_ass31(_doc31))
+_lrc31 = _to_lrc31(_doc31)
+check("LRC 时间码钳 0", _lrc31.startswith("[00:00.00]"), _lrc31)
+check("正常时间不受影响", _at31(3661.5) == "1:01:01.50")
+
 raise SystemExit(finish())

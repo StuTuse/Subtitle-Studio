@@ -400,6 +400,8 @@ def to_vtt(doc: CueDocument) -> str:
 
 
 def _ass_time(sec: float) -> str:
+    if sec is None or sec < 0:
+        sec = 0.0        # 负时间在 ASS 玩家非法，与 sec_to_ts 同样钳 0
     total_cs = int(round(sec * 100))
     cs = total_cs % 100
     s = total_cs // 100
@@ -525,8 +527,9 @@ def to_html(doc: CueDocument) -> str:
 def to_lrc(doc: CueDocument) -> str:
     out = []
     for c in doc.cues:
-        m = int(c.start // 60)
-        s = c.start - m * 60
+        start = max(0.0, c.start or 0.0)   # 负时间在 LRC 非法，钳 0
+        m = int(start // 60)
+        s = start - m * 60
         out.append(f"[{m:02d}:{s:05.2f}]{c.display_text.strip()}")
     return "\n".join(out)
 
