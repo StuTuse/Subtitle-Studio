@@ -2202,4 +2202,22 @@ _d151e.cues = [_Cue147(start=0, end=1, text="A", speaker="甲"),
                _Cue147(start=1.2, end=2, text="B", speaker="乙")]
 check("说话人切换不衔接", _d151e.close_gaps(0.35) == (0, 0.0))
 
+section("133. 版本模块语义实测（第 152 轮钉子）")
+import sstudio.version as _V152  # noqa: E402
+check("模块版本读自 VERSION 文件", _V152.__version__ == "1.17.158")
+check("读文件函数剥 vV 前缀", _V152._read_version_file() == "1.17.158")
+check("normalize 好格式原样", _V152._normalize("1.17.158") == "1.17.158")
+check("normalize 坏格式回落 0.0.0", _V152._normalize("v1.2.3") == "0.0.0"
+      and _V152._normalize("abc") == "0.0.0" and _V152._normalize("") == "0.0.0")
+check("version_tuple 四段", _V152.version_tuple("1.17.158") == (1, 17, 158, 0))
+check("version_tuple 坏值四零", _V152.version_tuple("abc") == (0, 0, 0, 0))
+check("is_release 正式版 True", _V152.is_release("1.17.158") is True)
+check("is_release 拒 dev 后缀", _V152.is_release("1.17.158-dev") is False
+      and _V152.is_release("1.17.158+build1") is False)
+_d152 = _V152.version_info()
+check("version_info 字段齐", _d152["version"] == "1.17.158" and _d152["release"] is True
+      and _d152["frozen"] is False and isinstance(_d152["tuple"], tuple))
+_check152 = _V152.describe()
+check("describe 含版本与提交", "1.17.158" in _check152 and "Subtitle Studio" in _check152)
+
 raise SystemExit(finish())
