@@ -1386,4 +1386,20 @@ check("原子替换写成品", "os.replace(tmp, out)" in _src98c)
 check("对齐 GUI close_gaps", "auto_close_gaps" in _src98c)
 check("纠错全败退出码 3", "return 3 if not fix_ok else 0" in _src98c)
 
+section("79. 设置页模型值路由与 docx 读取（第 99 轮钉子）")
+import inspect as _insp99  # noqa: E402
+from sstudio.ui.settings_page import SettingsInterface as _SI99, _read_docx as _rd99  # noqa: E402
+_src99 = _insp99.getsource(_SI99.model_value)
+check("手输路径 isdir 直用", "os.path.isdir(typed)" in _src99)
+check("手输模型名白名单正则", "re.match(r\"^[a-z0-9._\\-/]+$\", low)" in _src99)
+check("下拉显示文本优先取 data", "self.model.findText(typed)" in _src99)
+try:
+    _rd99("tests\\bugfix_sweep.py")
+    _ok99 = False, "没抛"
+except ValueError as e99:
+    _ok99 = "Word 文档" in str(e99), str(e99)[:40]
+except Exception as e99:
+    _ok99 = False, type(e99).__name__
+check("伪 docx 异常转可读 ValueError", _ok99[0], _ok99[1])
+
 raise SystemExit(finish())

@@ -977,6 +977,11 @@ def _read_docx(fp: str) -> str:
     except KeyError:
         # 扩展名是 .docx 但不是 Word 包（或已损坏）：KeyError 文案用户看不懂
         raise ValueError("这不是有效的 Word 文档（缺 word/document.xml），请另存为 .docx 再导入")
+    except zipfile.BadZipFile as e:
+        # 伪 docx（改了扩展名的文本/其它二进制）根本不是 zip 包：
+        # 裸 "File is not a zip file" 用户看不懂，与 KeyError 同样转可读文案
+        raise ValueError("这不是有效的 Word 文档（无法按 zip 解包），"
+                         "请确认文件是真正的 .docx 再导入") from e
     root = ET.fromstring(xml)
     ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     lines = []
