@@ -1533,4 +1533,17 @@ check("框选发完整命中列表", "self.cue_range.emit(idx)" in _src110c)
 _src110d = _insp110.getsource(_TL110._hit)
 check("二分回看 end<t 提前终止", "if c.end < t:" in _src110d)
 
+section("91. 导出页文件名与生命周期（第 111 轮钉子）")
+import inspect as _insp111  # noqa: E402
+from sstudio.ui.export_page import ExportInterface as _EP111, _safe_enc as _se111  # noqa: E402
+_src111 = _insp111.getsource(_EP111._file_name)
+check("模板剥目录防越界写出", "os.path.basename(stem.replace(\"\\\\\", \"/\"))" in _src111)
+check("非法字符换下划线", "for ch in '<>:\"|?*':" in _src111)
+_src111b = _insp111.getsource(_EP111._export)
+check("worker 非 None 守卫防重入", "getattr(self, \"_worker\", None) is not None" in _src111b)
+check("渲染留主线程避竞态", "pairs, render_errors = [], []" in _src111b)
+_src111c = _insp111.getsource(_EP111._on_export_done)
+check("实际编码回写不受导出中改动影响", "_used_enc" in _src111c)
+check("gbk 不可编码回退 utf-8", _se111("gbk", "字幕✓") == "utf-8")
+
 raise SystemExit(finish())
