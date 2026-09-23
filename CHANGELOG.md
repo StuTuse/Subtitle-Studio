@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.80] - 2026-09-23
+
+v1.17.80：自检修正——QtMultimedia 后端探测补 onedir 兜底根：PyInstaller 6.x onedir 不保证设置 sys._MEIPASS，打包版不再误报『视频预览后端插件未找到』
+
 ## [1.17.79] - 2026-09-23
 
 v1.17.79：测试加固——bugfix_sweep 第 58 节钉住 Cue.is_changed 对比语义（空串/空白差不误报）；fix_page.py 全文复检无新缺陷
