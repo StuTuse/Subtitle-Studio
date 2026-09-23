@@ -1698,4 +1698,17 @@ _src121d = _insp121.getsource(_PW121.toggle_mute)
 check("取消静音恢复原音量", "_last_volume" in _src121d)
 check("倍速档位齐全", 0.25 in _SP121 and 2.0 in _SP121 and len(_SP121) == 8)
 
+section("103. 纠错页回填与回滚语义（第 122 轮钉子）")
+import inspect as _insp122  # noqa: E402
+from sstudio.ui.fix_page import FixInterface as _FP122  # noqa: E402
+_src122 = _insp122.getsource(_FP122._on_done)
+check("文档切换后不回写", "doc is not getattr(self, \"_run_doc\", None)" in _src122)
+_src122b = _insp122.getsource(_FP122._revert_all)
+check("回滚前 push_undo 可撤销", "self.main.editor.push_undo()" in _src122b)
+check("original_text 为空不清文本", "if c.original_text:" in _src122b)
+_src122c = _insp122.getsource(_FP122._load_script)
+check("docx 走 _read_docx", "_read_docx(fp)" in _src122c)
+_src122d = _insp122.getsource(_FP122._next_review)
+check("待复查从当前行后回绕找", "for i in range(cur + 1, len(doc.cues)):" in _src122d)
+
 raise SystemExit(finish())
