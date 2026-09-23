@@ -1846,4 +1846,17 @@ _src132c = _insp132.getsource(_spmod132.SettingsInterface._build_misc)
 check("缩放 0=跟随系统 specialValue", "setSpecialValueText(\"跟随系统\")" in _src132c)
 check("空隙衔接开关双文案", "setOnText(\"衔接\")" in _src132c and "setOffText(\"留缝\")" in _src132c)
 
+section("114. 编辑页动作分发与撤销语义（第 133 轮钉子）")
+import inspect as _insp133  # noqa: E402
+from sstudio.ui.editor_page import EditorInterface as _ED133  # noqa: E402
+_src133 = _insp133.getsource(_ED133._act)
+check("rows 去重排序防错锚", "rows = sorted(set(int(r) for r in rows))" in _src133)
+check("重排后按对象找回行号", "doc.index_of(anchor)" in _src133 and "doc.index_of(c)" in _src133)
+check("split 播放点夹边距", "cue.start + 0.05 < pos < cue.end - 0.05" in _src133)
+check("revert 空 original 不清文本", "if c.original_text:" in _src133)
+_src133b = _insp133.getsource(_ED133.undo)
+check("撤销后同步编辑框防回写", "_sync_edit_area_after_history()" in _src133b)
+_src133c = _insp133.getsource(_ED133._after_struct)
+check("结构变化后夹回有效行", "max(0, min(row, len(self.doc.cues) - 1))" in _src133c)
+
 raise SystemExit(finish())
