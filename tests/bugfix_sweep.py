@@ -1763,4 +1763,19 @@ check("错误消息转义截 200 防顶坏布局", "_esc((msg or \"\")[:200])" i
 _src126e = _insp126.getsource(_SP126._fill_models)
 check("自定义路径模型插最前", "insertItem(0, f\"{shown}  [自定义路径]\", userData=cur)" in _src126e)
 
+section("108. 字幕表渲染与交互语义（第 127 轮钉子）")
+import inspect as _insp127  # noqa: E402
+from sstudio.ui.cue_table import CueTable as _CT127, _duration_warn as _dw127  # noqa: E402
+from sstudio.core.model import Cue as _Cue127  # noqa: E402
+_src127 = _insp127.getsource(_CT127.render)
+check("渲染期挂起自触发", "self._suspend = True" in _src127 and "self._suspend = False" in _src127)
+check("时长警示与导出预检同套", "与导出预检同一套标准" in _src127)
+check("样式缓存模块级", "cls._style_cache" in _insp127.getsource(_CT127._styles))
+_src127b = _insp127.getsource(_CT127.mark_row_llm)
+check("流式回填挂起防自触发", "_suppress_rows.add(row)" in _src127b and "_suppress_rows.discard(row)" in _src127b)
+check("时长警示三分支", _dw127(_Cue127(start=0, end=9, text="x")).startswith("时长")
+      and _dw127(_Cue127(start=0, end=0.3, text="x")).startswith("时长")
+      and _dw127(_Cue127(start=0, end=1, text="字" * 10)).startswith("约"))
+check("Backspace 同 Delete 删除", "Qt.Key_Delete, Qt.Key_Backspace" in _insp127.getsource(_CT127.keyPressEvent))
+
 raise SystemExit(finish())
