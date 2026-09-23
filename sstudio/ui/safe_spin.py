@@ -128,12 +128,12 @@ class SafeSpinBox(QSpinBox, _WheelGuard):
         self.setAccelerated(False)
 
     def set_choices(self, choices: Optional[Sequence] = None) -> None:
-        """设置候选列表；不传则按范围+步长自动生成。"""
-        self._explicit = list(choices) if choices else None
+        """设置候选列表；传 None 才按范围+步长自动生成，传 [] 明确清空弹窗。"""
+        self._explicit = None if choices is None else list(choices)
 
     def _choices(self):
         explicit = getattr(self, "_explicit", None)
-        if explicit:
+        if explicit is not None:
             return explicit
         out: List = []
         step = max(1, self.singleStep())
@@ -160,11 +160,11 @@ class SafeDoubleSpinBox(QDoubleSpinBox, _WheelGuard):
         self.setAccelerated(False)
 
     def set_choices(self, choices: Optional[Sequence] = None) -> None:
-        self._explicit = list(choices) if choices else None
+        self._explicit = None if choices is None else list(choices)
 
     def _choices(self):
         explicit = getattr(self, "_explicit", None)
-        if explicit:
+        if explicit is not None:
             return explicit
         out: List = []
         step = self.singleStep() or 0.1

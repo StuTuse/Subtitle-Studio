@@ -657,4 +657,26 @@ with TempDir() as _td2:
     check("bisect 命中与线性扫描完全一致", _mm == 0, f"{_mm}/500 不一致")
     check("空文档不崩", _TL()._hit(50) is None)
 
+section("24. SafeSpinBox 候选边界：空/重复/越界候选均不崩（第 15 轮加固钉子）")
+from sstudio.ui.safe_spin import SafeSpinBox as _SSB, SafeDoubleSpinBox as _SDSB  # noqa: E402
+_sp = _SSB()
+_sp.setRange(1, 10)
+_sp.setValue(3)
+_sp.set_choices([])                      # 空：明确清空候选（弹窗不弹），不回落到自动生成
+check("空候选 _choices 返回空", _sp._choices() == [])
+_sp.set_choices(None)                    # None：按范围+步长自动生成
+_auto = _sp._choices()
+check("None 候选自动生成", _auto and _auto[0][0] == 1 and _auto[-1][0] == 10, _auto[:2])
+_sp.set_choices([(3, "三（推荐）"), (3, "三（重复）"), (99, "越界")])   # 重复/越界
+check("重复与越界候选原样返回", len(_sp._choices()) == 3)
+_sp.set_choices([(5, "五")])
+_sp.setValue(3)
+check("手输值保持（候选只用于弹窗）", _sp.value() == 3)
+_dsp = _SDSB()
+_dsp.setRange(0.0, 1.0)
+_dsp.setDecimals(2)
+_dsp.set_choices([(0.1, "0.10"), (0.2, "0.20")])
+_vals = [v for v, _ in _dsp._choices()]
+check("小数候选按 decimals 取整", all(abs(round(v, 2) - v) < 1e-9 for v in _vals), _vals[:3])
+
 raise SystemExit(finish())
