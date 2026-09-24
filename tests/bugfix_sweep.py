@@ -3659,6 +3659,21 @@ check("check_all 全链稳定", len(_doc205.check_all()) >= 5)
 _g205 = _doc205._GPU_COUNT_CACHE
 check("独测 core 时缓存缺省按无 GPU", _g205 is None or isinstance(_g205, int))
 
+section("188. 启动链顺序实测（第 206 轮钉子）")
+_main206 = open("sstudio/__main__.py", encoding="utf-8").read()
+_i206pre = _main206.find("preprobe_gpu()")
+_i206mw = _main206.find("MainWindow(cfg)")
+check("preprobe 在 MainWindow 之前", 0 < _i206pre < _i206mw)
+check("preprobe 包 try 兜底", "except Exception" in
+      _main206[_i206pre:_i206pre + 300])
+_wiz206 = open("sstudio/ui/welcome_wizard.py", encoding="utf-8").read()
+check("向导无现场枚举", "get_cuda_device_count" not in _wiz206)
+_frd206 = open("sstudio/ui/first_run_dialog.py", encoding="utf-8").read()
+check("首启对话框无现场枚举", "get_cuda_device_count" not in _frd206)
+check("缓存缺省 None 或 int", _doc205._GPU_COUNT_CACHE is None
+      or isinstance(_doc205._GPU_COUNT_CACHE, int))
+check("cached_gpu_count 可调用", callable(_doc205._cached_gpu_count))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
