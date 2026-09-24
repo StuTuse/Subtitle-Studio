@@ -2971,4 +2971,19 @@ check("源文件 30 个全有钉子覆盖", len(_files180) == 30
 _secs180 = _re180.findall(r'section\("(\d+)\.', _src180)
 check("sweep 节数持续增长", len(_secs180) >= 160)
 
+section("162. 发版链回归实测（第 181 轮钉子）")
+import subprocess as _sub181  # noqa: E402
+def _rel181(*_a181):
+    return _sub181.run([sys.executable, "-X", "utf8", "release.py", *_a181],
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+_r181a = _rel181("--dry-run", "--bump", "patch", "-m", "v测试 dry-run")
+check("dry-run 退出码 0 且 VERSION 不动", _r181a.returncode == 0
+      and open("VERSION").read().strip() == "1.17.187")
+_r181b = _rel181("--dry-run", "--bump", "patch", "1.17.188", "-m", "v测试")
+check("bump 与版本号互斥退出码 1", _r181b.returncode == 1)
+check("互斥错误消息可读", "二选一" in (_r181b.stdout + _r181b.stderr))
+_r181c = _rel181("--dry-run", "1.17.187", "-m", "v1.17.187：测试防重")
+check("版本未变 dry-run 跳过发版", "版本未变" in (_r181c.stdout + _r181c.stderr)
+      and "跳过" in (_r181c.stdout + _r181c.stderr))
+
 raise SystemExit(finish())
