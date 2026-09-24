@@ -3758,6 +3758,27 @@ for _enc209, _bom209 in (("utf-8", False), ("utf-8-sig", True), ("gbk", False)):
           and "English" in _back209)
 os.remove(_p209)
 
+section("192. 设备选择实测（第 210 轮钉子）")
+from sstudio.core.transcriber import _pick_device as _pd210  # noqa: E402
+from sstudio.core.config import Config as _CF210x  # noqa: E402
+_cfg210 = _CF210x()
+_cfg210.whisper_device, _cfg210.whisper_compute = "auto", "auto"
+_d210, _c210 = _pd210(_cfg210)
+check("auto 返回合法组合", _d210 in ("cpu", "cuda")
+      and _c210 in ("int8", "float16"))
+_cfg210.whisper_device, _cfg210.whisper_compute = "cpu", "auto"
+_d210, _c210 = _pd210(_cfg210)
+check("cpu 强制走 int8", _d210 == "cpu" and _c210 == "int8")
+_cfg210.whisper_device, _cfg210.whisper_compute = "cuda", "auto"
+_d210, _c210 = _pd210(_cfg210)
+check("cuda 显式保留", _d210 == "cuda")
+_cfg210.whisper_device, _cfg210.whisper_compute = "cpu", "int8_float16"
+_d210, _c210 = _pd210(_cfg210)
+check("compute 显式不被覆盖", _c210 == "int8_float16")
+_cfg210.whisper_device, _cfg210.whisper_compute = "", ""
+_d210, _c210 = _pd210(_cfg210)
+check("空串等价 auto", _d210 in ("cpu", "cuda"))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
