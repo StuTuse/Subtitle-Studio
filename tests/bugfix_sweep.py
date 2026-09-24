@@ -3894,6 +3894,25 @@ _st213e = _Stack213()
 check("空栈 undo redo 安全", _st213e.undo() is False
       and _st213e.redo() is False)
 
+section("196. 时间轴坐标实测（第 214 轮钉子）")
+from sstudio.ui.timeline import Timeline as _Tl214, _nice_step as _ns214  # noqa: E402
+_tl214 = _Tl214()
+_tl214.duration = 100.0
+_tl214.resize(0, 30)
+check("width 0 返回 0", _tl214._sec_at(500) == 0.0)
+_tl214.resize(200, 30)
+check("x=0 起点", _tl214._sec_at(0) == 0.0)
+check("x 中点比例换算", abs(_tl214._sec_at(100) - 50.0) < 1e-9)
+check("x=width 恰为 duration", _tl214._sec_at(200) == 100.0)
+check("x 超右夹 duration", _tl214._sec_at(500) == 100.0)
+check("x 负夹 0", _tl214._sec_at(-50) == 0.0)
+check("10s 宽幅 1 步", _ns214(10, 2000) == 1)
+check("100s 宽幅 5 步", _ns214(100, 2000) == 5)
+check("1000s 窄幅 600 步", _ns214(1000, 100) == 600)
+check("小时级 3600 步", _ns214(7200, 100) == 3600)
+check("超长兜 3600", _ns214(999999, 50) == 3600)
+check("窄宽目标至少 1s", _ns214(5, 2) >= 1.0)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
