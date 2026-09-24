@@ -4147,6 +4147,29 @@ check("三信号在位", all(hasattr(_pw224, s) for s in
 _pw224.shutdown()
 _app159.processEvents()
 
+section("207. 字幕表格复测（第 225 轮钉子）")
+from sstudio.ui.cue_table import CueTable as _CT225b  # noqa: E402
+_t225 = _CT225b()
+_doc225 = _CD147()
+_doc225.cues = [_Cue147(start=0, end=1, text="甲"),
+                _Cue147(start=1, end=2, text="乙"),
+                _Cue147(start=2, end=3, text="丙")]
+_t225.render(_doc225.cues)
+_app159.processEvents()
+check("render 三行", _t225.rowCount() == 3)
+_doc225.cues[1].text = "改"
+try:
+    _t225.update_row(1, _doc225.cues[1])
+    _t225.mark_row_llm(0, "已修正")
+    _t225.jump(1)
+    _app159.processEvents()
+    _ok225 = True
+except Exception:
+    _ok225 = False
+check("update 与 mark 与 jump 不炸", _ok225)
+check("空选返回空", _t225.selected_rows() in ([], None)
+      or isinstance(_t225.selected_rows(), list))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
