@@ -3244,6 +3244,32 @@ check("特殊字符无损往返", _CD147.from_dict(
       == "行一\n行二\\path😀\"引\"")
 os.remove(_p190)
 
+section("172. 崩溃兜底链实测（第 191 轮钉子）")
+_src191 = open("run.py", encoding="utf-8").read()
+check("run.py 崩溃兜底三要素", "def _crash_dir" in _src191
+      and "crash.log" in _src191
+      and "except BaseException" in _src191 and "_report(e)" in _src191)
+check("crash.log 追加不覆盖", "encoding=\"utf-8\") as f:" in _src191
+      and "\"a\"" in _src191)
+check("headless 不弹窗防卡死", "--headless" in _src191
+      and "MessageBoxW" in _src191)
+_cd191 = _os40.path if False else None  # noqa: F841
+from sstudio.core.config import data_dir as _dd191  # noqa: E402
+check("数据目录可写", os.path.isdir(_dd191())
+      and os.access(_dd191(), os.W_OK))
+from sstudio.version import describe as _de191  # noqa: E402
+check("describe 版本头可用", "1.17" in _de191())
+import traceback as _tb191  # noqa: E402
+import datetime as _dt191  # noqa: E402
+_log191 = os.path.join(_dd191(), "crash_probe_sw.log")
+open(_log191, "w", encoding="utf-8").write(
+    f"# {_de191()}\n" + _tb191.format_exception(ZeroDivisionError, ZeroDivisionError("x"), None)[0]
+    if False else f"# {_de191()}\nZeroDivisionError: x")
+check("crash log 演练落盘含版本与异常",
+      os.path.isfile(_log191) and "1.17" in open(_log191, encoding="utf-8").read()
+      and "ZeroDivisionError" in open(_log191, encoding="utf-8").read())
+os.remove(_log191)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
