@@ -4101,6 +4101,29 @@ _s222.finish()
 _app159.processEvents()
 check("finish 幂等不炸", True)
 
+section("205. 时间戳边界复测（第 223 轮钉子）")
+for _ts223, _w223 in (("00:00:01,500", 1.5), ("00:01:00.000", 60.0),
+                      ("01:00:00,000", 3600.0), ("00:00:00,000", 0.0)):
+    _g223 = _fm147.ts_to_sec(_ts223)
+    check(f"ts_to_sec {_ts223}", _g223 is not None
+          and abs(_g223 - _w223) < 1e-9)
+for _bad223 in ("abc", "", "1:2:3:4:5"):
+    check(f"ts_to_sec {_bad223!r} None", _fm147.ts_to_sec(_bad223) is None)
+check("sec_to_ts 逗号毫秒", _fm147.sec_to_ts(1.5) == "00:00:01,500")
+check("sec_to_ts 点毫秒", _fm147.sec_to_ts(1.5, sep=".") == "00:00:01.500")
+check("sec_to_ts 无毫秒", _fm147.sec_to_ts(60, millis=False) == "00:01:00")
+for _v223 in (0.0, 1.5, 59.999, 3661.25):
+    _rt223 = _fm147.ts_to_sec(_fm147.sec_to_ts(_v223))
+    check(f"往返 {_v223}", _rt223 is not None
+          and abs(_rt223 - _v223) < 0.001)
+try:
+    _fm147.sec_to_ts(-1.0)
+    _fm147.sec_to_ts(36000)
+    _ok223 = True
+except Exception:
+    _ok223 = False
+check("负数与超大值受控", _ok223)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
