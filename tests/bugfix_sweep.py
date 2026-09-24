@@ -3731,6 +3731,33 @@ check("复刻写盘字节一致", open(_p208, "rb").read()
       == "测试文本内容".encode("utf-8"))
 os.remove(_p208)
 
+section("191. 导出编码链实测（第 209 轮钉子）")
+import sstudio.ui.export_page as _ep209  # noqa: E402
+check("_safe_enc 存在可调用", callable(getattr(_ep209, "_safe_enc", None)))
+check("gbk 可编码原样", _ep209._safe_enc("gbk", "中文") == "gbk")
+check("gbk 不可编码回退 utf-8", _ep209._safe_enc("gbk", "😀") == "utf-8")
+check("utf-8 直通", _ep209._safe_enc("utf-8", "😀") == "utf-8")
+check("utf-8-sig 直通", _ep209._safe_enc("utf-8-sig", "😀") == "utf-8-sig")
+_src209 = open("sstudio/ui/export_page.py", encoding="utf-8").read()
+check("下拉编码集三项", "utf-8-sig（Windows 记事本友好）" in _src209
+      and "utf-8（推荐/播放器）" in _src209 and "gbk（老设备）" in _src209)
+check("索引映射顺序一致", '["utf-8-sig", "utf-8", "gbk"]' in _src209)
+check("写盘带 newline 空", 'newline=""' in _src209)
+_d209 = _CD147()
+_d209.cues = [_Cue147(start=0, end=1, text="中文字幕"),
+              _Cue147(start=1, end=2, text="English")]
+_p209 = os.path.join(_tp175.gettempdir(), "sw209.srt")
+for _enc209, _bom209 in (("utf-8", False), ("utf-8-sig", True), ("gbk", False)):
+    with open(_p209, "w", encoding=_enc209, newline="") as _f209:
+        _f209.write(_fm147.to_srt(_d209))
+    _raw209 = open(_p209, "rb").read()
+    _ok209 = _raw209.startswith(b"\xef\xbb\xbf") if _bom209 \
+        else not _raw209.startswith(b"\xef\xbb\xbf")
+    _back209 = _raw209.decode(_enc209).lstrip("\ufeff")
+    check(f"{_enc209} 字节级无损", _ok209 and "中文字幕" in _back209
+          and "English" in _back209)
+os.remove(_p209)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
