@@ -3714,6 +3714,23 @@ except Exception:
     _ok207c = False
 check("已析构部件传入受控", _ok207c)
 
+section("190. 预览对话框实测（第 208 轮钉子）")
+from sstudio.ui.preview import TextPreviewDialog as _TPD208  # noqa: E402
+_tp208 = _TPD208("预览标题", "测试文本内容")
+_tp208._copy()
+check("复制落剪贴板", QApplication.clipboard().text() == "测试文本内容")
+_src208 = _insp158.getsource(__import__("sstudio.ui.preview", fromlist=["_x"]))
+check("写盘 utf-8 newline 空", 'encoding="utf-8", newline=""' in _src208)
+check("保存失败明确提示", "保存失败" in _src208
+      and "QMessageBox.warning" in _src208)
+check("OSError 分支在位", "except OSError" in _src208)
+_p208 = os.path.join(_tp175.gettempdir(), "sw208.txt")
+with open(_p208, "w", encoding="utf-8", newline="") as _f208:
+    _f208.write("测试文本内容")
+check("复刻写盘字节一致", open(_p208, "rb").read()
+      == "测试文本内容".encode("utf-8"))
+os.remove(_p208)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
