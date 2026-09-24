@@ -2681,4 +2681,24 @@ check("API Key 掩码", "setEchoMode" in _src169 or "Password" in _src169)
 check("测试结果 HTML 转义防撑爆", "_esc((msg or \"\")[:200])" in _src169)
 check("模型重扫清外部缓存", "ext_cli_cache_reset" in _src169)
 
+section("151. 主窗生命周期实测（第 170 轮钉子）")
+from sstudio.ui.main_window import MainWindow as _MW170  # noqa: E402
+_mw170 = _MW170(_CF120())
+check("主窗实例化不抛", _mw170 is not None)
+check("closeEvent 与 save_project 在位", callable(getattr(_mw170, "closeEvent", None))
+      and callable(getattr(_mw170, "save_project", None)))
+_mw170.mark_dirty()
+_mw170.close()
+_mw170.close()
+check("dirty 挡关与二次 close 幂等不抛", True)
+_src170 = open("sstudio/ui/main_window.py", encoding="utf-8").read()
+check("未保存走信号模式弹框防嵌套循环崩溃", "_CloseAskBox" in _src170
+      and "yesSignal" in _src170 and "e.ignore()" in _src170)
+check("先拆媒体后端防 DirectShow 析构竞态", "self.editor.player.shutdown()" in _src170)
+check("设置页线程摘父子再析构", "self.settings.shutdown()" in _src170)
+check("窗口几何与音量与分栏比例持久化", "window_geometry" in _src170
+      and "player_volume" in _src170 and "editor_hsplit" in _src170)
+check("后台任务协作取消", "self._worker.cancel()" in _src170
+      and "fw.cancel()" in _src170)
+
 raise SystemExit(finish())
