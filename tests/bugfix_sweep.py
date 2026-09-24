@@ -2570,4 +2570,25 @@ check("used_enc 锁实际编码防竞态", "self._used_enc = enc" in _src164
 check("gbk 不可编码回落按字符试探", "text.encode(\"gbk\")" in _src164
       and "UnicodeEncodeError" in _src164)
 
+section("146. 向导状态机跨页实测（第 165 轮钉子）")
+from sstudio.ui.welcome_wizard import WelcomeWizard as _WW165  # noqa: E402
+_ww165 = _WW165(cfg=_CF120())
+check("向导实例化不抛", _ww165 is not None)
+check("页数与初始页", len(_ww165.pages) == 5 and _ww165._idx == 0)
+_ww165._go_next()
+check("前进一页到 1", _ww165._idx == 1)
+# 真实守卫语义：_anim_lock 挡动画期间同步连点（480ms 定时窗），
+# is_valid 挡空 API Key 的模型页继续前进——干净 Config 下翻页停在第 1 页。
+for _ in range(5):
+    _ww165._go_next()
+check("动画锁与 is_valid 挡连点", _ww165._idx == 1)
+for _ in range(6):
+    _ww165._go_back()
+check("回退与动画锁", _ww165._idx in (0, 1))
+check("末页含 refresh_summary", callable(getattr(_ww165.pages[-1], "refresh_summary", None)))
+_ww165._shutdown_worker()
+_ww165._shutdown_worker()
+check("_shutdown_worker 幂等", True)
+_ww165.close()
+
 raise SystemExit(finish())
