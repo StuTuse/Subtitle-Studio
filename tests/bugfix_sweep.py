@@ -3323,6 +3323,29 @@ _m194 = _th189.monospace()
 check("monospace QFont 家族非空", isinstance(_m194, _QF194) and _m194.family())
 check("布局常量在位", _th189.CARD_MARGINS and _th189.PAGE_MARGINS)
 
+section("176. 打开文件链实测（第 195 轮钉子）")
+_src195 = _insp158.getsource(_th189.open_path)
+check("open_path 三分支语义", "os.startfile" in _src195
+      and "/select," in _src195 and "xdg-open" in _src195)
+check("open_path 前置校验容错", "os.path.exists" in _src195
+      and "except" in _src195)
+try:
+    _th189.open_path(r"D:\no-such-path-195\nope")
+    _th189.open_path("")
+    _ok195 = True
+except Exception:
+    _ok195 = False
+check("不存在路径与空串不抛", _ok195)
+_tmp195 = os.path.join(_tp175.gettempdir(), "sw195.txt")
+open(_tmp195, "w", encoding="utf-8").write("x")
+try:
+    _th189.open_path(_tmp195)
+    _ok195b = True
+except Exception:
+    _ok195b = False
+check("存在文件打开不抛", _ok195b)
+os.remove(_tmp195)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
