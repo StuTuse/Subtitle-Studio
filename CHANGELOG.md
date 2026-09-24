@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.190] - 2026-09-24
+
+v1.17.190：测试加固——bugfix_sweep 第 164 节运行时实测媒体探测边界：media.probe 单参签名、不存在的媒体文件不抛异常而是返回零值 MediaInfo（duration 0 无视频流无音频编码）供上游告警、MediaInfo 数据类 duration 字段在位、0 字节空文件 probe 边界受控不崩溃、mp4/mkv/wav 支持扩展名集合与 GUI 过滤器一致——媒体探测边界实测全部通过，无产品缺陷
+
 ## [1.17.189] - 2026-09-24
 
 v1.17.189：测试加固——bugfix_sweep 第 163 节运行时实测转写结果边界：transcribe 与 TranscriptResult 数据类在位、cues 与 meta 字段可写、meta 中 language 元数据正确流入 CueDocument.language、词级时间戳关闭时 normalize_cues 保序不重叠、model_source 默认 modelscope 且 beam_size 边界默认 5、initial_prompt 空串不注入 None；另将发版链钉子改为动态读取 VERSION 防版本漂移——转写边界实测全部通过，无产品缺陷
