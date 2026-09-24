@@ -3578,6 +3578,40 @@ check("环境变量逃生门 True", _ok203 is True)
 check("on_activate 槽位在位", hasattr(_si203b, "on_activate"))
 check("锁名按数据目录派生", _si203._server_name().startswith("SubtitleStudio-"))
 
+section("185. 防误触数值控件实测（第 204 轮钉子）")
+from PyQt5.QtCore import Qt as _Qt204  # noqa: E402
+from sstudio.ui.safe_spin import SafeSpinBox as _SS204, SafeDoubleSpinBox as _SDS204  # noqa: E402
+from PyQt5.QtGui import QKeyEvent as _KE204  # noqa: E402
+from PyQt5.QtCore import QEvent as _QE204  # noqa: E402
+_sp204 = _SS204()
+_sp204.setRange(0, 100)
+_sp204.setValue(50)
+for _k204 in (_Qt204.Key_Up, _Qt204.Key_Down, _Qt204.Key_PageUp, _Qt204.Key_PageDown):
+    _sp204.keyPressEvent(_KE204(_QE204.KeyPress, _k204,
+                                _Qt204.KeyboardModifier.NoModifier))
+check("四方向键全屏蔽值不变", _sp204.value() == 50)
+_sp204.setValue(77)
+check("setValue 编程改值生效", _sp204.value() == 77)
+_src204 = _insp158.getsource(__import__("sstudio.ui.safe_spin", fromlist=["_x"]))
+check("wheelEvent ignore", "def wheelEvent" in _src204
+      and "e.ignore()" in _src204)
+check("keyPressEvent 方向键 ignore", "Key_Up" in _src204
+      and "Key_PageDown" in _src204)
+_dsp204 = _SDS204()
+_dsp204.setRange(0.0, 1.0)
+_dsp204.setValue(0.42)
+_dsp204.keyPressEvent(_KE204(_QE204.KeyPress, _Qt204.Key_Up,
+                             _Qt204.KeyboardModifier.NoModifier))
+check("double 键盘 Up 屏蔽", abs(_dsp204.value() - 0.42) < 1e-9)
+_dsp204.setValue(0.99)
+check("double setValue 生效", abs(_dsp204.value() - 0.99) < 1e-9)
+_fired204 = []
+_sp204.valueChanged.connect(lambda _v: _fired204.append(_v))
+_sp204.setValue(88)
+check("valueChanged 发射 88", _fired204 and _fired204[-1] == 88)
+check("_menu_gone 与 close_popup 在位", hasattr(_sp204, "_menu_gone")
+      and hasattr(_sp204, "close_popup"))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
