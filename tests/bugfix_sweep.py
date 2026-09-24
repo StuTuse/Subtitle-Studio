@@ -3472,6 +3472,42 @@ _tc199e.wait()
 _app159.processEvents()
 check("CB_PROGRESS 转发 0.5", _g199e.get("p", ("", 0))[1] == 0.5)
 
+section("181. 媒体探测边界补钉（第 200 轮钉子）")
+import wave as _wv200  # noqa: E402
+import math as _mth200  # noqa: E402
+import struct as _st200  # noqa: E402
+_mi183p = _md183.probe   # 第 164 轮已别名 media 模块为 _md183
+_wav200 = os.path.join(_tp175.gettempdir(), "sw200.wav")
+with _wv200.open(_wav200, "wb") as _w200:
+    _w200.setnchannels(1)
+    _w200.setsampwidth(2)
+    _w200.setframerate(44100)
+    _w200.writeframes(b"".join(_st200.pack(
+        "<h", int(12000 * _mth200.sin(2 * 3.14159 * 440 * _i / 44100)))
+        for _i in range(44100)))
+_mi200 = _mi183p(_wav200)
+check("真实 wav 时长约 1 秒", 0.9 < _mi200.duration < 1.1)
+check("真实 wav 探测无异常", _mi200.duration >= 0)
+os.remove(_wav200)
+_wav200b = os.path.join(_tp175.gettempdir(), "sw200f.wav")
+open(_wav200b, "w", encoding="utf-8").write("这不是音频")
+try:
+    _mi183p(_wav200b)
+    _ok200 = True
+except Exception:
+    _ok200 = False
+check("伪 wav 受控不炸", _ok200)
+os.remove(_wav200b)
+_wav200c = os.path.join(_tp175.gettempdir(), "sw200e.wav")
+open(_wav200c, "wb").close()
+try:
+    _mi183p(_wav200c)
+    _ok200b = True
+except Exception:
+    _ok200b = False
+check("空 wav 受控不炸", _ok200b)
+os.remove(_wav200c)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
