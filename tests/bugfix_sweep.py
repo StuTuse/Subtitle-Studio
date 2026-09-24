@@ -3346,6 +3346,37 @@ except Exception:
 check("存在文件打开不抛", _ok195b)
 os.remove(_tmp195)
 
+section("177. 文档查询方法实测（第 196 轮钉子）")
+_d196 = _CD147()
+_d196.cues = [_Cue147(start=0, end=1, text="甲"), _Cue147(start=2, end=4, text="乙"),
+              _Cue147(start=6, end=7, text="丙")]
+check("at_time 命中与空隙与越界", _d196.at_time(2.5).text == "乙"
+      and _d196.at_time(1.5) is None and _d196.at_time(10) is None
+      and _d196.at_time(0.0) is not None)
+_t196 = _d196.cues[1]
+check("cue_by_id 命中与未知", _d196.cue_by_id(_t196.id) is _t196
+      and _d196.cue_by_id("no-such-id") is None)
+check("end_time 属性等于最后条尾", abs(_d196.end_time - 7.0) < 1e-9)
+check("duration 字段默认 0", _d196.duration == 0.0)
+_d196g = _CD147()
+_d196g.cues = [_Cue147(start=0, end=1, text="甲"), _Cue147(start=6, end=7, text="丙")]
+check("total_gap 大空隙不计", _d196g.total_gap() == 0.0)   # 5 秒空隙 > max_gap
+_d196g.cues[1].start = 1.1                                # 造 0.1 小空隙
+check("total_gap 小空隙计入", abs(_d196g.total_gap() - 0.1) < 1e-9)
+_de196 = _CD147()
+try:
+    _ = _de196.end_time
+    _ = _de196.total_gap()
+    _de196.duration
+    _ok196 = True
+except Exception:
+    _ok196 = False
+check("空文档统计不炸", _ok196)
+_st196 = _d196.stats()
+check("stats count 与 duration", isinstance(_st196, dict)
+      and _st196.get("count") == 3
+      and abs(_st196.get("duration", 0) - _d196.end_time) < 1e-9)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
