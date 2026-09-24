@@ -2544,4 +2544,30 @@ _src163 = open("sstudio/ui/theme.py", encoding="utf-8").read()
 check("_crisp 源码 FullHinting 与 Antialias", "PreferFullHinting" in _src163
       and "PreferAntialias" in _src163)
 
+section("145. 导出编码链实测（第 164 轮钉子）")
+from sstudio.ui.export_page import ExportInterface as _EI164, _safe_enc as _se164  # noqa: E402
+class _FM164:  # noqa: E302
+    doc = _CD147(source_video=r"D:\v\视频.mp4", path="")
+_cfg164 = _CF120()
+_exp164 = _EI164(_cfg164, _FM164())
+check("UI 下拉默认 utf-8-sig", _exp164._enc() == "utf-8-sig")
+_cfg164.export_encoding = "gbk"
+_exp164b = _EI164(_cfg164, _FM164())
+check("跟随用户编码 gbk", _exp164b._enc() == "gbk")
+_cfg164.export_encoding = ""
+_exp164c = _EI164(_cfg164, _FM164())
+check("空值回落 utf-8-sig", _exp164c._enc() == "utf-8-sig")
+_cfg164.export_encoding = "not-a-codec"
+_exp164d = _EI164(_cfg164, _FM164())
+check("非法编码回落 utf-8-sig", _exp164d._enc() == "utf-8-sig")
+check("safe_enc gbk 可编码原样", _se164("gbk", "中文OK") == "gbk")
+check("safe_enc gbk Emoji 回落 utf-8", _se164("gbk", "Emoji😀") == "utf-8")
+check("safe_enc utf-8 原样", _se164("utf-8", "Emoji😀") == "utf-8")
+check("safe_enc utf-8-sig 原样", _se164("utf-8-sig", "x") == "utf-8-sig")
+_src164 = open("sstudio/ui/export_page.py", encoding="utf-8").read()
+check("used_enc 锁实际编码防竞态", "self._used_enc = enc" in _src164
+      and 'getattr(self, "_used_enc", self._enc())' in _src164)
+check("gbk 不可编码回落按字符试探", "text.encode(\"gbk\")" in _src164
+      and "UnicodeEncodeError" in _src164)
+
 raise SystemExit(finish())
