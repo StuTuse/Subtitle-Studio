@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.232] - 2026-09-24
+
+v1.17.232：测试加固——bugfix_sweep 第 207 节复测字幕表格集成：CueTable render 三行渲染与 rowCount 精确同步、update_row 单行文本更新不炸、mark_row_llm 行号加文本标记 LLM 已修正不炸、jump 行号跳转安全、未选中状态查询安全返回——字幕表格实测全部通过，无产品缺陷
+
 ## [1.17.231] - 2026-09-24
 
 v1.17.231：测试加固——bugfix_sweep 第 206 节复测播放器控制链集成：无媒体状态 seek 不炸且不广播、负数与零值 seek 受控、速度与音量档位设置不受无媒体影响、不存在的媒体文件 load 受控失败、positionChanged durationChanged stateChanged 三信号在位——播放器控制链实测全部通过，无产品缺陷
