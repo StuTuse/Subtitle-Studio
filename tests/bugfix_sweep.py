@@ -3426,6 +3426,52 @@ for _v198b in (-1.0, 8640000.0):
         _ok198b = False
 check("负数与超大不炸", _ok198b)
 
+section("180. 工作线程信号链实测（第 199 轮钉子）")
+from sstudio.ui import workers as _wk199  # noqa: E402
+_g199 = {}
+_tc199 = _wk199.ThreadedCall(lambda: 42)
+_tc199.sig_done.connect(lambda _v: _g199.setdefault("v", _v))
+_tc199.start()
+_tc199.wait()
+_app159.processEvents()
+check("sig_done 落地 42", _g199.get("v") == 42)
+_g199b = {}
+def _boom199():
+    raise ValueError("炸")
+_tc199b = _wk199.ThreadedCall(_boom199)
+_tc199b.sig_failed.connect(lambda _m: _g199b.setdefault("m", _m))
+_tc199b.start()
+_tc199b.wait()
+_app159.processEvents()
+check("sig_failed 收类型与消息", "ValueError" in _g199b.get("m", "")
+      and "炸" in _g199b.get("m", ""))
+def _se199():
+    raise SystemExit(2)
+_tc199c = _wk199.ThreadedCall(_se199)
+_g199c = {}
+_tc199c.sig_failed.connect(lambda _m: _g199c.setdefault("m", _m))
+_tc199c.start()
+_tc199c.wait()
+_app159.processEvents()
+check("SystemExit 级也上报不静默", "SystemExit" in _g199c.get("m", ""))
+_tc199d = _wk199.ThreadedCall(lambda _c: "x", _wk199.CB_CANCEL)
+_tc199d.start()
+_tc199d.wait()
+check("CB_CANCEL 占位注入不抛", True)
+_wk199.reap(_tc199d)
+_wk199.reap(_tc199d)
+check("reap 幂等不抛", True)
+_g199e = {}
+def _pj199(_p):
+    _p("步骤", 0.5)
+    return 1
+_tc199e = _wk199.ThreadedCall(_pj199, _wk199.CB_PROGRESS)
+_tc199e.sig_progress.connect(lambda _m, _v: _g199e.setdefault("p", (_m, _v)))
+_tc199e.start()
+_tc199e.wait()
+_app159.processEvents()
+check("CB_PROGRESS 转发 0.5", _g199e.get("p", ("", 0))[1] == 0.5)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
