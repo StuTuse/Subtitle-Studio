@@ -4036,6 +4036,18 @@ check("工程文件顺带保存", ".ssp" in _src219)
 check("normalize_cues 清理在位", "normalize_cues" in _src219)
 check("计时统计在位", "time" in _src219)
 
+section("202. 主题链复测（第 220 轮钉子）")
+for _st220 in ("asr", "llm", "edited", "review", "confirmed"):
+    _cd220 = _th189.state_color(_st220, True)
+    _cl220 = _th189.state_color(_st220, False)
+    check(f"{_st220} 深浅两色可用且不同",
+          _cd220.isValid() and _cl220.isValid() and _cd220.name() != _cl220.name())
+check("未知状态透明兜底", _th189.state_color("???", True) is not None)
+check("state_text 未知原样", _th189.state_text("???") == "???")
+check("state_text 空串兜空", _th189.state_text("") == "")
+check("is_dark 布尔", isinstance(_th189.is_dark(), bool))
+check("monospace 点阵生效", _th189.monospace(11).pointSize() == 11)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
