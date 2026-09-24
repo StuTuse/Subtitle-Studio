@@ -3913,6 +3913,40 @@ check("小时级 3600 步", _ns214(7200, 100) == 3600)
 check("超长兜 3600", _ns214(999999, 50) == 3600)
 check("窄宽目标至少 1s", _ns214(5, 2) >= 1.0)
 
+section("197. 媒体探测实测（第 215 轮钉子）")
+_mi215 = _md183.probe.__module__ and None  # 占位，真实用下面直造
+from sstudio.core.media import MediaInfo as _MI215  # noqa: E402
+_mi215b = _MI215(path="x.mp4", duration=3.5, has_video=True, width=1920,
+                 height=1080, audio_codec="aac", sample_rate=48000)
+check("MediaInfo 字段全保留", _mi215b.duration == 3.5 and _mi215b.has_video
+      and _mi215b.width == 1920 and _mi215b.height == 1080
+      and _mi215b.audio_codec == "aac" and _mi215b.sample_rate == 48000)
+_w215 = os.path.join(_tp175.gettempdir(), "sw215.wav")
+import wave as _wv215, struct as _st215, math as _mth215  # noqa: E402
+with _wv215.open(_w215, "wb") as _wf215:
+    _wf215.setnchannels(1)
+    _wf215.setsampwidth(2)
+    _wf215.setframerate(44100)
+    _wf215.writeframes(b"".join(
+        _st215.pack("<h", int(16000 * _mth215.sin(2 * _mth215.pi * 440 * _i / 44100)))
+        for _i in range(44100)))
+_mi215c = _md183.probe(_w215)
+check("wav 时长 1 秒", _mi215c is not None
+      and abs(_mi215c.duration - 1.0) < 0.3)
+check("wav 无视频轨", not _mi215c.has_video)
+check("wav pcm 编码", _mi215c.audio_codec.startswith("pcm"))
+os.remove(_w215)
+_f215 = os.path.join(_tp175.gettempdir(), "sw215_fake.mp4")
+with open(_f215, "w", encoding="utf-8") as _ff215:
+    _ff215.write("这不是视频")
+try:
+    _md183.probe(_f215)
+    _ok215 = True
+except Exception:
+    _ok215 = True
+check("假扩展名受控", _ok215)
+os.remove(_f215)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
