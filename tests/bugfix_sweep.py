@@ -3270,6 +3270,24 @@ check("crash log 演练落盘含版本与异常",
       and "ZeroDivisionError" in open(_log191, encoding="utf-8").read())
 os.remove(_log191)
 
+section("173. 体检修复编排实测（第 192 轮钉子）")
+from sstudio.core import doctor as _doc192  # noqa: E402
+check("doctor 公开 API 齐", all(hasattr(_doc192, _n) for _n in
+      ("check_all", "summary", "all_required_ok", "pip_install")))
+check("PIP_INDEXES 镜像清单非空", len(_doc192.PIP_INDEXES) >= 1
+      and all(len(_x) == 2 for _x in _doc192.PIP_INDEXES))
+check("PIP 超时配置正数", _doc192.PIP_TIMEOUT > 0
+      and _doc192.PIP_NET_TIMEOUT > 0)
+_it192 = _doc192.check_all()
+check("level 三级受控", {_i.level for _i in _it192} <=
+      {"required", "recommend", "optional"})
+check("每项 detail/why 非空", all(_i.detail and _i.why for _i in _it192))
+_it192b = _doc192.check_all()
+check("check_all 幂等", [_i.id for _i in _it192] == [_i.id for _i in _it192b]
+      and [_i.ok for _i in _it192] == [_i.ok for _i in _it192b])
+_src192 = _insp158.getsource(_doc192.pip_install)
+check("pip_install 走镜像清单", "PIP_INDEXES" in _src192)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
