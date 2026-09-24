@@ -4443,6 +4443,39 @@ except Exception:
     _ok236b = True
 check("parse_json 空串抛错", _ok236b)
 
+section("219. 导入导出互逆复测（第 237 轮钉子）")
+_cues237, _fmt237 = _fm147.import_text(
+    "1\n00:00:01,000 --> 00:00:02,000\n你好\n", "a.srt")
+check("SRT 导入与格式名", len(_cues237) == 1
+      and isinstance(_fmt237, str) and _fmt237)
+_cues237b, _fmt237b = _fm147.import_text(
+    "1\n00:00:01,000 --> 00:00:02,000\n甲\n")
+check("嗅探受控", len(_cues237b) == 1 and isinstance(_fmt237b, str))
+_cues237c, _fmt237c = _fm147.import_text("随便一段话")
+check("纯文本受控", isinstance(_cues237c, list)
+      and isinstance(_fmt237c, str))
+_doc237 = _CD147()
+_doc237.cues = [_Cue147(start=0, end=1, text="甲")]
+for _k237 in ("srt", "vtt", "ass", "txt", "json", "md", "html", "lrc"):
+    _o237 = _fm147.export_text(_doc237, _k237)
+    if not (isinstance(_o237, str) and len(_o237) > 0):
+        check(f"export {_k237}", False)
+        break
+else:
+    check("八格式导出全在位", True)
+_back237 = _fm147.export_text(_doc237, "srt")
+_cues237d, _ = _fm147.import_text(_back237, "x.srt")
+check("互逆文本与时间", len(_cues237d) == 1
+      and _cues237d[0].text == "甲"
+      and abs(_cues237d[0].start - 0) < 1e-6
+      and abs(_cues237d[0].end - 1) < 1e-6)
+try:
+    _fm147.export_text(_CD147(), "srt")
+    _ok237 = True
+except Exception:
+    _ok237 = False
+check("空文档导出受控", _ok237)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
