@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.169] - 2026-09-24
+
+v1.17.169：测试加固——bugfix_sweep 第 143 节运行时实测启动页与单实例守护：Splash 带 version 位置参数实例化（run.py 调用一致）、淡出结束令牌与 600ms 强制关闭兜底、守护名按数据目录 md5 派生防多安装误伤、活实例靠连接探测互斥（Windows 命名管道 listen 恒真故判据是 connectToServer）、SS_NEW_INSTANCE 环境变量逃生门旁路僵死实例；并修正第 143 节与第 13 节同进程占锁的场景冲突——splash 与 single_instance 二轮复扫全部通过，无产品缺陷
+
 ## [1.17.168] - 2026-09-24
 
 v1.17.168：修复 safe_spin 数值控件 validate 崩溃——状态枚举误用 QSpinBox.Intermediate（PyQt5 中该枚举只挂在 QValidator 上），用户清空温度/并发/超时等数值输入框的瞬间会抛 AttributeError（靠 PyQt 虚方法兜底才没闪退），改为 QValidator.Intermediate 后「允许临时为空、失焦夹回」的守卫首次真正生效，整数与小数两版同修；附 bugfix_sweep 第 142 节钉住防误触数值控件行为（显式候选与清空、自动候选按范围生成、validate 空串返回 Intermediate、小数候选 11 档一位小数标签、close_popup 幂等、keyboardTracking 关防输入中触发）
