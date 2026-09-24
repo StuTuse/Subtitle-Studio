@@ -27,6 +27,26 @@ from .theme import apply_theme
 from .workers import TranscribeWorker, reap
 
 
+def _snapshot_to_json(snap: dict, doc: CueDocument) -> str:
+    """把撤销栈格式的快照序列化成完整工程 JSON。
+
+    自动保存的序列化在工作线程跑：直接 to_json 会与 UI 线程的
+    normalize_cues（list.sort 迭代中改列表）竞态。这里只碰 UI 线程
+    预先抽好的只读快照（cue dict 列表）+ 文档级三字段（字符串/数值，
+    跨线程读安全）。
+    """
+    import json as _json
+    return _json.dumps({
+        "format": "subtitle-studio-project",
+        "version": 2,
+        "source_video": doc.source_video,
+        "duration": doc.duration,
+        "language": doc.language,
+        "meta": doc.meta,
+        "cues": snap.get("cues", []),
+    }, ensure_ascii=False, indent=2)
+
+
 class _CloseAskBox(MessageBox):
     """退出确认框：跳过淡入/淡出动画。
 
@@ -166,10 +186,18 @@ class MainWindow(FluentWindow):
             self.switchTo(w)
 
     # ------------------------------------------------------------ 拖拽
+    # dropEvent 认识的所有扩展名：媒体 + 字幕/文本/工程。dragEnter 必须
+    # 放行同一集合，否则字幕/工程拖进来在 enter 阶段就被 Qt 拒收，
+    # dropEvent 里对应的处理分支永远不会执行（表现：拖入毫无反应）。
+    _DROP_EXTS = (".ssp", ".srt", ".vtt", ".ass", ".lrc", ".txt", ".json",
+                  ".md")
+
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:  # noqa: N802
         if e.mimeData().hasUrls():
             for u in e.mimeData().urls():
-                if media.is_media(u.toLocalFile()):
+                p = u.toLocalFile()
+                if media.is_media(p) or (os.path.splitext(p)[1].lower()
+                                         in self._DROP_EXTS):
                     e.acceptProposedAction()
                     return
         e.ignore()
@@ -180,8 +208,7 @@ class MainWindow(FluentWindow):
             if media.is_media(p):
                 self.open_media(p)
                 return
-            if os.path.splitext(p)[1].lower() in (".ssp", ".srt", ".vtt", ".ass", ".lrc",
-                                                  ".txt", ".json"):
+            if os.path.splitext(p)[1].lower() in self._DROP_EXTS:
                 self._load_any(p)
                 return
 
@@ -296,6 +323,21 @@ class MainWindow(FluentWindow):
         return True
 
     def load_project(self, path: str) -> None:
+        # 与 open_media 同一条防护：拖 .ssp 进窗口/菜单打开工程也会整替换
+        # self.doc，旧实现没有 dirty 检查——正在编辑的内容被静默清空且
+        # set_document 默认抹掉撤销栈，Ctrl+Z 都救不回来。
+        if self._worker is not None:
+            self._warn("正在转写", "请先等当前转写结束或取消，再打开工程。")
+            return
+        if self.doc and self.doc.cues and self._dirty:
+            box = _CloseAskBox("当前工程未保存", "打开新工程会替换当前字幕。要先保存吗？\n"
+                                               "（选择「取消」则直接打开）", self)
+            box.yesButton.setText("保存并打开")
+            box.cancelButton.setText("直接打开")
+            r = box.exec_()
+            if r:
+                if not self.save_project():
+                    return      # 保存被用户取消/失败：别丢当前内容
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -322,6 +364,10 @@ class MainWindow(FluentWindow):
 
     def mark_dirty(self) -> None:
         self._dirty = True
+        # 递增 dirty 代数：自动保存完成时用它判断"写盘期间是否又有编辑"。
+        # 旧实现从不在这里递增，_autosave_done 的复核恒成立——写盘期间
+        # 用户的新输入会被误清脏标，盘上内容比界面旧却显示"已保存"。
+        self._dirty_gen += 1
         self._update_title()
         if self.cfg.auto_save and self.doc and self.doc.path and len(self.doc.cues):
             QTimer.singleShot(2500, self._auto_save)
@@ -332,12 +378,15 @@ class MainWindow(FluentWindow):
         if self._autosave_worker is not None:
             return          # 上一次自动保存还没落地：下次 mark_dirty 会再排
         doc, path = self.doc, self.doc.path
-        gen = self._dirty_gen          # 快照代数：线程跑序列化期间可能又脏了
-        self._dirty_gen = gen + 1
+        # 序列化在工作线程跑，期间 UI 还在改 doc.cues（normalize 的
+        # list.sort() 迭代中改列表会让 to_json 崩或漏条目）：在 UI 线程
+        # 先做快照，线程只碰这份只读数据。
+        snap = doc.snapshot()
+        gen = self._dirty_gen
         save_gen = getattr(self, "_save_gen", 0)
-        # 5000 条字幕 to_json ~150ms（含词级时间戳更多），放 UI 线程每次
-        # 自动保存都卡一下；序列化是纯内存只读，丢给工作线程跑，写盘也在
-        # 线程里做（同一份字符串）。完成后按代数复核：期间没再编辑才清脏标。
+        # 5000 条字幕 to_json ~150ms：放工作线程。完成后按代数复核：
+        # 期间没再编辑（代数没变）才清脏标——变过说明有新编辑，新编辑
+        # 自己会再排一次自动保存，这次写盘只是中间态。
         from .workers import ThreadedCall
 
         def _serialize_and_write() -> str:
@@ -346,21 +395,24 @@ class MainWindow(FluentWindow):
             # 用户刚保存的内容。
             if getattr(self, "_save_gen", 0) != save_gen:
                 return ""
-            _atomic_write_text(path, doc.to_json())
+            _atomic_write_text(path, _snapshot_to_json(snap, doc))
             return path
 
         w = ThreadedCall(_serialize_and_write)
         self._autosave_worker = w
         w.sig_done.connect(lambda _p: self._autosave_done(gen))
-        w.sig_failed.connect(lambda _m: self._autosave_done(gen))
+        w.sig_failed.connect(lambda _m: self._autosave_done(gen, failed=True))
         w.start()
 
-    def _autosave_done(self, gen: int) -> None:
+    def _autosave_done(self, gen: int, failed: bool = False) -> None:
         from .workers import reap
         reap(self._autosave_worker)
         self._autosave_worker = None
-        if gen == self._dirty_gen - 1 and self._dirty:
-            # 序列化期间没有新编辑：这次写盘内容就是最新状态
+        if failed:
+            return      # 写盘失败：保留脏标，下次 mark_dirty 会再排自动保存
+        if gen == self._dirty_gen and self._dirty:
+            # 自启动这次自动保存起没有新编辑（代数未变）：这次写盘内容
+            # 就是最新状态，清脏标安全
             self._dirty = False
             self._update_title()
 

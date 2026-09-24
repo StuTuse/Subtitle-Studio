@@ -288,6 +288,10 @@ class FixInterface(QWidget):
         else:
             cues = list(doc.cues)
             self._row_map = list(range(len(cues)))
+        # 行号不是身份：纠错运行中用户可能在编辑页增删/排序（normalize 重排），
+        # 之后批次的行号全部漂移，按行号回写会把 A 行修正写进 B 行。
+        # 这里记下每条 cue 的稳定 id，回填时按 id 找回当前行。
+        self._id_map = [c.id for c in cues]
 
         self.main.editor.push_undo()
         self.btn_run.setEnabled(False)
@@ -321,8 +325,13 @@ class FixInterface(QWidget):
         doc = self.main.doc
         if doc is not getattr(self, "_run_doc", None):
             return          # 文档已换：旧运行的回填不能写进新文档（串台）
-        row = self._row_map[local_row] if local_row < len(self._row_map) else local_row
-        if doc and 0 <= row < len(doc.cues):
+        # 按 cue 稳定 id 找回当前行号：运行中用户增删/排序导致的行号漂移
+        # 不再错行；id 消失（该条被删）则丢弃这条回填。
+        if local_row >= len(getattr(self, "_id_map", [])):
+            return
+        cid = self._id_map[local_row]
+        row = next((i for i, c in enumerate(doc.cues) if c.id == cid), -1)
+        if doc and row >= 0:
             self.main.editor.apply_llm_text(row, text)
 
     def _on_done(self, res) -> None:

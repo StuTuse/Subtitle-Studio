@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from qfluentwidgets import (Action, BodyLabel, CaptionLabel, CommandBar, FluentIcon as FIF,
                             IndeterminateProgressBar, InfoBar, InfoBarPosition, LineEdit,
@@ -12,10 +12,10 @@ from qfluentwidgets import (Action, BodyLabel, CaptionLabel, CommandBar, FluentI
                             Slider, StrongBodyLabel, ToolButton)
 from PyQt5.QtCore import Qt, QObject, QEvent, QTimer, pyqtSignal
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QComboBox, QFileDialog,
-                             QFrame, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
-                             QShortcut, QSizePolicy, QSplitter, QTextEdit, QVBoxLayout,
-                             QWidget, QApplication)
+from PyQt5.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QComboBox, QDialog,
+                             QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLineEdit,
+                             QPlainTextEdit, QShortcut, QSizePolicy, QSplitter,
+                             QTextEdit, QVBoxLayout, QWidget, QApplication)
 
 from ..core import formats
 from ..core.config import Config
@@ -100,6 +100,10 @@ class EditorInterface(QWidget):
         self.chk_only_problem.setText("只看待复查/过长/过快")
         self.chk_only_problem.clicked.connect(self._filter)
         fr.addWidget(self.chk_only_problem)
+        self.btn_replace = PushButton("替换…", self.filter_row)
+        self.btn_replace.setToolTip("按当前搜索词批量替换（支持正则），可撤销")
+        self.btn_replace.clicked.connect(self._replace_dialog)
+        fr.addWidget(self.btn_replace)
         fr.addStretch(1)
         self.stat_label = CaptionLabel("—", self.filter_row)
         fr.addWidget(self.stat_label)
@@ -940,6 +944,83 @@ class EditorInterface(QWidget):
                 self._select_row(n)
 
     # ------------------------------------------------------------ 文件
+    def _replace_dialog(self) -> None:
+        """批量替换：搜索词来自当前筛选框（与筛选同源），支持正则。"""
+        if not self.doc or not self.doc.cues:
+            self._say("还没有字幕内容。", 2000)
+            return
+        pat = self.search.text().strip()
+        if not pat or pat.startswith("#"):
+            self._say("先在搜索框输入要找的内容（支持正则），再点替换。", 3500)
+            return
+        import re as _re
+        try:
+            rx = _re.compile(pat, _re.I)
+        except _re.error as e:
+            self._say(f"正则无效：{e}", 4000)
+            return
+        # 收集命中的行与匹配数，让用户先看规模再动手
+        hits: List[Tuple[int, Cue]] = []
+        total_matches = 0
+        for i, c in enumerate(self.doc.cues):
+            n = len(rx.findall(c.display_text))
+            if n:
+                hits.append((i, c))
+                total_matches += n
+        if not hits:
+            self._say("没有匹配的行。", 2500)
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("批量替换")
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(18, 14, 18, 12)
+        info = BodyLabel(
+            f"搜索词：{pat}\n命中 {len(hits)} 行 / {total_matches} 处（正则，忽略大小写）", dlg)
+        info.setWordWrap(True)
+        v.addWidget(info)
+        row = QHBoxLayout()
+        row.addWidget(BodyLabel("替换为（留空即删除匹配内容）", dlg))
+        inp = LineEdit(dlg)
+        inp.setPlaceholderText("可直接引用分组，如 $1 或 \\1")
+        row.addWidget(inp, 1)
+        v.addLayout(row)
+        note = CaptionLabel("作用于全部命中行 · Ctrl+Z 可整体撤销", dlg)
+        v.addWidget(note)
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        b_cancel = PushButton("取消", dlg)
+        b_ok = PrimaryPushButton("全部替换", dlg)
+        btns.addWidget(b_cancel)
+        btns.addWidget(b_ok)
+        v.addLayout(btns)
+        b_cancel.clicked.connect(dlg.reject)
+        b_ok.clicked.connect(dlg.accept)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        repl = inp.text()
+        # $1 → \1：让分组引用写法跟常用编辑器一致
+        repl = _re.sub(r"\$(\d+)", r"\\\1", repl)
+        self.push_undo()
+        changed = 0
+        for i, c in hits:
+            new = rx.sub(repl, c.display_text)
+            if new == c.display_text:
+                continue
+            if not c.original_text:
+                c.original_text = c.text
+            c.text = new
+            c.state = "edited"
+            changed += 1
+        if not changed:
+            self._say("替换后内容没有变化。", 2500)
+            return
+        self.table.render(self.doc.cues, hits[0][0])
+        self.timeline.update()
+        self._filter(self.search.text())
+        self.update_status()
+        self.main.mark_dirty()
+        self._say(f"已替换 {changed} 行（{total_matches} 处），Ctrl+Z 可撤销", 4000)
+
     def _open_project(self) -> None:
         fp, _ = QFileDialog.getOpenFileName(self, "打开工程", self.cfg.last_dir or "",
                                             "字幕工程 (*.ssp *.json);;所有文件 (*)")
@@ -1023,6 +1104,13 @@ class EditorInterface(QWidget):
         # 而且这条路径没有 undo 快照。空文本一律忽略。
         text = (text or "").strip()
         if not text or text == c.display_text:
+            return
+        # 纠错运行中用户可能正在手改这一行（state=edited 且编辑框聚焦）：
+        # 批次结果按批次开始时的旧文本算，覆盖会把用户刚敲的字抹掉。
+        # 交给用户改过的行不再动，标记 review 提醒去核对。
+        if c.state == "edited" and self._editing_row == row:
+            c.state = "review"
+            self.table.update_row(row, c)
             return
         if c.original_text == "":
             c.original_text = c.text

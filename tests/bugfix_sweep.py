@@ -1883,7 +1883,13 @@ _src135b = _insp135.getsource(_mw135.MainWindow._auto_save)
 check("自动保存写前复核代数", "getattr(self, \"_save_gen\", 0) != save_gen" in _src135b)
 check("自动保存单飞守卫", "if self._autosave_worker is not None:" in _src135b)
 _src135c = _insp135.getsource(_mw135.MainWindow._autosave_done)
-check("代数复核清脏标", "gen == self._dirty_gen - 1 and self._dirty" in _src135c)
+# 第 238 轮修正：旧复核 "gen == self._dirty_gen - 1" 恒成立（mark_dirty
+# 从不递增），写盘期间的新编辑被误清脏标。现在 mark_dirty 递增代数、
+# 完成时按 "gen == self._dirty_gen" 复核。
+check("代数复核清脏标", "gen == self._dirty_gen" in _src135c
+      and "- 1" not in _src135c.split("if gen ==")[1].split("and")[0])
+_src135e = _insp135.getsource(_mw135.MainWindow.mark_dirty)
+check("mark_dirty 递增 dirty 代数", "_dirty_gen += 1" in _src135e)
 _src135d = _insp135.getsource(_mw135.MainWindow.load_project)
 check("工程搬家视频相对路径修复", "os.path.join(os.path.dirname(path)," in _src135d)
 
@@ -4475,6 +4481,78 @@ try:
 except Exception:
     _ok237 = False
 check("空文档导出受控", _ok237)
+
+section("220. 自动保存与拖拽与纠错回填修复（第 238 轮钉子）")
+import inspect as _insp238  # noqa: E402
+from sstudio.ui import main_window as _mw238  # noqa: E402
+_src238 = _insp238.getsource(_mw238.MainWindow.mark_dirty)
+check("mark_dirty 递增代数", "_dirty_gen += 1" in _src238)
+_src238b = _insp238.getsource(_mw238.MainWindow._auto_save)
+check("自动保存先抽快照", "snapshot()" in _src238b)
+_src238c = _insp238.getsource(_mw238.MainWindow._autosave_done)
+check("完成按代数复核", "gen == self._dirty_gen" in _src238c)
+_snap238 = _CD147()
+_snap238.cues = [_Cue147(start=0, end=1, text="甲"),
+                 _Cue147(start=1, end=2, text="乙")]
+_j238 = _json211.loads(_mw238._snapshot_to_json(_snap238.snapshot(), _snap238))
+check("快照 JSON 完整读回", _j238.get("format") == "subtitle-studio-project"
+      and len(_j238.get("cues", [])) == 2
+      and _j238["cues"][1]["id"] == _snap238.cues[1].id)
+check("拖拽集合含 ssp 与字幕",
+      all(x in _mw238.MainWindow._DROP_EXTS for x in
+          (".ssp", ".srt", ".vtt", ".ass", ".lrc")))
+_src238d = _insp238.getsource(_mw238.MainWindow.load_project)
+check("打开工程前脏检查", "_dirty" in _src238d
+      and "_CloseAskBox" in _src238d)
+from sstudio.ui import fix_page as _fp238  # noqa: E402
+_src238e = _insp238.getsource(_fp238.FixInterface._on_cue)
+check("回填按 id 找行", "c.id == cid" in _src238e)
+from sstudio.ui.editor_page import EditorInterface as _EI241  # noqa: E402
+_src238f = _insp238.getsource(_EI241.apply_llm_text)
+check("运行中编辑保护", 'state == "edited"' in _src238f)
+
+section("221. 查找替换实测（第 238 轮钉子）")
+import re as _re221x  # noqa: E402
+class _Main241(_QW227):
+    def __init__(self):
+        super().__init__()
+        self.doc = None
+        self.cfg = _CF216()
+    def apply_cfg_theme(self):
+        pass
+    def mark_dirty(self):
+        pass
+_e241 = _EI241(_CF216(), _Main241())
+_doc241 = _CD147()
+_doc241.cues = [_Cue147(start=0, end=1, text="张三你好"),
+                _Cue147(start=1, end=2, text="再见张三"),
+                _Cue147(start=2, end=3, text="李四")]
+_e241.doc = _doc241
+_e241.search.setText("张三")
+_rx241 = _re221x.compile("张三", _re221x.I)
+_hits241 = [(i, c) for i, c in enumerate(_doc241.cues)
+            if _rx241.search(c.display_text)]
+_n241 = sum(len(_rx241.findall(c.display_text)) for _, c in _hits241)
+check("命中统计两行两处", len(_hits241) == 2 and _n241 == 2)
+# 复刻替换语义（不走 QDialog，直接验证 rx.sub + 状态链）
+_e241.push_undo()
+for _i241, _c241 in _hits241:
+    _new241 = _rx241.sub("张四", _c241.display_text)
+    if _new241 != _c241.display_text:
+        if not _c241.original_text:
+            _c241.original_text = _c241.text
+        _c241.text = _new241
+        _c241.state = "edited"
+check("替换后文本与状态", _doc241.cues[0].text == "张四你好"
+      and _doc241.cues[1].text == "再见张四"
+      and _doc241.cues[0].original_text == "张三你好"
+      and _doc241.cues[0].state == "edited")
+check("第三行未动", _doc241.cues[2].text == "李四")
+_r241 = _re221x.sub(r"\$(\d+)", r"\\\1", "$1 你好")
+check("分组引用兼容", _r241 == r"\1 你好")
+# 整体撤销：回到替换前
+_e241.undo()
+check("整体撤销恢复原文", _doc241.cues[0].text == "张三你好")
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
