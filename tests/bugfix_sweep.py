@@ -4287,6 +4287,38 @@ check("穿越剥目录", "\\" not in _out230 and "/" not in _out230)
 _out230b = _e230._file_name('a<b>c"d', "base", _D230(), "srt")
 check("非法字符被换", not any(c in _out230b for c in '<>:"'))
 
+section("213. SRT 与 VTT 解析复测（第 231 轮钉子）")
+_cues231 = _fm147.parse_srt(
+    "1\n00:00:01,000 --> 00:00:02,000\n你好\n\n"
+    "2\n00:00:03,000 --> 00:00:04,500\n世界\n")
+check("标准两条", len(_cues231) == 2)
+check("首条文本与末条结束",
+      _cues231[0].text == "你好"
+      and abs(_cues231[1].end - 4.5) < 1e-6)
+_cues231b = _fm147.parse_srt(
+    "1\n00:00:01,000 --> 00:00:02,000\n好\n\n垃圾块没有箭头\n\n"
+    "3\n00:00:05,000 --> 00:00:06,000\n尾\n")
+check("畸形块跳过保留合法", len(_cues231b) == 2)
+check("空串空列表", _fm147.parse_srt("") == [])
+check("纯噪声空列表", _fm147.parse_srt("没有时间轴的文本\n再来一行\n") == [])
+_cues231c = _fm147.parse_vtt(
+    "WEBVTT\n\nr1\n00:00:01.000 --> 00:00:02.000\n甲\n\n"
+    "00:00:03.000 --> 00:00:04.000\n乙\n")
+check("VTT 两条点毫秒", len(_cues231c) == 2
+      and abs(_cues231c[0].start - 1.0) < 1e-6)
+check("parse_any 双识别", len(_fm147.parse_any(
+    "1\n00:00:01,000 --> 00:00:02,000\n你好\n")) == 2
+    and len(_fm147.parse_any(
+        "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n甲\n")) == 2)
+_doc231 = _CD147()
+_doc231.cues = list(_cues231)
+_back231 = _fm147.to_srt(_doc231)
+check("to_srt 往返在位", "-->" in _back231 and "你好" in _back231)
+_cues231d = _fm147.parse_srt(
+    "1\n00:00:01,000 --> 00:00:02,000\n第一行\n第二行\n")
+check("多行保留", "第一行" in _cues231d[0].text
+      and "第二行" in _cues231d[0].text)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
