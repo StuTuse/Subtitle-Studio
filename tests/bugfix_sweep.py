@@ -3050,4 +3050,36 @@ check("100 行 30/批切 4 批", len(_b184) == 4 and len(_b184[-1]) == 10)
 check("prompt/glossary/参考稿出厂空", _cfg184.prompt_template == ""
       and _cfg184.glossary == "" and _cfg184.reference_script == "")
 
+section("166. 撤销栈集成实测（第 185 轮钉子）")
+from sstudio.ui.editor_page import EditorInterface as _EI185  # noqa: E402
+class _Pl185:
+    def shutdown(self): pass
+class _Host185:
+    status = type("S", (), {"setText": staticmethod(lambda s: None)})()
+    player = _Pl185()
+    doc = None
+    mark_dirty = staticmethod(lambda: None)   # main_window 真身有此方法
+_d185 = _CD147()
+_d185.cues = [_Cue147(start=0, end=1, text="一")]
+_ed185 = _EI185(_CF120(), _Host185())
+_ed185.set_document(_d185)
+_ed185.push_undo()               # 快照 A（一）
+_d185.cues[0].text = "一改"
+_ed185.push_undo()               # 快照 B（一改）
+_d185.cues.append(_Cue147(start=2, end=3, text="二"))
+_ed185.undo()
+check("undo 回退到一改", len(_d185.cues) == 1 and _d185.cues[0].text == "一改")
+_ed185.undo()
+check("再 undo 回到一", _d185.cues[0].text == "一")
+_ed185.redo()
+_ed185.redo()
+check("两次 redo 恢复两行", len(_d185.cues) == 2)
+check("undo 后表格同步两行", _ed185.table.rowCount() == 2)
+for _i185 in range(200):
+    _ed185.push_undo()
+    _d185.cues[0].text = f"版本{_i185}"
+check("栈深封顶 60 且可回退", len(_ed185._undo) <= 60)
+_ed185.push_undo()
+check("push 后 redo 清空", len(_ed185._redo) == 0)
+
 raise SystemExit(finish())
