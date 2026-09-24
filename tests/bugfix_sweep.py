@@ -3976,6 +3976,38 @@ _n216 = len(_cfg216c.recent_files)
 _cfg216c.add_recent("")
 check("add_recent 跳过空串", len(_cfg216c.recent_files) == _n216)
 
+section("199. 参数组合清理实测（第 217 轮钉子）")
+_d217a = _CD147()
+_d217a.cues = [_Cue147(start=0, end=1), _Cue147(start=1.02, end=2)]
+_th189  # 保持别名存活
+from sstudio.core.model import normalize_cues as _nc217  # noqa: E402
+_nc217(_d217a, close_gaps_under=0.05)
+check("小缝被补掉", abs(_d217a.cues[0].end - 1.02) < 1e-9)
+_d217b = _CD147()
+_d217b.cues = [_Cue147(start=0, end=1), _Cue147(start=1.5, end=2)]
+_nc217(_d217b, close_gaps_under=0.05)
+check("大缝保留", _d217b.cues[0].end == 1.0)
+_d217c = _CD147()
+_d217c.cues = [_Cue147(start=0, end=0.05)]
+_nc217(_d217c, min_dur=0.2)
+check("过短拉到 min_dur", abs(_d217c.cues[0].end - 0.2) < 1e-9)
+_d217d = _CD147()
+_d217d.cues = [_Cue147(start=0, end=1.5), _Cue147(start=1.0, end=2.0)]
+_nc217(_d217d)
+check("重叠被消", _d217d.cues[1].start >= _d217d.cues[0].end - 1e-9)
+_d217e = _CD147()
+_d217e.cues = [_Cue147(start=2, end=3), _Cue147(start=0, end=1)]
+_nc217(_d217e)
+check("排序副作用", _d217e.cues[0].start == 0)
+_d217f = _CD147()
+_nc217(_d217f)
+check("空文档安全", _d217f.cues == [])
+_d217g = _CD147()
+_d217g.cues = [_Cue147(start=0, end=1), _Cue147(start=1.0, end=2)]
+_nc217(_d217g, gap=0.04)
+check("gap 留缝", abs(_d217g.cues[1].start - _d217g.cues[0].end) >= 0.039
+      or _d217g.cues[0].end <= 1.0)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
