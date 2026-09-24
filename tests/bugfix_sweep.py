@@ -3288,6 +3288,22 @@ check("check_all 幂等", [_i.id for _i in _it192] == [_i.id for _i in _it192b]
 _src192 = _insp158.getsource(_doc192.pip_install)
 check("pip_install 走镜像清单", "PIP_INDEXES" in _src192)
 
+section("174. 模型目录与恢复默认实测（第 193 轮钉子）")
+from sstudio.core.config import models_dir as _md193, data_dir as _dd193  # noqa: E402
+check("models_dir 在 data_dir 下且已建", _dd193() in _md193()
+      and os.path.isdir(_md193()))
+_cfg193a = _CF120()
+_cfg193a.model_source = "huggingface"
+check("切 huggingface 生效", _cfg193a.model_source == "huggingface")
+_cfg193a.model_source = "modelscope"
+check("切回 modelscope 生效", _cfg193a.model_source == "modelscope")
+_it193 = {_i.id: _i for _i in _doc192.check_all()}
+check("faster_whisper 与 pyav 检查项在位",
+      "faster_whisper" in _it193 and "pyav" in _it193)
+_cfg193b = _CF120()
+check("出厂默认 model_source 与空 Key", _cfg193b.model_source == "modelscope"
+      and _cfg193b.profiles[0].api_key == "")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
