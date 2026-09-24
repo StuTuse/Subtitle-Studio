@@ -3304,6 +3304,25 @@ _cfg193b = _CF120()
 check("出厂默认 model_source 与空 Key", _cfg193b.model_source == "modelscope"
       and _cfg193b.profiles[0].api_key == "")
 
+section("175. 界面工具函数实测（第 194 轮钉子）")
+_ok194 = True
+for _v194 in (0.5, 59, 61, 3600, 7325, 0, -1):
+    try:
+        _s194 = _th189.human_time(_v194)
+        if not any(_c.isdigit() for _c in _s194):
+            _ok194 = False
+    except Exception:
+        _ok194 = False
+check("human_time 全量级含数字不抛", _ok194)
+check("四个 span 函数返回含原文", all("测试" in getattr(_th189, _n)("测试")
+      for _n in ("dim_span", "ok_span", "warn_span", "err_span")))
+from PyQt5.QtGui import QFont as _QF194  # noqa: E402
+check("四个字体函数返回 QFont", all(isinstance(getattr(_th189, _n)(), _QF194)
+      for _n in ("badge_font", "edit_font", "hero_font", "ui_font")))
+_m194 = _th189.monospace()
+check("monospace QFont 家族非空", isinstance(_m194, _QF194) and _m194.family())
+check("布局常量在位", _th189.CARD_MARGINS and _th189.PAGE_MARGINS)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
