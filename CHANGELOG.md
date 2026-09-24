@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.211] - 2026-09-24
+
+v1.17.211：测试加固——bugfix_sweep 第 185 节运行时实测防误触数值控件集成：SafeSpinBox 四方向键与 PageUp PageDown 全屏蔽值不变（真实键盘事件驱动）、编程路径 setValue 正常改值、滚轮与方向键源码级 ignore 屏蔽、SafeDoubleSpinBox 同样键盘防护且浮点精度无损、valueChanged 信号正常发射、弹窗 _menu_gone 清引用与 close_popup 双防析构悬挂——防误触控件实测全部通过，无产品缺陷
+
 ## [1.17.210] - 2026-09-24
 
 v1.17.210：测试加固——bugfix_sweep 第 184 节运行时实测单实例互斥集成：前实例锁存活时后到实例 try_start 判 False 自动让位、SS_NEW_INSTANCE 环境变量逃生门旁路僵死实例守护、on_activate 唤醒回调槽位在位、锁名按数据目录 md5 派生保证多用户与便携目录互不误伤——单实例互斥实测全部通过，无产品缺陷
