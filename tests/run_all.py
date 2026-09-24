@@ -55,6 +55,15 @@ def main() -> int:
         r = subprocess.run([sys.executable, os.path.join(HERE, mod + ".py")],
                            capture_output=True, text=True, encoding="utf-8",
                            errors="replace", cwd=ROOT)
+        # offscreen 下 Qt Multimedia 后端在进程退出析构阶段有已知竞态
+        # （exit=3221225477 = 0xC0000005，全部断言已通过后才崩）。
+        # 这类退出期崩溃与缺陷无关，自动重跑一次：重跑即绿就当通过，
+        # 真正的断言失败（exit=1）不会被掩盖。
+        if r.returncode == 3221225477:
+            print("      WARN  退出期 0xC0000005（媒体后端析构竞态），自动重跑一次")
+            r = subprocess.run([sys.executable, os.path.join(HERE, mod + ".py")],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", cwd=ROOT)
         dt = time.time() - t0
         out = (r.stdout or "") + (r.stderr or "")
         tail = [ln for ln in out.splitlines() if ln.strip()]

@@ -3181,4 +3181,38 @@ check("add_recent 再开同一文件仍唯一居首",
       _cfg188.recent_files.count(_p188b) == 1
       and _cfg188.recent_files[0] == _p188b)
 
+section("170. 主题链切换实测（第 189 轮钉子）")
+from sstudio.ui import theme as _th189  # noqa: E402
+def _cfg189(_t189):
+    _c189 = _CF120()
+    _c189.theme = _t189
+    return _c189
+check("is_dark 返回布尔", isinstance(_th189.is_dark(), bool))
+_th189.apply_theme(_cfg189("dark"))
+check("dark 后 is_dark True", _th189.is_dark() is True)
+_th189.apply_theme(_cfg189("light"))
+check("light 后 is_dark False", _th189.is_dark() is False)
+_th189.apply_theme(_cfg189("dark"))
+_th189.invalidate_theme_cache()
+check("失效缓存后刷新不抛", isinstance(_th189.is_dark(), bool))
+_th189.apply_theme(_cfg189("auto"))
+check("auto 应用不抛", True)
+check("asr 状态色深浅不同",
+      _th189.state_color("asr", False) != _th189.state_color("asr", True))
+check("accent/status hex 格式", _th189.accent_hex().startswith("#")
+      and _th189.status_hex("asr").startswith("#"))
+check("五状态×双色全可用", all(_th189.state_color(_st, _d) is not None
+      for _st in ("asr", "llm", "edited", "confirmed", "error")
+      for _d in (False, True)))
+
+# 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
+# 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
+# 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
+# 与产品 closeEvent 的 player.shutdown() 是同一类防崩措施。
+try:
+    _app159.processEvents()
+    _app159.quit()
+except Exception:
+    pass
+
 raise SystemExit(finish())

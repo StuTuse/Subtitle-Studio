@@ -394,4 +394,19 @@ sp.finish(animated=False)
 pump()
 check("finish 后关闭", not sp.isVisible())
 
+# 退出前清场：本用例建了主窗口/播放器/闪屏等大量带 C++ 后端的对象，
+# 解释器关闭时析构顺序不定，DirectShow 后端偶发 0xc0000005（与产品
+# closeEvent 显式 player.shutdown() 同源）。关掉全部顶层窗口、
+# 排干挂起事件并显式删掉主窗口引用后再退出。
+try:
+    for _w in QApplication.topLevelWidgets():
+        _w.close()
+    pump(5)
+    del win
+    pump(3)
+    app.quit()
+    pump(2)
+except Exception:
+    pass
+
 sys.exit(finish())
