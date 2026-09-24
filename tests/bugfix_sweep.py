@@ -2856,4 +2856,38 @@ check("标题取 summary", _frd176.title.text() == _s176)
 check("按钮三态与必需状态自洽", (_frd176.btn_close.text() == "完成，开始使用") == _req176)
 _frd176.reject()
 
+section("158. 表格与时间轴联动集成实测（第 177 轮钉子）")
+from sstudio.ui.cue_table import CueTable as _CT177  # noqa: E402
+from sstudio.ui.timeline import Timeline as _Tl177  # noqa: E402
+_d177 = _CD147()
+_d177.cues = [_Cue147(start=0, end=2, text="甲"), _Cue147(start=3, end=5, text="乙")]
+_ct177 = _CT177()
+_tl177 = _Tl177()
+_ct177.render(_d177.cues)
+_tl177.set_document(_d177)
+check("表格两行与时间轴时长", _ct177.rowCount() == 2 and _tl177.duration >= 5.0)
+_d177.cues[0].text = "甲改"
+_ct177.update_row(0, _d177.cues[0])
+check("单行刷新文本", _ct177.item(0, 5).text() == "甲改")
+_got177 = []
+_ct177.cue_changed.connect(lambda row, txt: _got177.append((row, txt)))
+_ct177.itemChanged.emit(_ct177.item(1, 5))
+check("cue_changed 信号签名齐", len(_got177) == 1 and _got177[0][0] == 1)
+_clk177 = []
+_tl177.cue_clicked.connect(lambda i: _clk177.append(i))
+_tl177.cue_clicked.emit(0)
+_app159.processEvents()
+check("cue_clicked 链通", _clk177 == [0])
+_seek177 = []
+_tl177.seek_requested.connect(lambda s: _seek177.append(s))
+_tl177.seek_requested.emit(2.5)
+check("seek_requested 链通", _seek177 == [2.5])
+_snap177 = _d177.snapshot()
+_d177.cues.clear()
+_ct177.render(_d177.cues)
+check("清空后表格 0 行", _ct177.rowCount() == 0)
+_d177.restore(_snap177)
+_ct177.render(_d177.cues)
+check("restore 后表格 2 行", _ct177.rowCount() == 2)
+
 raise SystemExit(finish())
