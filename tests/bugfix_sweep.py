@@ -3338,12 +3338,9 @@ except Exception:
 check("不存在路径与空串不抛", _ok195)
 _tmp195 = os.path.join(_tp175.gettempdir(), "sw195.txt")
 open(_tmp195, "w", encoding="utf-8").write("x")
-try:
-    _th189.open_path(_tmp195)
-    _ok195b = True
-except Exception:
-    _ok195b = False
-check("存在文件打开不抛", _ok195b)
+# 注意：不得真实调用 open_path(存在文件)——os.startfile 会弹资源管理器/
+# 编辑器窗口打扰用户。存在文件的分支只做源码级断言。
+check("存在文件分支存在", "os.startfile" in _src195)
 os.remove(_tmp195)
 
 section("177. 文档查询方法实测（第 196 轮钉子）")
@@ -4007,6 +4004,27 @@ _d217g.cues = [_Cue147(start=0, end=1), _Cue147(start=1.0, end=2)]
 _nc217(_d217g, gap=0.04)
 check("gap 留缝", abs(_d217g.cues[1].start - _d217g.cues[0].end) >= 0.039
       or _d217g.cues[0].end <= 1.0)
+
+section("200. 原子写盘实测（第 218 轮钉子）")
+from sstudio.ui.main_window import _atomic_write_text as _awt218  # noqa: E402
+_p218 = os.path.join(_tp175.gettempdir(), "sw218.ssp")
+_awt218(_p218, '{"a": 1}')
+check("正常写盘", _json211.load(open(_p218, encoding="utf-8")) == {"a": 1})
+_awt218(_p218, '{"a": 2}')
+check("覆盖写成功", _json211.load(open(_p218, encoding="utf-8")) == {"a": 2})
+check("无 tmp 残留", not os.path.exists(_p218 + ".tmp"))
+_awt218(_p218, '{"t": "中文字幕"}')
+check("utf-8 中文无损", _json211.load(open(_p218, encoding="utf-8"))["t"]
+      == "中文字幕")
+try:
+    _awt218(r"D:\no-such-dir-218\x.ssp", "x")
+    _ok218 = False
+except OSError:
+    _ok218 = True
+except Exception:
+    _ok218 = False
+check("不可写路径抛 OSError", _ok218)
+os.remove(_p218)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
