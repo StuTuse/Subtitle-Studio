@@ -110,6 +110,7 @@ def _reasoning_of(msg) -> str:
 
 _REASONING_NO_CAP: set = set()    # 已知"必须去掉 max_tokens 才吐正文"的 (base_url, model)
 _REASON_INEFFECTIVE: set = set()  # 勾了"关闭思考"但服务端根本不执行的 (base_url, model)
+_STREAM_TRUNCATED: set = set()    # 流式输出曾因 token 上限/断流被腰斩的 (base_url, model)
 
 # 各家推理模型的常见命名。用分段精确匹配而不是子串：早先用 "o1" 做子串，
 # 任何名字里带 o1 的模型（如 foo1-mini）都会被误判成推理模型。
@@ -214,12 +215,22 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
         kw2["stream"] = True
         parts: List[str] = []
         reason_parts: List[str] = []
+        stream_truncated = False       # finish_reason=length：正文被 token 上限腰斩
+        last_resp = None
         try:
             for chunk in client.chat.completions.create(**kw2):
+                last_resp = chunk
                 try:
                     delta = chunk.choices[0].delta if chunk.choices else None
+                    finish = (chunk.choices[0].finish_reason
+                              if chunk.choices else None)
                 except (AttributeError, IndexError):
-                    delta = None
+                    delta, finish = None, None
+                if finish == "length":
+                    # 输出在 token 上限处被截断：非流式路径 401 那套"正文为空
+                    # 才报"的判定在这里失灵——截断文本非空，会被当完整结果
+                    # 用出去。记下来，让调用方在结果里说清楚。
+                    stream_truncated = True
                 if delta is None:
                     continue
                 d = getattr(delta, "content", None)
@@ -238,6 +249,12 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
             # 吞掉它全局止损就收不到信号，剩余批次会继续排队白等
             if not parts or _is_conn_refused(e):
                 raise
+            stream_truncated = True    # 异常腰斩：比 finish_reason 更明确
+        # 流式也做"关闭思考是否生效"校验：流式分支此前从不校验，
+        # no_reasoning_note 对走流式的功能永远报不出参数未生效
+        _check_no_reason_effective(last_resp, None)
+        if stream_truncated:
+            _STREAM_TRUNCATED.add(key)
         return "".join(parts).strip(), "".join(reason_parts).strip()
 
     text, reasoning = once(kwargs)
@@ -275,6 +292,16 @@ def no_reasoning_note(prof: LLMProfile) -> str:
                 "思考仍会产生、拖慢速度并消耗 token。纠错结果不受影响；"
                 "想提速可换 reasoning_effort=none 生效的模型（如 Qwen3 / GLM-Flash 系）。")
     return ""
+
+
+def truncation_note(prof: LLMProfile) -> str:
+    """本接入点最近一次流式输出被腰斩（token 上限/断流）时的一句提醒。"""
+    key = ((prof.base_url or "").rstrip("/"), prof.model)
+    if key not in _STREAM_TRUNCATED:
+        return ""
+    return (f"「{prof.model}」最近有输出在 token 上限处被截断（或连接中断），"
+            "对应批次已按原样收下但可能不完整。可调大「最大输出 token」"
+            "或减小每批行数后对失败行重跑。")
 
 
 def test_connection(prof: LLMProfile) -> Tuple[bool, str, float]:
@@ -726,6 +753,9 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     note = no_reasoning_note(_prof_holder[0])
     if note:
         result.failures.append(note)       # 跑完提示一次即可，不逐批刷屏
+    tnote = truncation_note(_prof_holder[0])
+    if tnote:
+        result.failures.append(tnote)      # 截断提醒同理：一次就够
     return result
 
 

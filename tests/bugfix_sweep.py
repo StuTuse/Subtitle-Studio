@@ -4715,6 +4715,89 @@ check("设置页检查落盘结果", "if not cfg.save():" in _src240e)
 check("失败弹错误 InfoBar", "InfoBar.error" in _src240e
       and "保存失败" in _src240e)
 
+section("226. 流式 no_reasoning 校验与截断标记（第 241 轮钉子）")
+from sstudio.core import llm as _llm241  # noqa: E402
+_src241 = _insp238.getsource(_llm241.chat)
+check("流式收 finish_reason", "finish_reason" in _src241)
+check("length 记截断", '"length"' in _src241 and "stream_truncated" in _src241)
+check("断流异常记截断", "stream_truncated = True" in
+      _src241.split("except Exception as e:")[1])
+check("流式校验关思考生效", _src241.count("_check_no_reason_effective") >= 2)
+check("_STREAM_TRUNCATED 集合存在", hasattr(_llm241, "_STREAM_TRUNCATED"))
+check("truncation_note 存在", callable(getattr(_llm241, "truncation_note", None)))
+_src241b = _insp238.getsource(_llm241.fix_document)
+check("截断提醒进失败清单", "truncation_note(_prof_holder[0])" in _src241b)
+# 运行时：finish_reason=length 记录、正常完成不记录、连接拒绝仍抛出
+class _D241:
+    content = "部分正文"
+    reasoning_content = None
+class _C241:
+    delta = _D241()
+    finish_reason = None
+class _CLen241:
+    delta = _D241()
+    finish_reason = "length"
+class _Chk241:
+    def __init__(self, c):
+        self.choices = [c]
+class _St241:
+    def __init__(self, chunks):
+        self._c = chunks
+    def __iter__(self):
+        return iter(self._c)
+class _U241:
+    completion_tokens_details = None
+class _R241:
+    usage = _U241()
+def _mk_client241(chunks, boom=False, refused=False):
+    class _CC241:
+        def create(self, **kw):
+            if kw.get("stream"):
+                if refused:
+                    raise ConnectionError("[Errno 111] Connection refused")
+                if boom:
+                    def _g():
+                        yield chunks[0]
+                        raise RuntimeError("connection broken mid-stream")
+                    return _g()
+                return _St241(chunks)
+            return _R241()
+    class _Clt241:
+        def __init__(self):
+            self.chat = type("C", (), {"completions": property(lambda s: _CC241())})()
+    return _Clt241()
+_p241 = _LP239(name="T", base_url="http://127.0.0.1:9000/v1", api_key="k", model="m")
+_k241 = (_p241.base_url.rstrip("/"), _p241.model)
+_llm241._STREAM_TRUNCATED.discard(_k241)
+_real_cl241 = _llm241.load_client
+_llm241.load_client = lambda p: _mk_client241([_Chk241(_C241()), _Chk241(_CLen241())])
+_out241 = _llm241.chat(_p241, [{"role": "user", "content": "x"}], on_delta=lambda d: None)
+_llm241.load_client = _real_cl241
+check("length 截断被记录", _k241 in _llm241._STREAM_TRUNCATED)
+check("截断提醒有文案", "被截断" in _llm241.truncation_note(_p241))
+_llm241._STREAM_TRUNCATED.discard(_k241)
+_llm241.load_client = lambda p: _mk_client241([_Chk241(_C241())], boom=True)
+_out241b = _llm241.chat(_p241, [{"role": "user", "content": "x"}], on_delta=lambda d: None)
+_llm241.load_client = _real_cl241
+check("断流保留已有输出", _out241b == "部分正文")
+check("断流记截断", _k241 in _llm241._STREAM_TRUNCATED)
+_llm241._STREAM_TRUNCATED.discard(_k241)
+_raised241 = False
+_llm241.load_client = lambda p: _mk_client241([], refused=True)
+try:
+    _llm241.chat(_p241, [{"role": "user", "content": "x"}], on_delta=lambda d: None)
+except ConnectionError:
+    _raised241 = True
+except Exception:
+    _raised241 = False
+_llm241.load_client = _real_cl241
+check("连接拒绝仍抛出", _raised241 and _k241 not in _llm241._STREAM_TRUNCATED)
+_llm241.load_client = lambda p: _mk_client241([_Chk241(_C241()), _Chk241(_C241())])
+_llm241.chat(_p241, [{"role": "user", "content": "x"}], on_delta=lambda d: None)
+_llm241.load_client = _real_cl241
+check("正常完成不记截断", _k241 not in _llm241._STREAM_TRUNCATED
+      and _llm241.truncation_note(_p241) == "")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
