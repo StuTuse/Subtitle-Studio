@@ -2494,4 +2494,27 @@ _src161 = _insp158.getsource(_SS161.__init__)
 check("keyboardTracking 关防输入中触发", "setKeyboardTracking(False)" in _src161
       and "CorrectToNearestValue" in _src161)
 
+section("143. 启动页与单实例守护实测（第 162 轮钉子）")
+from sstudio.ui.splash import Splash as _Spl162  # noqa: E402
+from sstudio.ui.single_instance import (SingleInstance as _SI162,  # noqa: E402
+                                        _server_name as _sn162)
+_spl162 = _Spl162("1.17.168")        # run.py 传参调用
+check("Splash 带 version 实例化", _spl162 is not None)
+_spl162.close()
+_src162 = open("sstudio/ui/splash.py", encoding="utf-8").read()
+check("淡出令牌与 600ms 兜底", 'b"fadeOut"' in _src162
+      and "singleShot(600, self._force_close)" in _src162)
+check("单实例名字按数据目录派生", "md5(" in open("sstudio/ui/single_instance.py",
+      encoding="utf-8").read() and _sn162().startswith("SubtitleStudio-"))
+_si162a = _SI162(_app159)
+# 注意：第 13 节（第 90 轮钉）已在同进程占住锁且 _a1 持有到进程退出——
+# 守护语义正确，这里不能再断言"首个实例"，改为验证同进程活锁下 try_start
+# 行为与逃生门。首个占锁已由第 13 节覆盖。
+_si162b = _SI162(_app159)
+check("活实例连接探测互斥 False", _si162b.try_start() is False)
+os.environ["SS_NEW_INSTANCE"] = "1"
+_si162c = _SI162(_app159)
+check("逃生门环境变量旁路", _si162c.try_start() is True)
+os.environ.pop("SS_NEW_INSTANCE", None)
+
 raise SystemExit(finish())
