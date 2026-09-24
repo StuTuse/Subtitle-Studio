@@ -2746,4 +2746,42 @@ check("进度逐条回填", "_on_cue" in _src172 and "_on_progress" in _src172)
 check("失败走 _finish 收尾", "_on_failed" in _src172 and "_finish" in _src172)
 check("脚本导入与术语收割", "_load_script" in _src172 and "_harvest_terms" in _src172)
 
+section("154. 跨模块全链集成实测（第 173 轮钉子）")
+import json as _json173  # noqa: E402
+import tempfile as _tmp173  # noqa: E402
+# 全链：doc → .ssp 工程落盘（to_json）→ from_dict 载回 → 导出 SRT
+_d173 = _CD147()
+_d173.cues = [_Cue147(start=0.0, end=1.5, text="第一句", speaker="旁白"),
+              _Cue147(start=2.0, end=3.5, text="第二句，带逗号", speaker="甲"),
+              _Cue147(start=4.0, end=5.5, text="Third in English", speaker="B")]
+_d173.source_video = "D:/v/演示.mp4"
+_p173 = os.path.join(_tmp173.gettempdir(), "sw173.ssp")
+with open(_p173, "w", encoding="utf-8") as _f173:
+    _f173.write(_d173.to_json())
+with open(_p173, "r", encoding="utf-8") as _f173:
+    _d173b = _CD147.from_dict(_json173.load(_f173))
+check("ssp 往返条数与视频路径", len(_d173b.cues) == 3
+      and _d173b.source_video == "D:/v/演示.mp4")
+check("ssp→SRT 导出含全部", all(_t in _fm147.to_srt(_d173b) for _t in
+      ("第一句", "第二句，带逗号", "Third in English")))
+os.remove(_p173)
+# SRT / VTT 往返
+_srt173 = _fm147.to_srt(_d173)
+_d173c = _CD147(cues=_fm147.parse_srt(_srt173))
+check("SRT 往返条数文本时间", len(_d173c.cues) == 3
+      and [c.text for c in _d173c.cues] == ["第一句", "第二句，带逗号", "Third in English"]
+      and abs(_d173c.cues[2].end - 5.5) < 1e-3)
+_vtt173 = _fm147.to_vtt(_d173)
+_d173d = _CD147(cues=_fm147.parse_vtt(_vtt173))
+check("VTT 往返文本一致", [c.text for c in _d173d.cues] ==
+      [c.text for c in _d173.cues])
+# parse_any 自动识别（(cues, fmt) 二元组）
+_c173a, _f173a = _fm147.parse_any(_srt173, "a.srt")
+_c173b, _f173b = _fm147.parse_any(_vtt173, "a.vtt")
+_c173c, _f173c = _fm147.parse_any(_fm147.to_json(_d173), "a.json")
+check("parse_any 三格式识别", len(_c173a) == 3 and "srt" in _f173a.lower()
+      and len(_c173b) == 3 and "vtt" in _f173b.lower()
+      and len(_c173c) == 3 and "json" in _f173c.lower())
+check("JSON 往返 speaker 保留", [c.speaker for c in _c173c] == ["旁白", "甲", "B"])
+
 raise SystemExit(finish())
