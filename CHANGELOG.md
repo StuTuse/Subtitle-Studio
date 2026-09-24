@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.178] - 2026-09-24
+
+v1.17.178：测试加固——bugfix_sweep 第 152 节运行时实测编辑页状态机：EditorInterface 离屏实例化不抛、核心方法八件套在位（动作分发 set_document 状态更新 撤销 重做 LLM 文本回填 撤销入栈 播放区按键拦截）、set_document 全链（表格渲染与时间轴与选中联动）不抛、update_status 重复调用幂等、空撤销栈 undo 与 redo 均安全不抛——editor_page.py 二轮复扫全部通过，无产品缺陷
+
 ## [1.17.177] - 2026-09-24
 
 v1.17.177：测试加固——bugfix_sweep 第 151 节运行时实测主窗生命周期：offscreen 实例化不抛、closeEvent 与 save_project 在位、未保存 dirty 挡关二次 close 幂等不抛、未保存退出走信号模式弹框（防 MessageBox 淡出动画卡死嵌套事件循环与 0xC0000005 崩溃）、关窗先拆媒体后端防 Windows DirectShow 被动析构竞态、设置页测试线程摘父子再析构、窗口几何与音量与编辑页分栏比例全部持久化到配置、导出与纠错后台任务关窗时协作取消在批次边界收尾——main_window.py 二轮复扫全部通过，无产品缺陷
