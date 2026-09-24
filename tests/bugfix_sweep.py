@@ -2920,4 +2920,41 @@ _c178x.state = "llm"
 check("is_changed 检出差异", _c178x.is_changed())
 check("display_text 取新文本", _c178x.display_text == "改")
 
+section("160. 配置持久化链集成实测（第 179 轮钉子）")
+import tempfile as _tp179  # noqa: E402
+import shutil as _sh179  # noqa: E402
+from sstudio.core.config import Config as _CF179, config_path as _cp179  # noqa: E402
+_home179 = _tp179.mkdtemp(prefix="ss160_")
+os.environ["SUBTITLE_STUDIO_HOME"] = _home179
+try:
+    _c179a = _CF179()
+    _c179a.export_encoding = "gbk"
+    _c179a.whisper_model = "medium"
+    _c179a.profiles[0].api_key = "sk-179"
+    _c179a.save()
+    check("save 落盘 JSON 含字段", _json173.load(open(_cp179(), encoding="utf-8"))
+          .get("export_encoding") == "gbk")
+    _c179b = _CF179.load()          # 类方法：返回新实例（不就地改）
+    check("load 回读编码模型 Key", _c179b.export_encoding == "gbk"
+          and _c179b.whisper_model == "medium"
+          and _c179b.profiles[0].api_key == "sk-179")
+    _c179b.export_encoding = "utf-8"
+    _c179b.save()
+    check("第二次 save 产生 .bak", os.path.isfile(_cp179() + ".bak")
+          and _json173.load(open(_cp179() + ".bak", encoding="utf-8"))
+          .get("export_encoding") == "gbk")
+    open(_cp179(), "w", encoding="utf-8").write("{corrupted")
+    _c179c = _CF179.load()
+    check("损坏 load 带 load_failed 标志", _c179c.load_failed)
+    check(".bad 证据产生", os.path.isfile(_cp179() + ".bad"))
+    _c179c.save()
+    check("load_failed 拒写盘原样保留", open(_cp179(), encoding="utf-8").read() == "{corrupted")
+    _sh179.copyfile(_cp179() + ".bak", _cp179())
+    _c179d = _CF179.load()
+    check("恢复 .bak 后可正常读写", not _c179d.load_failed)
+    _c179d.save()
+finally:
+    os.environ.pop("SUBTITLE_STUDIO_HOME", None)
+    _sh179.rmtree(_home179, ignore_errors=True)
+
 raise SystemExit(finish())
