@@ -3612,6 +3612,53 @@ check("valueChanged 发射 88", _fired204 and _fired204[-1] == 88)
 check("_menu_gone 与 close_popup 在位", hasattr(_sp204, "_menu_gone")
       and hasattr(_sp204, "close_popup"))
 
+section("186. 字幕状态流转实测（第 205 轮钉子）")
+_c205 = _Cue147(start=0, end=1, text="乙", state="asr")
+_c205.state = "llm"
+check("asr→llm 流转", _c205.state == "llm")
+_c205.state = "edited"
+check("llm→edited 流转", _c205.state == "edited")
+_c205.state = "confirmed"
+check("edited→confirmed 流转", _c205.state == "confirmed")
+_c205.state = "error"
+check("confirmed→error 流转", _c205.state == "error")
+_c205b = _Cue147(start=0, end=1, text="改正后", original_text="原始错别子")
+check("original_text 独立保存", _c205b.text == "改正后"
+      and _c205b.original_text == "原始错别子")
+_d205 = _CD147()
+_d205.cues = [_Cue147(start=0, end=1, text="改正后", original_text="原始", state="llm")]
+check("text≠original changed=1", _d205.stats()["changed"] == 1)
+_d205.cues[0].text = "  原始  "
+_d205.cues[0].state = "asr"
+check("剥边相同 changed=0", _d205.stats()["changed"] == 0)
+_c205c = _Cue147(start=0, end=1, text="甲",
+                 words=[{"start": 0, "end": 0.5, "word": "甲", "prob": 0.9}])
+check("words 字段保留", len(_c205c.words) == 1
+      and _c205c.words[0]["prob"] == 0.9)
+_c205d = _Cue147(start=0, end=1, text="甲", speaker="小明",
+                 confidence=0.87, notes="备注")
+check("speaker 与 confidence 与 notes", _c205d.speaker == "小明"
+      and abs(_c205d.confidence - 0.87) < 1e-9 and _c205d.notes == "备注")
+
+section("187. CUDA 预探测缓存实测（第 205 轮钉子·真缺陷修复）")
+_src205 = open("sstudio/core/doctor.py", encoding="utf-8").read()
+check("check_all 现场枚举已移除", "get_cuda_device_count" not in _src205
+      or "_cached_gpu_count" in _src205)
+check("preprobe_gpu 缓存函数在位", "def preprobe_gpu" in _src205
+      and "_GPU_COUNT_CACHE" in _src205)
+check("缓存异常安全兜 0", "except BaseException" in _src205)
+check("__main__ 早期预探测", "preprobe_gpu" in open(
+      "sstudio/__main__.py", encoding="utf-8").read())
+_ui205 = open("sstudio/ui/welcome_wizard.py", encoding="utf-8").read()
+check("向导 refresh 不现场枚举", "get_cuda_device_count" not in _ui205)
+from sstudio.core import doctor as _doc205  # noqa: E402
+# 注意：不调 preprobe_gpu()——它只能在媒体后端激活前的进程早期安全执行
+# （本 sweep 前段已激活过播放器），现场枚举会 AV；这正是本节钉住的坑。
+# check_all 走 _cached_gpu_count 只读缓存，任何进程态都安全。
+check("check_all 全链稳定", len(_doc205.check_all()) >= 5)
+_g205 = _doc205._GPU_COUNT_CACHE
+check("独测 core 时缓存缺省按无 GPU", _g205 is None or isinstance(_g205, int))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

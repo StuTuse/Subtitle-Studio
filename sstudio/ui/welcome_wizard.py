@@ -357,6 +357,9 @@ class _CheckPage(_Page):
             if r.widget():
                 r.widget().deleteLater()
         self._row_btns.clear()
+        # CUDA 项只读预探测缓存（见 doctor.preprobe_gpu 注释）。此处不调
+        # preprobe_gpu：refresh 发生在播放器激活后，若缓存为空（独测/异常
+        # 路径）枚举会 AV——空缓存按「未检测到 GPU」处理即可。
         self._items = doctor.check_all()
         for it in self._items:
             self.host.addWidget(self._row(it))
@@ -744,6 +747,8 @@ def maybe_show_welcome(cfg: Config, parent=None) -> bool:
     """首次使用时弹欢迎向导。返回 False = 用户中途关掉向导（罕见），照常进主界面。"""
     if getattr(cfg, "setup_done", False):
         return True
+    # CUDA 预探测由 __main__ 在 MainWindow 构造前完成（见 doctor.preprobe_gpu
+    # 注释）；此处不做任何 CUDA 相关动作——向导打开时播放器已激活。
     dlg = WelcomeWizard(cfg, parent)
     dlg.setModal(True)
     dlg.exec_()

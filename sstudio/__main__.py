@@ -149,6 +149,16 @@ def main(argv=None) -> int:
     splash.show_stage("正在加载界面…")
     from sstudio.ui.main_window import MainWindow
 
+    # CUDA 预探测必须在 MainWindow/播放器（DirectShow 后端）激活之前做：
+    # 媒体后端激活过的进程里 ctranslate2 的 CUDA 枚举会 access violation
+    # （上游 Qt × NVIDIA 驱动 × ctranslate2 三方冲突，见 doctor.preprobe_gpu）。
+    # 早期枚举一次进缓存，欢迎向导/设置页体检读缓存，永不在现场枚举。
+    try:
+        from sstudio.core import doctor as _doctor
+        _doctor.preprobe_gpu()
+    except Exception:
+        pass
+
     splash.show_stage("正在初始化工作区…")
     win = MainWindow(cfg)
 

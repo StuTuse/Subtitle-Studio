@@ -197,6 +197,9 @@ class FirstRunDialog(QDialog):
 
     # ------------------------------------------------------------ 检查
     def _run_checks(self) -> None:
+        # CUDA 项只读 doctor 的预探测缓存（见 doctor.preprobe_gpu 注释：
+        # 媒体后端激活过的进程里现场枚举会 access violation），此处不补
+        # preprobe_gpu——空缓存按「未检测到 GPU」处理。
         self._items = doctor.check_all()
         self._clear_rows()
         for it in self._items:

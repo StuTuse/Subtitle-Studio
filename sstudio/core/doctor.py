@@ -200,6 +200,41 @@ def _mod_version(mod_name: str) -> str:
         return ""
 
 
+# ---------------------------------------------------------------- CUDA 预探测
+# 机器级坑：Qt Multimedia（DirectShow）激活过的进程里，ctranslate2 的
+# CUDA 枚举（get_cuda_device_count）会 access violation（上游三方冲突：
+# Qt 后端 × NVIDIA 驱动 × ctranslate2）。播放器 shutdown 之后枚举恢复安全，
+# 但向导体检页打开时主窗口/播放器已经建好——不能指望那时再摘后端。
+# 因此：CUDA 探测只在【进程早期、任何媒体后端激活之前】做一次并缓存，
+# check_all 一律读缓存值；settings_page/向导的重查（force）也走这条缓存，
+# 修复后的复核走「重新检查」按钮时同样安全（不再现场枚举 CUDA）。
+_GPU_COUNT_CACHE: Optional[int] = None
+
+
+def preprobe_gpu() -> int:
+    """进程早期调用一次：枚举 CUDA 设备数并缓存。重复调用/异常安全。"""
+    global _GPU_COUNT_CACHE
+    if _GPU_COUNT_CACHE is not None:
+        return _GPU_COUNT_CACHE
+    n = 0
+    try:
+        import ctranslate2 as _ct2
+        n = _ct2.get_cuda_device_count() or 0
+    except BaseException:
+        n = 0
+    _GPU_COUNT_CACHE = int(n)
+    return _GPU_COUNT_CACHE
+
+
+def _cached_gpu_count() -> int:
+    """check_all 内部使用：绝不在现场枚举（见 preprobe_gpu 注释）。"""
+    if _GPU_COUNT_CACHE is not None:
+        return _GPU_COUNT_CACHE
+    # 未预探测（理论上只在独测 core 时发生）：退化为「不枚举、当作无 GPU」，
+    # 体检页少一个 CUDA 项好过现场 AV 闪退。
+    return 0
+
+
 def check_all() -> List[CheckItem]:
     """跑全部检查。全部本地操作，耗时 < 2s。"""
     items: List[CheckItem] = []
@@ -267,12 +302,7 @@ def check_all() -> List[CheckItem]:
         # force=True：修复重查必须绕过会话内缓存——首启已把 unusable 结果
         # 缓存住，一键修复装好 cublas 后不强制重探的话，本会话内永远红
         rt = _cuda.register(force=True)
-        gpu = False
-        try:
-            import ctranslate2 as _ct2
-            gpu = _ct2.get_cuda_device_count() > 0
-        except Exception:
-            gpu = False
+        gpu = _cached_gpu_count() > 0     # 只读预探测缓存，绝不现场枚举
         if gpu:
             ok = bool(rt.usable and _cuda.probe_loadable(rt))
             items.append(CheckItem(
