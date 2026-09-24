@@ -4196,6 +4196,36 @@ except Exception:
     _ok226b = False
 check("show_page 边界不炸", _ok226b)
 
+section("209. 设置页往返复测（第 227 轮钉子）")
+from sstudio.ui.settings_page import SettingsInterface as _SI227  # noqa: E402
+from PyQt5.QtWidgets import QWidget as _QW227  # noqa: E402
+class _Main227(_QW227):
+    def apply_cfg_theme(self):
+        pass
+_cfg227 = _CF216()
+_s227 = _SI227(_cfg227, _Main227())
+check("越界值夹到 minimum", (_s227.batch.setValue(3),
+      _s227.batch.value() == _s227.batch.minimum())[1])
+_s227.batch.setValue(6)
+try:
+    _s227._save()
+    _ok227a = _cfg227.batch_size == 6
+except Exception:
+    _ok227a = False
+check("_save 落 cfg", _ok227a)
+try:
+    _s227b = _SI227(_cfg227, _Main227())
+    _ok227b = _s227b.batch.value() == 6
+    _s227b.batch.setValue(10)
+    _s227b._save()
+    _ok227b = _ok227b and _cfg227.batch_size == 10
+except Exception:
+    _ok227b = False
+check("重开回显与再存生效", _ok227b)
+_cfg227.save()
+_cfg227c = _CF216.load()
+check("batch_size 持久化", _cfg227c.batch_size == 10)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
