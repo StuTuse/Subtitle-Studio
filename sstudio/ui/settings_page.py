@@ -557,7 +557,14 @@ class SettingsInterface(QWidget):
         cfg.auto_cpu_fallback = self.fallback.isChecked()
         cfg.model_source = self.mirror.currentData() or "modelscope"
         cfg.cuda_rt_dir = self.cuda_dir.text().strip()
-        cfg.save()
+        if not cfg.save():
+            # 旧实现吞掉写盘异常：磁盘满/被占用时也显示"已保存"，重启后
+            # 设置无声回滚。现在失败明确报错。
+            InfoBar.error("保存失败",
+                          "设置未能写入本地配置文件（磁盘满或被占用？）。"
+                          "当前会话内设置仍生效，请检查磁盘后重试。",
+                          parent=self.main, position=InfoBarPosition.TOP, duration=6000)
+            return
         tip = "设置已写入本地配置文件。"
         if scale_changed:
             tip += " 界面缩放已更新，重启软件后生效。"

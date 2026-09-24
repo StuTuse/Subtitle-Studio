@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import List, Optional, Tuple
 
 from qfluentwidgets import (Action, BodyLabel, CaptionLabel, CommandBar, FluentIcon as FIF,
@@ -39,6 +40,8 @@ class EditorInterface(QWidget):
         self.doc: Optional[CueDocument] = None
         self._undo: List[dict] = []
         self._redo: List[dict] = []
+        self._undo_row = -1            # 上次快照对应的行（编辑流合并判据）
+        self._undo_ts = 0.0            # 上次快照时刻
         self._follow = True
         self._editing_row = -1
         # 编辑缓冲归属：缓冲里装的是哪一行的内容、是否带未落盘的用户输入。
@@ -559,6 +562,7 @@ class EditorInterface(QWidget):
         self._last_dark = None      # 空态期间主题可能已变过：强制下一拍重染一次
         if reset_history:
             self._undo, self._redo = [], []
+            self._undo_row, self._undo_ts = -1, 0.0
         self.table.render(doc.cues if doc else [])
         self.timeline.set_document(doc)
         if doc is not None and doc.source_video and os.path.isfile(doc.source_video):
@@ -596,11 +600,22 @@ class EditorInterface(QWidget):
     def current(self) -> Optional[CueDocument]:
         return self.doc
 
-    def push_undo(self) -> None:
+    def push_undo(self, coalesce: bool = False) -> None:
+        """入栈快照。coalesce=True（打字路径专用）时同一行 800ms 内连续
+        编辑合并为一个撤销点——Ctrl+Z 一次回到整段打字前，快照是全量
+        深拷贝，逐字符入栈既卡又占内存。离散动作（拆分/合并/状态切换）
+        绝不合并：每个动作必须有自己的撤销点，合并会跳过中间态。"""
         if not self.doc:
+            return
+        now = time.time()
+        if (coalesce and self._undo and self._undo_row == self._editing_row
+                and now - self._undo_ts < 0.8):
+            self._undo_ts = now          # 仍在同一编辑流里：不追加新快照
             return
         self._undo.append(self.doc.snapshot())
         del self._undo[:-60]
+        self._undo_row = self._editing_row
+        self._undo_ts = now
         self._redo.clear()
 
     # ------------------------------------------------------------ 表格动作
@@ -610,7 +625,7 @@ class EditorInterface(QWidget):
         cue = self.doc.cues[row]
         if cue.display_text == text:
             return
-        self.push_undo()
+        self.push_undo(coalesce=True)    # 打字流合并节流
         cue.text = text
         if cue.state not in ("review",):
             cue.state = "edited"
@@ -773,6 +788,23 @@ class EditorInterface(QWidget):
                 c.text = _re.sub(r"[，。！？、；：,.!?;:\s]+$", "", c.display_text).strip()
                 c.state = "edited"
                 self.table.update_row(r, c)
+        elif action == "split_long":
+            # 智能断句：把过长条目按标点+字数+时长重新切分（文档级）。
+            # 用选中的第一条所在 cue 的字数上限做参数没必要，直接用产品
+            # 默认（每行 20 字 / 7s，与导出预检 28 字不同源，这里更保守）。
+            self.push_undo()
+            n = doc.split_long()
+            self._after_struct(rows[0])
+            self._say(f"智能断句完成：拆出 {n} 条，Ctrl+Z 可撤销", 4000)
+        elif action == "dedupe":
+            # 删除 Whisper 复读机式的连续重复句（文档级，顺带合并时长）。
+            self.push_undo()
+            n = doc.dedupe_repeats()
+            self._after_struct(0 if n else rows[0])
+            if n:
+                self._say(f"已删除 {n} 条连续重复句，Ctrl+Z 可撤销", 4000)
+            else:
+                self._say("没有连续重复句需要删除。", 2500)
         elif action == "close_gaps":
             self.push_undo()
             mg = float(getattr(self.cfg, "gap_max", 0.5) or 0.5)

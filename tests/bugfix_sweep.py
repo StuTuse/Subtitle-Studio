@@ -735,6 +735,8 @@ with TempDir() as _td28:
     _ed = _EditorPage.__new__(_EditorPage)
     _ed.doc = _doc28
     _ed._undo, _ed._redo = [], []
+    _ed._undo_row, _ed._undo_ts = -1, 0.0   # 编辑流合并节流状态（第 240 轮）
+    _ed._editing_row = -1
     _ed._say = lambda *_a, **_k: None
     _ed.table = type("T", (), {"render": lambda self, cues: None})()
     _ed.timeline = type("TL", (), {"update": lambda self: None})()
@@ -1291,7 +1293,8 @@ _src90 = _insp90.getsource(_ED90.push_undo)
 check("上限 60 保留最近步骤", "del self._undo[:-60]" in _src90)
 check("新步骤清空 redo", "self._redo.clear()" in _src90)
 _src90b = _insp90.getsource(_ED90._on_text_changed)
-check("改文本先 push_undo 再落", "self.push_undo()" in _src90b)
+# 第 240 轮：打字路径改走 push_undo(coalesce=True) 合并节流
+check("改文本先 push_undo 再落", "self.push_undo(coalesce=True)" in _src90b)
 check("内容相同不产生空步骤", "if cue.display_text == text:" in _src90b)
 
 section("71. 向导模型页 apply/skip 闭环（第 91 轮钉子）")
@@ -4652,6 +4655,65 @@ _seg239b = _src239f.split('elif action == "revert":')[1].split('elif action ==')
 check("revert 走 update_row", "update_row" in _seg239b and "table.render" not in _seg239b)
 _seg239c = _src239f.split('elif action == "close_gaps":')[1].split('elif action ==')[0]
 check("close_gaps 保留全量 render", "table.render" in _seg239c)
+
+section("224. 智能断句/去重接线与 undo 合并节流（第 240 轮钉子）")
+from sstudio.ui import cue_table as _ct240  # noqa: E402
+_src240 = _insp238.getsource(_ct240.CueTable._menu)
+check("右键含智能断句", "split_long" in _src240)
+check("右键含去重", "dedupe" in _src240)
+_src240b = _insp238.getsource(_EI241._act)
+check("split_long 动作接线", 'action == "split_long"' in _src240b
+      and "doc.split_long()" in _src240b)
+check("dedupe 动作接线", 'action == "dedupe"' in _src240b
+      and "doc.dedupe_repeats()" in _src240b)
+# 运行时：走 _act 真跑断句与去重，撤销守恒
+_e240 = _EI241(_CF216(), _Main241())
+_doc240 = _CD147()
+_doc240.cues = [_Cue147(start=0, end=9, text="这句话特别长需要被智能断句切开分成多条字幕"),
+                _Cue147(start=9, end=10, text="重复句"),
+                _Cue147(start=10, end=11, text="重复句"),
+                _Cue147(start=11, end=12, text="正常")]
+_e240.doc = _doc240
+_e240._act("split_long", [0])
+check("断句拆出多条", len(_doc240.cues) > 4)
+_e240.undo()
+check("断句整体可撤销", len(_doc240.cues) == 4)
+_e240._act("dedupe", [1, 2])
+check("去重删除连续重复", len(_doc240.cues) == 3
+      and _doc240.cues[1].text == "重复句")
+_e240.undo()
+check("去重可撤销", len(_doc240.cues) == 4)
+# undo 合并节流：仅打字路径合并，离散动作不合并
+_src240c = _insp238.getsource(_EI241.push_undo)
+check("coalesce 参数存在", "coalesce: bool = False" in _src240c)
+check("打字路径走 coalesce",
+      "self.push_undo(coalesce=True)" in
+      _insp238.getsource(_EI241._on_text_changed))
+_e240b = _EI241(_CF216(), _Main241())
+_doc240b = _CD147()
+_doc240b.cues = [_Cue147(start=0, end=1, text="甲")]
+_e240b.doc = _doc240b
+_e240b._editing_row = 0
+_e240b.push_undo(coalesce=True)
+_e240b.push_undo(coalesce=True)
+_e240b.push_undo(coalesce=True)
+check("同行打字流合并", len(_e240b._undo) == 1)
+_e240b.push_undo()                    # 离散动作：永不合并
+check("离散动作不合并", len(_e240b._undo) == 2)
+check("离散动作也清重做", _e240b._redo == [])
+
+section("225. config.save 落盘结果反馈（第 240 轮钉子）")
+from sstudio.core.config import Config as _CF240  # noqa: E402
+_src240d = _insp238.getsource(_CF240.save)
+check("save 返回 bool", "-> bool" in _src240d)
+check("load_failed 拒写 False",
+      "return False" in _src240d.split('if getattr(self, "load_failed", False):')[1].split("try:")[0])
+check("成功返回 True", "return True" in _src240d)
+from sstudio.ui import settings_page as _sp240  # noqa: E402
+_src240e = _insp238.getsource(_sp240.SettingsInterface._save)
+check("设置页检查落盘结果", "if not cfg.save():" in _src240e)
+check("失败弹错误 InfoBar", "InfoBar.error" in _src240e
+      and "保存失败" in _src240e)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

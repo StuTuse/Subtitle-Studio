@@ -336,11 +336,16 @@ class Config:
             cfg.load_failed = True
             return cfg
 
-    def save(self) -> None:
+    def save(self) -> bool:
+        """持久化配置。返回是否真的落盘成功——旧实现吞掉所有异常，磁盘满/
+        目录被占用时 UI 显示已保存而内容从未写出，下次启动 Key 无声回滚。
+
+        load_failed 拒写与静默容错路径返回 False，调用方按需提示。
+        """
         if getattr(self, "load_failed", False):
             # 配置文件读取失败后的实例带着默认值：落盘会把用户的真实配置
             # （API Key 等）覆盖掉。拒绝写入，等用户处理 .bad 文件。
-            return
+            return False
         # 原子写：先写临时文件再 os.replace 整块替换。直接 open("w") 会先
         # 清空原文件，写入中途断电/崩溃 → 半截 JSON → 下次 load 失败静默
         # 回退默认，用户的 API Key 全丢。
@@ -360,8 +365,9 @@ class Config:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, path)
+            return True
         except Exception:
-            pass
+            return False
 
     # 恢复出厂时保留的字段：
     #  · profiles / active_profile —— 大模型接入点（API Key、访问地址、模型名）。

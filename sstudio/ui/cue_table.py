@@ -254,6 +254,13 @@ class CueTable(QTableWidget):
                            ("恢复为原始识别文本", "revert"), ("清除该行标点", "strip_punct")):
             m.addAction(label, lambda a=act: self.request_action.emit(a, rows))
         m.addSeparator()
+        # 智能断句/去重是文档级批处理：接通 model.split_long /
+        # dedupe_repeats——功能早已实现却一直没有 UI 入口。
+        m.addAction("智能断句（拆过长条目）",
+                    lambda: self.request_action.emit("split_long", rows))
+        m.addAction("删除连续重复句",
+                    lambda: self.request_action.emit("dedupe", rows))
+        m.addSeparator()
         m.addAction("前移 0.10s", lambda: self.request_action.emit("shift:-0.1", rows))
         m.addAction("后移 0.10s", lambda: self.request_action.emit("shift:0.1", rows))
         m.addAction("延长 0.20s", lambda: self.request_action.emit("extend:0.2", rows))
