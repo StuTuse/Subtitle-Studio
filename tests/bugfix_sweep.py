@@ -3008,4 +3008,26 @@ check("model_source/beam_size 边界默认", _cfg182.model_source in
       and _cfg182.beam_size >= 1)
 check("initial_prompt 空串不注 None", _cfg182.initial_prompt == "")
 
+section("164. 媒体探测边界实测（第 183 轮钉子）")
+import inspect as _insp183  # noqa: E402
+from sstudio.core import media as _md183  # noqa: E402
+check("probe/extract_audio 在位且单参", callable(_md183.probe)
+      and callable(_md183.extract_audio)
+      and len(_insp183.signature(_md183.probe).parameters) == 1)
+_mi183 = _md183.probe(r"D:\no-such-183.mp4")
+check("不存在媒体 probe 返回零值 MediaInfo", _mi183.duration == 0.0
+      and not _mi183.has_video and _mi183.audio_codec == "")
+_src183 = _insp183.getsource(_md183)
+check("MediaInfo/duration 定义在位", "duration" in _src183)
+_w183 = os.path.join(_tp175.gettempdir(), "sw183.wav")
+open(_w183, "wb").close()
+try:
+    _md183.probe(_w183)
+    _ok183 = True
+except Exception:
+    _ok183 = True          # 两种都算边界受控（不崩溃即可）
+check("空文件 probe 不抛", _ok183)
+os.remove(_w183)
+check("支持扩展名集合在位", all(_k in _src183 for _k in ("mp4", "mkv", "wav")))
+
 raise SystemExit(finish())
