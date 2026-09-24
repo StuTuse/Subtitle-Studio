@@ -4263,6 +4263,30 @@ check("放行兜底在位", "宁可可能双开" in _src229)
 check("唤醒回调回收在位", "deleteLater" in _src229
       and "on_activate" in _src229)
 
+section("212. 导出文件名模板复测（第 230 轮钉子）")
+from sstudio.ui.export_page import ExportInterface as _EI230  # noqa: E402
+class _Main230(_QW227):
+    def __init__(self):
+        super().__init__()
+        self.doc = None
+        self.cfg = _CF216()
+_m230 = _Main230()
+_e230 = _EI230(_m230.cfg, _m230)
+try:
+    _e230.chk_video_name.setChecked(False)
+except Exception:
+    pass
+check("doc None 回落 subtitle", _e230._base_name() == "subtitle")
+class _D230:
+    language = "zh"
+check("占位符全补全",
+      _e230._file_name("{name}.{lang}.{ext}", "base", _D230(), "srt")
+      == "base.zh.srt")
+_out230 = _e230._file_name("..\\evil", "base", _D230(), "srt")
+check("穿越剥目录", "\\" not in _out230 and "/" not in _out230)
+_out230b = _e230._file_name('a<b>c"d', "base", _D230(), "srt")
+check("非法字符被换", not any(c in _out230b for c in '<>:"'))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
