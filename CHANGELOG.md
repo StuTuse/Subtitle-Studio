@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.212] - 2026-09-24
+
+v1.17.212：修复 CUDA 探测进程态冲突真缺陷——Qt Multimedia(DirectShow) 激活过的进程里 ctranslate2 的 CUDA 设备枚举会 access violation 闪退（上游 Qt×NVIDIA 驱动×ctranslate2 三方冲突，实测干净子进程同样崩溃、播放器 shutdown 后恢复安全）；修复方案为 doctor 新增 preprobe_gpu 进程早期预探测缓存，程序启动在主窗口与播放器构建前枚举一次，环境体检的 CUDA 检查项一律读缓存值永不在播放器激活后现场枚举，缓存缺失时按未检测到 GPU 安全处理，同时钉住字幕状态流转全链与字段语义回归——实测修复后体检与主窗全序列稳定
+
 ## [1.17.211] - 2026-09-24
 
 v1.17.211：测试加固——bugfix_sweep 第 185 节运行时实测防误触数值控件集成：SafeSpinBox 四方向键与 PageUp PageDown 全屏蔽值不变（真实键盘事件驱动）、编程路径 setValue 正常改值、滚轮与方向键源码级 ignore 屏蔽、SafeDoubleSpinBox 同样键盘防护且浮点精度无损、valueChanged 信号正常发射、弹窗 _menu_gone 清引用与 close_popup 双防析构悬挂——防误触控件实测全部通过，无产品缺陷
