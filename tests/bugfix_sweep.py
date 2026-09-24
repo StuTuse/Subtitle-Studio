@@ -2730,4 +2730,20 @@ _ei171.undo()
 _ei171.redo()
 check("空栈 undo/redo 不抛", True)
 
+section("153. 批量纠错页实测（第 172 轮钉子）")
+from sstudio.ui.fix_page import FixInterface as _FI172  # noqa: E402
+_fi172 = _FI172(_CF120(), _FM171())
+check("纠错页实例化不抛", _fi172 is not None)
+_fi172.run()          # 空文档 → InfoBar 警告路径
+check("空文档 run 警告不抛", True)
+_fi172.stop()
+_fi172.stop()
+check("stop 幂等", True)
+_src172 = open("sstudio/ui/fix_page.py", encoding="utf-8").read()
+check("回滚走信号模式确认框", "_CloseAskBox" in _src172
+      and "确认回滚" in _src172)
+check("进度逐条回填", "_on_cue" in _src172 and "_on_progress" in _src172)
+check("失败走 _finish 收尾", "_on_failed" in _src172 and "_finish" in _src172)
+check("脚本导入与术语收割", "_load_script" in _src172 and "_harvest_terms" in _src172)
+
 raise SystemExit(finish())
