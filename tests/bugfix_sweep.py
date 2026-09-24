@@ -2818,4 +2818,25 @@ _reap174(_tc174)
 _reap174(_tc174b)
 check("reap 已结束 worker 幂等", True)
 
+section("156. 命令行集成实测（第 175 轮钉子）")
+import subprocess as _sub174  # noqa: E402
+import tempfile as _tp175  # noqa: E402
+_exe174 = sys.executable
+def _cli174(*_a174):
+    return _sub174.run([_exe174, "-X", "utf8", "-m", "sstudio", *_a174],
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+_r174a = _cli174("--headless")
+check("无 --video 退出码 2", _r174a.returncode == 2)
+check("参数提示可读", "请用 --video" in (_r174a.stdout + _r174a.stderr))
+_r174b = _cli174("--headless", "--video", r"D:\no-such-12345.mp4")
+check("不存在媒体退出码 2", _r174b.returncode == 2)
+_w174 = os.path.join(_tp175.gettempdir(), "sw175.wav")
+open(_w174, "wb").close()
+_r174c = _cli174("--headless", "--video", _w174, "--out", r"D:\x.abc")
+os.remove(_w174)
+check("非法扩展名退出码 2", _r174c.returncode == 2)
+check("扩展名提示完整", "不支持的输出扩展名" in (_r174c.stdout + _r174c.stderr))
+_r174d = _cli174("--help")
+check("--help 退出码 0", _r174d.returncode == 0)
+
 raise SystemExit(finish())
