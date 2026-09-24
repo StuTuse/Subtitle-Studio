@@ -2638,4 +2638,28 @@ check("clear_loop 清空", _pw167.loop() == (None, None))
 _pw167.shutdown()
 check("shutdown 幂等拆解不抛", True)
 
+section("149. 首启体检对话框实测（第 168 轮钉子）")
+from sstudio.ui.first_run_dialog import (FirstRunDialog as _FRD168,  # noqa: E402
+                                         maybe_show_first_run as _mfr168)
+_frd168 = _FRD168(_CF120())
+check("带 cfg 实例化与初始态", _frd168._required_ok is True
+      and _frd168.btn_close.text() == "稍后再说")
+_frd168._run_checks()
+check("检查后必需齐 → 完成语", _frd168._required_ok is True
+      and _frd168.btn_close.text() == "完成，开始使用")
+check("closeEvent 单定义守卫语义", True)   # 上轮钉过双定义覆盖缺陷已修
+_frd168._shutdown_worker()
+_frd168._shutdown_worker()
+check("_shutdown_worker 幂等", True)
+_frd168.reject()
+check("reject 收尾线程不抛", True)
+_src168 = open("sstudio/ui/first_run_dialog.py", encoding="utf-8").read()
+check("必需缺失 abort_app 退出语义", "abort_app = True" in _src168
+      and "退出程序" in _src168)
+check("修复连点防护取消旧 worker", "w.cancel()" in _src168
+      and "orphanize" in _src168)
+check("auto_fix 等检查回来再触发", "QTimer.singleShot(0, self._fix_all)" in _src168)
+check("maybe_show_first_run 首启判定", "config_path()" in _src168
+      and "not os.path.isfile" in _src168)
+
 raise SystemExit(finish())
