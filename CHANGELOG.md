@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.189] - 2026-09-24
+
+v1.17.189：测试加固——bugfix_sweep 第 163 节运行时实测转写结果边界：transcribe 与 TranscriptResult 数据类在位、cues 与 meta 字段可写、meta 中 language 元数据正确流入 CueDocument.language、词级时间戳关闭时 normalize_cues 保序不重叠、model_source 默认 modelscope 且 beam_size 边界默认 5、initial_prompt 空串不注入 None；另将发版链钉子改为动态读取 VERSION 防版本漂移——转写边界实测全部通过，无产品缺陷
+
 ## [1.17.188] - 2026-09-24
 
 v1.17.188：测试加固——bugfix_sweep 第 162 节实测发版链回归：release.py dry-run 退出码 0 且 VERSION 文件不被改动、--bump 与直接给版本号同时给出时报错退出码 1 且消息明示二选一、目标版本等于当前版本时 dry-run 主动报告版本未变并跳过发版（tag 防重语义）——发版链回归实测全部通过，无产品缺陷
