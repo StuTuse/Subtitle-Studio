@@ -3947,6 +3947,35 @@ except Exception:
 check("假扩展名受控", _ok215)
 os.remove(_f215)
 
+section("198. 最近文件实测（第 216 轮钉子）")
+from sstudio.core.config import Config as _CF216  # noqa: E402
+_cfg216 = _CF216()
+_a216, _b216 = (os.path.abspath(p) for p in ("D:/v/a.mp4", "D:/v/b.mp4"))
+_cfg216.add_recent("D:/v/a.mp4")
+_cfg216.add_recent("D:/v/b.mp4")
+_cfg216.add_recent("D:/v/a.mp4")
+check("重复置顶", _cfg216.recent_files[0] == _a216)
+check("去重后两条", len(_cfg216.recent_files) == 2)
+_mr216 = _cfg216.max_recent
+for _i216 in range(_mr216 + 10):
+    _cfg216.add_recent(f"D:/v/x{_i216}.mp4")
+check("recent 裁到 max_recent", len(_cfg216.recent_files) <= _mr216)
+_cfg216.last_dir = "D:/somewhere"
+_cfg216.save()
+_cfg216b = _CF216.load()
+check("last_dir 往返", _cfg216b.last_dir == "D:/somewhere")
+check("recent 往返非空", len(_cfg216b.recent_files) > 0)
+_cfg216c = _CF216()
+for _p216 in ("D:/1.mp4", "D:/2.mp4", "D:/3.mp4"):
+    _cfg216c.add_recent(_p216)
+_cfg216c.save()
+_cfg216d = _CF216.load()
+check("recent 顺序保持", list(_cfg216d.recent_files)[:3]
+      == [os.path.abspath(p) for p in ("D:/3.mp4", "D:/2.mp4", "D:/1.mp4")])
+_n216 = len(_cfg216c.recent_files)
+_cfg216c.add_recent("")
+check("add_recent 跳过空串", len(_cfg216c.recent_files) == _n216)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
