@@ -3674,6 +3674,46 @@ check("缓存缺省 None 或 int", _doc205._GPU_COUNT_CACHE is None
       or isinstance(_doc205._GPU_COUNT_CACHE, int))
 check("cached_gpu_count 可调用", callable(_doc205._cached_gpu_count))
 
+section("189. 过渡特效边界实测（第 207 轮钉子）")
+from sstudio.ui import wizard_fx as _fx207  # noqa: E402
+from PyQt5.QtWidgets import QWidget as _QW207  # noqa: E402
+_w207a, _w207b = _QW207(), _QW207()
+_err207 = []
+for _nm207, _fn207 in (
+        ("pop_in", lambda: _fx207.pop_in(_QW207())),
+        ("pop_in+cb", lambda: _fx207.pop_in(_QW207(), 0, on_done=lambda: None)),
+        ("cascade", lambda: _fx207.cascade_in([])),
+        ("page_in", lambda: _fx207.page_in(_w207a, 1)),
+        ("page_in2", lambda: _fx207.page_in(_w207b, -1)),
+        ("page_out", lambda: _fx207.page_out(_w207a, 1)),
+        ("page_out2", lambda: _fx207.page_out(_w207b, -1))):
+    try:
+        _fn207()
+    except Exception as _e207:
+        _err207.append(f"{_nm207}:{type(_e207).__name__}")
+check("五特效逐项不炸", not _err207, "；".join(_err207))
+from PyQt5.QtWidgets import QGraphicsBlurEffect as _GBE207  # noqa: E402
+try:
+    _fx207.clear_effect(_w207a)
+    _w207a.setGraphicsEffect(_GBE207())
+    _fx207.clear_effect(_w207a)
+    _fx207.clear_effect(_w207a)
+    _ok207b = True
+except Exception:
+    _ok207b = False
+check("clear_effect 幂等不炸", _ok207b)
+_w207c = _QW207()
+_w207c.deleteLater()
+_app159.processEvents()
+try:
+    _fx207.clear_effect(_w207c)
+    _ok207c = True
+except RuntimeError:
+    _ok207c = True
+except Exception:
+    _ok207c = False
+check("已析构部件传入受控", _ok207c)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
