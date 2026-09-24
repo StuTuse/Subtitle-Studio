@@ -144,9 +144,13 @@ class SafeSpinBox(QSpinBox, _WheelGuard):
         return out
 
     def validate(self, text: str, pos: int):  # noqa: N802
-        # 允许临时为空/非法，focusOut 时夹回
+        # 允许临时为空/非法，focusOut 时夹回。
+        # 状态枚举必须用 QValidator.Intermediate——此前写 QSpinBox.Intermediate，
+        # PyQt5 里该枚举只挂在 QValidator 上，每次清空输入框 validate 都抛
+        # AttributeError（靠 PyQt 虚方法兜底才没闪退），守卫从未真正生效。
+        from PyQt5.QtGui import QValidator
         if not text.strip():
-            return (QSpinBox.Intermediate, text, pos)
+            return (QValidator.Intermediate, text, pos)
         return super().validate(text, pos)
 
 
@@ -176,6 +180,8 @@ class SafeDoubleSpinBox(QDoubleSpinBox, _WheelGuard):
         return out
 
     def validate(self, text: str, pos: int):  # noqa: N802
+        # 同 SafeSpinBox：枚举必须取自 QValidator（QDoubleSpinBox 上没有）
+        from PyQt5.QtGui import QValidator
         if not text.strip():
-            return (QDoubleSpinBox.Intermediate, text, pos)
+            return (QValidator.Intermediate, text, pos)
         return super().validate(text, pos)

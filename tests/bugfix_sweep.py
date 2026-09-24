@@ -2462,4 +2462,36 @@ _tip160v = _tip160(_Cue147(start=1, end=2, text="T", original_text="O",
 check("tip 时间置信度原文复查齐", "00:00:01" in _tip160v and "0.87" in _tip160v
       and "原文" in _tip160v and "待复查" in _tip160v)
 
+section("142. 防误触数值控件实测（第 161 轮钉子）")
+from PyQt5.QtWidgets import QApplication as _App161  # noqa: E402
+from PyQt5.QtGui import QValidator as _QV161  # noqa: E402
+from sstudio.ui.safe_spin import (SafeSpinBox as _SS161,  # noqa: E402
+                                  SafeDoubleSpinBox as _SDS161)
+_app161 = _App161.instance() or _App161([])
+_ss161 = _SS161()
+_ss161.setRange(0, 100)
+_ss161.setValue(50)
+_ss161.set_choices([(1, "一档"), (2, "二档"), (3, "三档")])
+check("显式候选生效", len(_ss161._choices()) == 3 and _ss161._choices()[1][1] == "二档")
+_ss161.set_choices([])
+check("空候选清弹窗", _ss161._choices() == [])
+_ss161.set_choices(None)
+check("自动候选按范围生成", len(_ss161._choices()) > 0 and _ss161._choices()[0][0] == 0)
+check("validate 空串 Intermediate", _ss161.validate("", 0)[0] == _QV161.Intermediate)
+check("validate 空串返回原文", _ss161.validate("", 0)[1] == "")
+_sd161 = _SDS161()
+_sd161.setRange(0.0, 1.0)
+_sd161.setDecimals(1)
+_sd161.setSingleStep(0.1)
+_sd161.set_choices(None)
+check("小数候选 11 档", len(_sd161._choices()) == 11)
+check("小数候选标签一位小数", _sd161._choices()[3][1] == "0.3")
+check("小数 validate 空串 Intermediate", _sd161.validate("", 0)[0] == _QV161.Intermediate)
+_ss161.close_popup()
+_ss161.close_popup()
+check("close_popup 幂等", True)
+_src161 = _insp158.getsource(_SS161.__init__)
+check("keyboardTracking 关防输入中触发", "setKeyboardTracking(False)" in _src161
+      and "CorrectToNearestValue" in _src161)
+
 raise SystemExit(finish())
