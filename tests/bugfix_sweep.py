@@ -2662,4 +2662,23 @@ check("auto_fix 等检查回来再触发", "QTimer.singleShot(0, self._fix_all)"
 check("maybe_show_first_run 首启判定", "config_path()" in _src168
       and "not os.path.isfile" in _src168)
 
+section("150. 设置页行为实测（第 169 轮钉子）")
+from sstudio.ui.settings_page import SettingsInterface as _SI169  # noqa: E402
+class _E169:  # noqa: E302
+    status = type("S", (), {"setText": staticmethod(lambda s: None)})()
+class _FM169:  # noqa: E302
+    doc = None
+    editor = _E169()
+_si169 = _SI169(_CF120(), _FM169())
+check("设置页实例化不抛", _si169 is not None)
+check("测试连接按钮方法在位", callable(_si169._test))
+_src169 = open("sstudio/ui/settings_page.py", encoding="utf-8").read()
+check("连点防护 reap 旧 worker", 'reap(getattr(self, "_test_worker", None))' in _src169)
+check("shutdown orphanize 收尾", "orphanize" in _src169
+      and "def shutdown" in _src169)
+check("保存写 cfg.save", "self.cfg.save()" in _src169)
+check("API Key 掩码", "setEchoMode" in _src169 or "Password" in _src169)
+check("测试结果 HTML 转义防撑爆", "_esc((msg or \"\")[:200])" in _src169)
+check("模型重扫清外部缓存", "ext_cli_cache_reset" in _src169)
+
 raise SystemExit(finish())
