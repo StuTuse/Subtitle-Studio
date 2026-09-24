@@ -132,7 +132,7 @@ calls = []
 
 
 def fake_chat(prof, messages, on_delta=None, _retry_no_cap=True):
-    calls.append(messages[1]["content"])
+    calls.append(messages)
     return "\n".join(f"[{i}] {c.text}" for i, c in enumerate(_cur[0]))
 
 
@@ -149,8 +149,10 @@ _orig_chat = llm_mod.chat
 llm_mod.chat = fake_chat
 try:
     res = llm_mod.fix_document(_cfg, _cur[0], extra="本轮：人名用简体")
-    joined = "\n".join(calls)
-    check("extra 进了本轮提示词", "本轮：人名用简体" in joined)
+    # 第 242 轮起 extra 并入 glossary 后走 system 稳定前缀（吃 prompt
+    # cache），user 消息里不再出现——检查对象改为 messages[0]
+    joined = "\n".join(m[0]["content"] for m in calls)
+    check("extra 进了本轮提示词（system 前缀）", "本轮：人名用简体" in joined)
     check("cfg.glossary 未被污染", _cfg.glossary == "", repr(_cfg.glossary))
 finally:
     llm_mod.chat = _orig_chat
@@ -4797,6 +4799,103 @@ _llm241.chat(_p241, [{"role": "user", "content": "x"}], on_delta=lambda d: None)
 _llm241.load_client = _real_cl241
 check("正常完成不记截断", _k241 not in _llm241._STREAM_TRUNCATED
       and _llm241.truncation_note(_p241) == "")
+
+section("227. 提示词前缀化/切片 + 阈值统一 + 快捷键路由 + 模型释放（第 242 轮钉子）")
+# ① PromptBundle：稳定前缀 + 切片
+from sstudio.core import model as _mod242  # noqa: E402
+_cue242 = lambda t: _mod242.Cue(start=0, end=1, text=t)  # noqa: E731
+_b242 = _llm241.PromptBundle()
+_s242 = _b242.context_prefix("张三=演员名", "第一段资料")
+check("前缀含 glossary 与 script",
+      "张三=演员名" in _s242 and "第一段资料" in _s242 and "字幕校对员" in _s242)
+check("空资料前缀即 system", _b242.context_prefix("", "") == _b242.system)
+_m242 = _b242.render([_cue242("甲乙")], 0, script_slice="第三段相关")
+check("user 含切片标题", "相关片段" in _m242 and "第三段相关" in _m242)
+check("user 不含全量稿", "第一段资料" not in _m242)
+_b242.template = "X{glossary_block}Y{script_block}Z{count}{first}{last}{payload}"
+_m242b = _b242.render([_cue242("甲")], 0)
+check("老模板兜底不炸", "X" in _m242b and "甲" in _m242b)
+_m242c = _b242.render([_cue242("甲乙")], 0, script_slice="")
+check("无切片时 user 无资料块", "相关片段" not in _m242c)
+
+# ② fix_document 运行时：system 稳定前缀 + 短稿不切片
+_cap242 = []
+def _fc242(prof, messages, on_delta=None, **kw):
+    _cap242.append(messages)
+    return "[0] 修正后"
+_cfg242 = _CF240()
+_cfg242.batch_size = 1
+_cfg242.auto_retry = 0
+_cfg242.strict_mode = False
+_cfg242.glossary = "测试术语"
+_cfg242.reference_script = "短资料"
+_cfg242.profiles = [_LP239(name="主档", base_url="http://127.0.0.1:9/v1",
+                           api_key="k", model="m")]
+_cfg242.active_profile = "主档"
+_cues242 = [_mod242.Cue(start=0, end=1, text="甲"),
+            _mod242.Cue(start=1, end=2, text="乙")]
+_real_chat242 = _llm241.chat
+_llm241.chat = _fc242
+try:
+    _llm241.fix_document(_cfg242, _cues242)
+finally:
+    _llm241.chat = _real_chat242
+check("两批共用同一 system", len(_cap242) == 2
+      and _cap242[0][0]["content"] == _cap242[1][0]["content"])
+_sys242 = _cap242[0][0]["content"]
+_u242 = _cap242[0][1]["content"]
+check("system 含术语与资料", "测试术语" in _sys242 and "短资料" in _sys242)
+check("user 只含本批字幕", "甲" in _u242 and "乙" not in _u242)
+check("短稿不进 user（走前缀）", "短资料" not in _u242)
+# fix_document 会原地改写 cues：长稿段重建
+_cues242 = [_mod242.Cue(start=0, end=1, text="甲"),
+            _mod242.Cue(start=1, end=2, text="乙")]
+_cfg242.reference_script = "\n".join(
+    f"第{i}段资料内容关于专有名词甲乙丙{i}" for i in range(200))
+_cap242.clear()
+_llm241.chat = _fc242
+try:
+    _llm241.fix_document(_cfg242, _cues242)
+finally:
+    _llm241.chat = _real_chat242
+_u242b = _cap242[0][1]["content"]
+check("长稿切片进 user", "相关片段" in _u242b)
+check("前缀仍含全量稿",
+      _cfg242.reference_script[:20] in _cap242[0][0]["content"])
+
+# ③ close_gaps 阈值统一 0.35
+from sstudio.ui.editor_page import EditorInterface as _EI242  # noqa: E402
+_src242a = _insp238.getsource(_EI242._act)
+check("兜底阈值统一 0.35", 'getattr(self.cfg, "gap_max", 0.35)' in _src242a)
+check("旧 0.5 兜底已消失", "gap_max, 0.5" not in _src242a)
+
+# ④ 快捷键按页路由
+check("set_page_active 存在", hasattr(_EI242, "set_page_active"))
+_src242b = _insp238.getsource(_EI242.set_page_active)
+check("启停 QShortcut", "setEnabled" in _src242b)
+check("离页停防抖", "_search_timer.stop()" in _src242b)
+from sstudio.ui import main_window as _MW242  # noqa: E402
+_src242c = _insp238.getsource(_MW242.MainWindow._on_page)
+check("切页路由调用", "set_page_active" in _src242c and "w is self.editor" in _src242c)
+
+# ⑤ 转写取消/失败释放模型
+from sstudio.core import transcriber as _tr242  # noqa: E402
+check("release_models 存在", callable(_tr242.release_models))
+check("release 幂等", _tr242.release_models() == 0
+      and _tr242.release_models() == 0)
+class _F242:
+    pass
+_tr242._track_model(_F242())
+_tr242._track_model(_F242())
+check("track 后 release 返回 2", _tr242.release_models() == 2)
+check("再 release 归零", _tr242.release_models() == 0)
+_src242d = _insp238.getsource(_tr242._load_model)
+check("加载即追踪", "_track_model(m)" in _src242d
+      and _src242d.count("_track_model(m)") == 2)
+_src242e = _insp238.getsource(_MW242.MainWindow.cancel_transcribe)
+check("取消调 release", "release_models()" in _src242e)
+_src242f = _insp238.getsource(_MW242.MainWindow._on_transcribe_failed)
+check("失败也调 release", "release_models()" in _src242f)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

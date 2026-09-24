@@ -73,16 +73,22 @@ check("整句英文化算翻译", llm.looks_translated("今天我们来聊聊这
 section("7. 提示词渲染")
 cues = [Cue(start=0, end=1, text=f"第{i}句 原始") for i in range(3)]
 b = llm.PromptBundle()
-msg = b.render(cues, 0, "达芬奇=>DaVinci Resolve", "本期讲显卡")
+# 第 242 轮起：glossary/script 全量走 system 稳定前缀（context_prefix，
+# 吃 prompt cache），user 消息只含本批字幕与相关切片
+sysmsg = b.context_prefix("达芬奇=>DaVinci Resolve", "本期讲显卡")
+msg = b.render(cues, 0, script_slice="")
 check("含编号行", "[0] 第0句 原始" in msg and "[2] 第2句 原始" in msg)
-check("含术语表", "达芬奇" in msg and "术语" in msg)
-check("含原始稿件", "本期讲显卡" in msg)
+check("前缀含术语表", "达芬奇" in sysmsg and "术语" in sysmsg)
+check("前缀含原始稿件", "本期讲显卡" in sysmsg)
+check("系统消息含基础人设", "错别字" in sysmsg)
 check("声明行数", "共 3 行" in msg)
 check("首尾编号提示", "0" in msg and "2" in msg)
 check("偏移编号", "[10] 第0句 原始" in b.render(cues, 10, "", ""))
 msg2 = b.render(cues, 0, "", "")
 check("无术语表时不渲染空块", "术语" not in msg2)
 check("无稿件时不渲染空块", "原始稿件" not in msg2)
+sys2 = b.context_prefix("", "")
+check("空资料前缀即 system 原样", sys2 == b.system)
 check("系统提示词强调只改错别字", "错别字" in b.system)
 check("系统提示词禁止改写", "改写" in b.system)
 

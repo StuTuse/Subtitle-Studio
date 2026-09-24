@@ -358,7 +358,7 @@ DEFAULT_SYSTEM = """你是一名专业的中文字幕校对员。你的唯一任
 
 DEFAULT_TEMPLATE = """请修正以下字幕的错别字与标点，严格保持行数与编号一一对应。
 
-{glossary_block}{script_block}【待修正字幕（共 {count} 行，编号 {first}-{last}）】
+{context_block}【待修正字幕（共 {count} 行，编号 {first}-{last}）】
 {payload}
 
 现在输出修正后的 {count} 行，格式 `[编号] 文本`："""
@@ -368,6 +368,11 @@ DEFAULT_GLOSSARY_BLOCK = """【术语与专有名词表（用于统一用字，�
 """
 
 DEFAULT_SCRIPT_BLOCK = """【原始稿件/背景资料（仅用于核对人名、地名、专有名词；不得作为内容补写）】
+{script}
+"""
+
+# 参考稿切片注入时的标题：告诉模型这段资料为什么被选出来
+_SCRIPT_SLICE_BLOCK = """【原始稿件相关片段（因包含本批字幕中的词句而选中，仅用于核对专有名词）】
 {script}
 """
 
@@ -388,18 +393,43 @@ class PromptBundle:
             b.template = cfg.prompt_template
         return b
 
-    def render(self, cues: List[Cue], start_no: int, glossary: str, script: str) -> str:
+    def context_prefix(self, glossary: str, script: str) -> str:
+        """稳定前缀：术语表 + 全篇参考稿拼进 system 消息。
+
+        这份内容对每一批都完全相同——放进 system 后，支持 prompt cache
+        的网关（DeepSeek/OpenAI 等按前缀计费打折）只需处理一次；此前
+        每批 user 消息都原样带一份全量资料，2000 条 × batch 50 × 8000
+        token 参考稿 ≈ 32 万 token 纯重复开销。
+        """
+        parts: List[str] = []
+        if glossary.strip():
+            parts.append(self.glossary_block.format(glossary=glossary.strip()))
+        if script.strip():
+            parts.append(self.script_block.format(script=script.strip()))
+        if not parts:
+            return self.system
+        return self.system + "\n\n" + "\n".join(parts)
+
+    def render(self, cues: List[Cue], start_no: int, glossary: str = "",
+               script: str = "", script_slice: str = "") -> str:
         payload = "\n".join(f"[{start_no + i}] {(c.display_text or '').strip()}"
                             for i, c in enumerate(cues))
-        gb = self.glossary_block.format(glossary=glossary.strip()) if glossary.strip() else ""
-        sb = self.script_block.format(script=script.strip()) if script.strip() else ""
         first, last = start_no, start_no + len(cues) - 1
+        # 新语义：glossary/script 全量走 system 前缀；user 消息里只放
+        # 与本批文本相关的参考稿切片（老模板的 {glossary_block}/
+        # {script_block} 槽位保留传空串，自定义模板不炸）。
+        gb = ""
+        sb = ""
+        cb = ""
+        if script_slice.strip():
+            cb = _SCRIPT_SLICE_BLOCK.format(script=script_slice.strip())
         try:
             return self.template.format(count=len(cues), first=first, last=last,
-                                        payload=payload, glossary_block=gb, script_block=sb)
+                                        payload=payload, glossary_block=gb,
+                                        script_block=sb, context_block=cb)
         except KeyError:
             # 用户自定义模板里字段不全时的兜底
-            return (self.template + "\n\n" + gb + sb + payload)
+            return (self.template + "\n\n" + cb + payload)
 
 
 @dataclass
@@ -559,6 +589,32 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     if extra.strip():
         glossary = (glossary + "\n【本轮补充】" + extra.strip()).strip()
     script = (cfg.reference_script or "").strip()
+    # 参考稿切片：按本批字幕里出现的词句把相关行挑出来，只进该批的
+    # user 消息——全篇资料走 system 稳定前缀，切片兜住「本批恰好涉及
+    # 资料里某段」的专名核对，两全。
+    script_lines = [ln for ln in script.splitlines() if ln.strip()]
+    def _script_slice(batch: List[Cue]) -> str:
+        if not script_lines or len(script) <= 2000:
+            # 短参考稿不值得切：直接走 system 全量（进稳定前缀）
+            return ""
+        blob = "".join(c.display_text for c in batch)   # 无空格：中文可直接 n-gram
+        picked = [ln for ln in script_lines
+                  if any(w and w in ln for w in
+                         (t for t in blob.split() if len(t) >= 2))]
+        if not picked:
+            # 中文没有空格分词：n-gram 命中判定（blob 太短构不成 2-gram
+            # 时退化为单字命中——单字专名如人名「甲」也要能命中资料行）
+            n = 2 if len(blob) >= 2 else 1
+            grams = {blob[i:i + n] for i in range(len(blob) - n + 1)
+                     if not any(ch.isspace() for ch in blob[i:i + n])}
+            if not grams and blob.strip():
+                grams = {blob.strip()}
+            picked = [ln for ln in script_lines
+                      if any(g in ln.lower() for g in grams)
+                      and ln.strip()][:20]
+        return "\n".join(picked[:20])
+    # system 稳定前缀（全量资料）：所有批共用，命中网关 prompt cache
+    system_msg = bundle.context_prefix(glossary, script)
     bs = max(1, int(cfg.batch_size))
     batches = [(i, cues[i:i + bs]) for i in range(0, len(cues), bs)]
     result = FixResult(texts=[c.display_text for c in cues])
@@ -571,11 +627,13 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     _failover_note: List[str] = []              # 给完成日志的换档说明
 
     def one(idx: int, batch: List[Cue], attempt: int = 0) -> Optional[Dict[int, str]]:
-        msg = bundle.render(batch, idx, glossary, script)
+        msg = bundle.render(batch, idx, script_slice=_script_slice(batch))
         if attempt:
             msg += STRICT_SUFFIX.format(count=len(batch), first=idx,
                                         last=idx + len(batch) - 1)
-        messages = [{"role": "system", "content": bundle.system},
+        # system 是稳定前缀（全量资料），user 只含本批字幕 + 相关切片：
+        # 前缀被网关 prompt cache 复用，批次间仅增量计费
+        messages = [{"role": "system", "content": system_msg},
                     {"role": "user", "content": msg}]
         raw = chat(_prof_holder[0], messages, None)
         got = parse_numbered(raw, range(idx, idx + len(batch)))

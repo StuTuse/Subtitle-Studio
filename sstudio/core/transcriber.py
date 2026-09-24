@@ -649,7 +649,9 @@ def _load_model(WhisperModel, model_path: str, device: str, compute: str, cfg: C
         )
 
     try:
-        return attempt(device, compute), device, compute, ""
+        m = attempt(device, compute)
+        _track_model(m)
+        return m, device, compute, ""
     except Exception as e:
         low = str(e).lower()
         gpu_broken = device == "cuda" and (
@@ -659,8 +661,35 @@ def _load_model(WhisperModel, model_path: str, device: str, compute: str, cfg: C
             cuda_rt._result = None            # 让下次重新探测
             note = ("GPU 不可用，已改用 CPU：" + cuda_rt.describe())
             m = attempt("cpu", "int8")
+            _track_model(m)
             return m, "cpu", "int8", note
         raise
+
+
+# 本进程内所有已加载的 WhisperModel 实例。取消转写时逐个释放——
+# 取消落在加载期（large-v3 冷加载 30~120s）时旧线程要等加载完才退，
+# 用户随即重开转写会出现两份 large-v3（各约 1.5GB）同时驻留内存/显存，
+# 中低配机器直接 OOM。ctranslate2 模型无显式 unload：清引用 + 显式 GC。
+_LOADED_MODELS: list = []
+_loaded_models_lock = __import__("threading").Lock()
+
+
+def _track_model(m) -> None:
+    with _loaded_models_lock:
+        _LOADED_MODELS.append(m)
+
+
+def release_models() -> int:
+    """释放本进程已加载的转写模型，返回释放的实例数。
+
+    转写取消/失败后由主窗调用：不释放的话，用户换模型重开会双份驻留。
+    """
+    with _loaded_models_lock:
+        n = len(_LOADED_MODELS)
+        _LOADED_MODELS.clear()
+    import gc as _gc
+    _gc.collect()
+    return n
 
 
 def _audio_duration(path: str) -> float:

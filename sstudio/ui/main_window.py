@@ -165,6 +165,10 @@ class MainWindow(FluentWindow):
 
     def _on_page(self, idx: int) -> None:
         w = self.stackedWidget.currentWidget()
+        # 编辑页快捷键按页路由：WindowShortcut 固定启用会在其它页误伤
+        # （纠错页文本框按 Ctrl+Z 触发字幕撤销而非输入框撤销）
+        if hasattr(self.editor, "set_page_active"):
+            self.editor.set_page_active(w is self.editor)
         if w is self.fix:
             self.fix.refresh()
         elif w is self.export:
@@ -489,6 +493,14 @@ class MainWindow(FluentWindow):
         w.cancel()
         reap(w)
         self._worker = None
+        # 释放已加载的转写模型：取消落在加载期（large-v3 冷加载 30~120s）
+        # 时旧线程要等加载完才退，不释放的话用户随即换模型重开会出现
+        # 两份 1.5GB 模型同时驻留（内存/显存 OOM 风险）。
+        try:
+            from ..core import transcriber
+            transcriber.release_models()
+        except Exception:
+            pass
         self._end_progress()
         name = os.path.basename(self.doc.source_video) if (
             self.doc is not None and self.doc.source_video) else "视频"
@@ -573,6 +585,13 @@ class MainWindow(FluentWindow):
         # 必须 reap：sig_failed 发出时线程往往还没走完 finally 清理。直接丢掉
         # 引用会让 GC 在运行中析构 QThread，Qt 直接 abort（成功路径就是这么做的）。
         reap(w)
+        # 失败/取消同样释放模型：加载中途炸掉（磁盘满/DLL 缺失）时实例
+        # 已经驻留，不释放就等下一次转写叠加
+        try:
+            from ..core import transcriber
+            transcriber.release_models()
+        except Exception:
+            pass
         self._end_progress()
         self.progressLabel.setText("")
         if self.doc is not None and self.doc.source_video:

@@ -437,13 +437,28 @@ class EditorInterface(QWidget):
                  (QKeySequence("F2"), lambda: self._act("split")),
                  (QKeySequence("F3"), lambda: self._act("merge")),
                  ]
+        self._page_sc: List[QShortcut] = []
         for seq, fn in combo:
             s = QShortcut(seq, self)
             s.setContext(Qt.WindowShortcut)
             s.activated.connect(fn)
+            self._page_sc.append(s)
         # 裸键（空格/方向键/逗号句号）：只在非文本输入控件里生效，避免吃掉打字
         self._key_filter = _TransportKeyFilter(self.player, self)
         self._key_filter.install()
+
+    def set_page_active(self, active: bool) -> None:
+        """编辑页是否为当前页：主窗切页时路由快捷键作用域。
+
+        WindowShortcut 的触发条件是「顶层窗口激活」而非「本页可见」——
+        固定启用时，在纠错页的指令框/设置页的提示词框按 Ctrl+Z 触发的
+        是字幕文档撤销而非输入框自身撤销，Ctrl+F 会在看不见的位置弹
+        筛选行抢焦点。按页启停即可（QShortcut.setEnabled）。
+        """
+        for s in getattr(self, "_page_sc", []):
+            s.setEnabled(bool(active))
+        if not active:
+            self._search_timer.stop()   # 离页时别让防抖定时器再弹筛选
 
     def transport_key(self, key: int, mods) -> bool:
         """返回 True 表示这个按键已被播放器消费。"""
@@ -807,7 +822,9 @@ class EditorInterface(QWidget):
                 self._say("没有连续重复句需要删除。", 2500)
         elif action == "close_gaps":
             self.push_undo()
-            mg = float(getattr(self.cfg, "gap_max", 0.5) or 0.5)
+            # 阈值统一取 config 默认 0.35（曾与 CLI/workers 的 0.5 兜底
+            # 漂移成两套值，同一份字幕在不同入口衔接出不同结果）
+            mg = float(getattr(self.cfg, "gap_max", 0.35) or 0.35)
             touched, saved = doc.close_gaps(mg)
             self.table.render(doc.cues, rows[0] if rows else 0)
             self.timeline.update()
