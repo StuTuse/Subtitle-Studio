@@ -4405,6 +4405,44 @@ check("清理 HTML", "<b>" not in
 check("空白真实语义", _fm147._clean_inline("  多  空格  ") == "多  空格")
 check("清理空串", _fm147._clean_inline("") == "")
 
+section("218. JSON 与 ASS 解析复测（第 236 轮钉子）")
+_doc236 = _CD147()
+_doc236.cues = [_Cue147(start=0, end=1, text="甲"),
+                _Cue147(start=1, end=2, text="乙")]
+_txt236 = _json211.dumps(_doc236.to_dict(), ensure_ascii=False)
+_d236 = _fm147.parse_json(_txt236)
+check("JSON 两条", isinstance(_d236, list) and len(_d236) == 2)
+try:
+    _fm147.parse_json("不是 JSON")
+    _ok236a = False
+except _json211.JSONDecodeError:
+    _ok236a = True
+except Exception:
+    _ok236a = True
+check("畸形抛 JSONDecodeError", _ok236a)
+_cues236 = _fm147.parse_ass(
+    "[Script Info]\nTitle: t\n\n[V4+ Styles]\n\n[Events]\n"
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, "
+    "MarginV, Effect, Text\n"
+    "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好\n"
+    "Dialogue: 0,0:00:03.50,0:00:04.00,Default,,0,0,0,,世界\n")
+check("ASS 两条与文本", len(_cues236) == 2
+      and _cues236[0].text == "你好")
+_doc236b = _CD147()
+_doc236b.cues = list(_cues236)
+_out236 = _fm147.to_ass(_doc236b)
+check("to_ass Dialogue 在位", "Dialogue:" in _out236
+      and "你好" in _out236)
+check("parse_ass 空串空列表", _fm147.parse_ass("") == [])
+try:
+    _fm147.parse_json("")
+    _ok236b = False
+except _json211.JSONDecodeError:
+    _ok236b = True
+except Exception:
+    _ok236b = True
+check("parse_json 空串抛错", _ok236b)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
