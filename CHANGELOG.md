@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.176] - 2026-09-24
+
+v1.17.176：测试加固——bugfix_sweep 第 150 节运行时实测设置页行为：实例化不抛、测试连接按钮方法在位、连点防护 reap 旧测试线程防双 HTTP 并行、主窗退出 shutdown orphanize 收尾防 QThread 析构闪退、保存写 cfg.save 持久化、API Key 输入框掩码显示、测试连接结果 HTML 转义并截 200 字防服务端整页错误撑爆布局、模型重扫先清外部 CLI 进程内缓存防陈旧列表——settings_page.py 二轮复扫全部通过，无产品缺陷
+
 ## [1.17.175] - 2026-09-24
 
 v1.17.175：测试加固——bugfix_sweep 第 149 节运行时实测首启体检对话框：带 cfg 实例化、关闭按钮三态语义（稍后再说/完成开始使用/必需缺失时退出程序）、必需组件缺失时 X 关窗等同退出程序置 abort_app 标志防带半残界面继续用、closeEvent 单定义守卫（此前双定义后者覆盖前者缺陷已修）、一键修复连点防护取消旧 worker 防并行 pip 竞态、auto_fix 等检查结果真正回来再触发防慢机器空转、maybe_show_first_run 以配置文件不存在判定首启、reject 收尾修复线程幂等防 QThread destroyed-while-running——first_run_dialog.py 二轮复扫全部通过，无产品缺陷
