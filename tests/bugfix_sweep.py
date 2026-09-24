@@ -3812,6 +3812,31 @@ check("磁盘 utf-8 中文无损", _json211.load(open(_p211, encoding="utf-8"))
       ["cues"][0]["text"] == "你好")
 os.remove(_p211)
 
+section("194. LLM 边界实测（第 212 轮钉子）")
+from sstudio.core import llm as _llm212  # noqa: E402
+_cfg212 = _CF210x()
+_cues212 = [_Cue147(start=0, end=1, text="错别子"),
+            _Cue147(start=1, end=2, text="第二个")]
+try:
+    _llm212.fix_document(_cfg212, _cues212, cancel=lambda: True)
+    _ok212a = True
+except _llm212.LLMError:
+    _ok212a = True
+except Exception:
+    _ok212a = False
+check("取消路径受控", _ok212a)
+try:
+    _llm212.fix_document(_cfg212, [], cancel=lambda: False)
+    _ok212b = True
+except _llm212.LLMError:
+    _ok212b = True
+except Exception:
+    _ok212b = False
+check("空 cues 受控", _ok212b)
+check("LLMError 可抛", issubclass(_llm212.LLMError, Exception))
+check("LLMPartialError 可抛", issubclass(_llm212.LLMPartialError, Exception))
+check("DEFAULT_TEMPLATE 在位", len(_llm212.DEFAULT_TEMPLATE) > 20)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
