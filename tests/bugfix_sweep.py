@@ -4124,6 +4124,29 @@ except Exception:
     _ok223 = False
 check("负数与超大值受控", _ok223)
 
+section("206. 播放器控制复测（第 224 轮钉子）")
+from sstudio.ui.player import PlayerWidget as _PW224  # noqa: E402
+_pw224 = _PW224()
+_pos224 = []
+_pw224.positionChanged.connect(lambda *a: _pos224.append(a))
+try:
+    _pw224.seek(1.5)
+    _app159.processEvents()
+    _pw224.seek(-1.0)
+    _pw224.seek(0.0)
+    _pw224.set_speed(2.0)
+    _pw224.set_volume(50)
+    _pw224.load(r"D:\no-such-224.mp4")
+    _app159.processEvents()
+    _ok224 = True
+except Exception:
+    _ok224 = False
+check("无媒体 seek 与控制不炸", _ok224)
+check("三信号在位", all(hasattr(_pw224, s) for s in
+      ("positionChanged", "durationChanged", "stateChanged")))
+_pw224.shutdown()
+_app159.processEvents()
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
