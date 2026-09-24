@@ -57,7 +57,13 @@ def _home_override() -> str:
 
 def config_dir() -> str:
     if "config" in _CACHE_ROOT:
-        return _CACHE_ROOT["config"]
+        # 缓存命中也要校验目录还在：测试隔离/便携 U 盘场景下目录可能被删
+        # （TempDir 退出、U 盘拔出、网络盘断连）。目录没了就清缓存重新解析，
+        # 否则 save() 会往不存在的路径写、被原子写容错吞掉 → 配置静默丢。
+        if os.path.isdir(_CACHE_ROOT["config"]):
+            return _CACHE_ROOT["config"]
+        _CACHE_ROOT.pop("config", None)
+        _CACHE_ROOT.pop("data", None)
     override = _home_override()
     if override:
         p = os.path.join(override, "config")
@@ -84,7 +90,11 @@ def config_path() -> str:
 def data_dir() -> str:
     """数据目录：缓存音频、日志、便携回退。优先系统目录，不可写则退回程序目录。"""
     if "data" in _CACHE_ROOT:
-        return _CACHE_ROOT["data"]
+        # 同 config_dir()：缓存命中先校验目录仍在，失效（被删/盘断开）则重解析
+        if os.path.isdir(_CACHE_ROOT["data"]):
+            return _CACHE_ROOT["data"]
+        _CACHE_ROOT.pop("data", None)
+        _CACHE_ROOT.pop("config", None)
     override = _home_override()
     if override:
         p = os.path.join(override, "data")

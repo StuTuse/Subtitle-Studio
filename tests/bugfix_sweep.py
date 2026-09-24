@@ -3150,4 +3150,35 @@ for _fn187 in ("to_srt", "to_vtt", "to_ass", "to_txt", "to_md",
         _ok187 = False
     check(f"空文档 {_fn187} 不抛", _ok187)
 
+section("169. 最近文件链实测（第 188 轮钉子）")
+check("max_recent 默认 12", _CF120().max_recent == 12)
+_cfg188 = _CF120()
+for _i188 in range(20):
+    _p188 = rf"D:\v\视频{_i188}.mp4"
+    if _p188 in _cfg188.recent_files:
+        _cfg188.recent_files.remove(_p188)
+    _cfg188.recent_files.insert(0, _p188)
+    del _cfg188.recent_files[_cfg188.max_recent:]
+check("recent 封顶且最新在最前", len(_cfg188.recent_files) == 12
+      and _cfg188.recent_files[0] == r"D:\v\视频19.mp4")
+_p188b = r"D:\v\视频5.mp4"
+if _p188b in _cfg188.recent_files:
+    _cfg188.recent_files.remove(_p188b)
+_cfg188.recent_files.insert(0, _p188b)
+del _cfg188.recent_files[_cfg188.max_recent:]
+check("重复打开提到最前不重复", _cfg188.recent_files[0] == _p188b
+      and _cfg188.recent_files.count(_p188b) == 1)
+# 第 188 轮修复：config_dir()/data_dir() 缓存命中时校验目录仍存在，
+# 失效（TempDir 退出/便携盘拔出）则清缓存重解析——修前 save 会往已删
+# 目录写、被原子写容错吞掉，配置静默丢失。
+_cfg188.save()
+_cfg188c = _CF179.load()
+check("recent 持久化往返", _cfg188c.recent_files[0] == _p188b
+      and len(_cfg188c.recent_files) == 12)
+# add_recent 行为集成（第 5 节钉过 max_recent 边界，这里钉去重语义）
+_cfg188.add_recent(_p188b)
+check("add_recent 再开同一文件仍唯一居首",
+      _cfg188.recent_files.count(_p188b) == 1
+      and _cfg188.recent_files[0] == _p188b)
+
 raise SystemExit(finish())
