@@ -3205,6 +3205,45 @@ check("五状态×双色全可用", all(_th189.state_color(_st, _d) is not None
       for _st in ("asr", "llm", "edited", "confirmed", "error")
       for _d in (False, True)))
 
+section("171. 工程保存链实测（第 190 轮钉子）")
+_d190 = _CD147()
+_d190.cues = [_Cue147(start=0, end=1, text="甲", speaker="小明"),
+              _Cue147(start=2, end=3, text="乙", state="llm", original_text="乙原")]
+_d190.source_video = r"D:\v\演示.mp4"
+_d190.duration = 10.0
+_d190.language = "zh"
+_d190.meta = {"gaps_closed": 1}
+_p190 = os.path.join(_tp175.gettempdir(), "sw190.ssp")
+open(_p190, "w", encoding="utf-8").write(_d190.to_json())
+_raw190 = _json173.load(open(_p190, encoding="utf-8"))
+check("落盘含 meta/时长/语言", _raw190.get("duration") == 10.0
+      and _raw190.get("language") == "zh"
+      and _raw190.get("meta", {}).get("gaps_closed") == 1)
+_d190b = _CD147.from_dict(_raw190)
+check("载回状态字段与 meta", len(_d190b.cues) == 2
+      and _d190b.cues[1].state == "llm"
+      and _d190b.cues[1].original_text == "乙原"
+      and _d190b.meta.get("gaps_closed") == 1)
+open(_p190, "w", encoding="utf-8").write('{"cues": [{"id": "x"')
+_broken190 = False
+try:
+    _CD147.from_dict(_json173.load(open(_p190, encoding="utf-8")))
+except Exception:
+    _broken190 = True
+check("半截 JSON 受控报错", _broken190)
+check("缺字段默认兜底", len(_CD147.from_dict(
+      {"cues": [{"start": 0, "end": 1, "text": "简"}]}).cues) == 1)
+open(_p190, "w", encoding="utf-8").write(_CD147().to_json())
+check("空工程往返", len(_CD147.from_dict(
+      _json173.load(open(_p190, encoding="utf-8"))).cues) == 0)
+_d190s = _CD147()
+_d190s.cues = [_Cue147(start=0, end=1, text="行一\n行二\\path😀\"引\"")]
+open(_p190, "w", encoding="utf-8").write(_d190s.to_json())
+check("特殊字符无损往返", _CD147.from_dict(
+      _json173.load(open(_p190, encoding="utf-8"))).cues[0].text
+      == "行一\n行二\\path😀\"引\"")
+os.remove(_p190)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
