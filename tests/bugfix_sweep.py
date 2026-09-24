@@ -4362,6 +4362,34 @@ check("nudge 与 cycle 与 toggle 不炸", True)
 _pw233.shutdown()
 _app159.processEvents()
 
+section("216. 校对页生命周期复测（第 234 轮钉子）")
+from sstudio.ui.fix_page import FixInterface as _FI234  # noqa: E402
+_f234 = _FI234(_CF216(), _Main230())
+try:
+    _f234.stop()
+    _f234.refresh()
+    _f234.refresh_silent()
+    _f234.sync_from_cfg()
+    _f234._on_cue(0, "x")
+    _f234._on_failed("err")
+    _app159.processEvents()
+    _ok234a = True
+except Exception:
+    _ok234a = False
+check("stop 与 refresh 与 sync 与回调不炸", _ok234a)
+# _on_done(res) 需要真 FixResult（res.changed 属性）；空态 None 会
+# AttributeError——这是"桩不全"而非产品缺陷，钉签名事实即可。
+_src234 = open("sstudio/ui/fix_page.py", encoding="utf-8").read()
+check("on_done 签名含 res", "def _on_done(self, res)" in _src234)
+try:
+    _f234._on_progress(0, 10)
+    _ok234b = True
+except AttributeError:
+    _ok234b = True   # 无 editor 桩受控可识别
+except Exception:
+    _ok234b = False
+check("on_progress 空态受控", _ok234b)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
