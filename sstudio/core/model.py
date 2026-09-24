@@ -360,15 +360,19 @@ class CueDocument:
             language=str(d.get("language", "") or ""),
             meta=dict(d.get("meta", {}) or {}),
         )
-        doc.cues = [Cue.from_dict(c) for c in (d.get("cues", []) or [])]
+        # 手改/外部工具生成的工程可能畸形：cues 里混入非 dict 元素会在这里
+        # 炸掉整个工程（load_project 只能整文件拒绝）。跳过畸形项，
+        # 能救多少救多少——一条坏 cue 不该废掉整个文件。
+        cues_raw = d.get("cues", []) or []
+        doc.cues = [Cue.from_dict(c) for c in cues_raw if isinstance(c, dict)]
         return doc
-
     def snapshot(self) -> Dict[str, Any]:
         """给撤销栈用的深拷贝。"""
         return {"cues": [c.to_dict() for c in self.cues]}
 
     def restore(self, snap: Dict[str, Any]) -> None:
-        self.cues = [Cue.from_dict(c) for c in snap.get("cues", [])]
+        self.cues = [Cue.from_dict(c) for c in snap.get("cues", [])
+                     if isinstance(c, dict)]
 
 
 def _smart_split(cue: Cue, max_chars: int, max_dur: float) -> List[Cue]:

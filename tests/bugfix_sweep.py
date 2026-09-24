@@ -3779,6 +3779,39 @@ _cfg210.whisper_device, _cfg210.whisper_compute = "", ""
 _d210, _c210 = _pd210(_cfg210)
 check("空串等价 auto", _d210 in ("cpu", "cuda"))
 
+section("193. 工程 schema 防御实测（第 211 轮钉子·真缺陷修复）")
+_d211 = _CD147(source_video="D:/v/abc.mp4", duration=12.5, language="zh",
+               meta={"模型": "large-v3"})
+_d211.cues = [_Cue147(start=0, end=1.5, text="你好", state="confirmed"),
+              _Cue147(start=2, end=3, text="world")]
+import json as _json211  # noqa: E402
+_d211b = _CD147.from_dict(_json211.loads(_d211.to_json()))
+check("to_json→from_dict 往返", _d211b.source_video == "D:/v/abc.mp4"
+      and _d211b.duration == 12.5 and len(_d211b.cues) == 2
+      and _d211b.cues[0].text == "你好")
+_mixed211 = {"cues": [{"start": 0, "end": 1, "text": "好的"},
+                      "坏字符串",
+                      {"start": 1, "end": 2, "text": "第二条"},
+                      42,
+                      {"start": 2, "end": 3, "text": "第三条"}]}
+_d211c = _CD147.from_dict(_mixed211)
+check("畸形项只跳过不废文件", len(_d211c.cues) == 3)
+check("好 cue 无损", [c.text for c in _d211c.cues]
+      == ["好的", "第二条", "第三条"])
+_d211d = _CD147()
+_d211d.restore({"cues": [{"start": 0, "end": 1, "text": "甲"}, None,
+                         {"start": 1, "end": 2, "text": "乙"}]})
+check("restore 跳过非 dict", len(_d211d.cues) == 2
+      and _d211d.cues[1].text == "乙")
+_d211e = _CD147.from_dict({"meta": None, "cues": "x"})
+check("meta None 与 cues 标量兜空", _d211e.meta == {} and _d211e.cues == [])
+_p211 = os.path.join(_tp175.gettempdir(), "sw211.ssp")
+with open(_p211, "w", encoding="utf-8") as _f211:
+    _f211.write(_d211.to_json())
+check("磁盘 utf-8 中文无损", _json211.load(open(_p211, encoding="utf-8"))
+      ["cues"][0]["text"] == "你好")
+os.remove(_p211)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
