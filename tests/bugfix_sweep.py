@@ -3030,4 +3030,24 @@ check("空文件 probe 不抛", _ok183)
 os.remove(_w183)
 check("支持扩展名集合在位", all(_k in _src183 for _k in ("mp4", "mkv", "wav")))
 
+section("165. LLM 配置链实测（第 184 轮钉子）")
+from sstudio.core import llm as _llm184  # noqa: E402
+_cfg184 = _CF120()
+check("批处理参数默认齐", _cfg184.batch_size == 30 and _cfg184.concurrency == 3
+      and abs(_cfg184.request_interval - 0.3) < 1e-9 and _cfg184.auto_retry == 2
+      and _cfg184.strict_mode is True and _cfg184.keep_original is True)
+_p184 = _cfg184.profile()
+check("profile 取 active_profile 字段齐", _p184.name == _cfg184.active_profile
+      and all(hasattr(_p184, _a) for _a in
+              ("base_url", "api_key", "model", "temperature", "max_tokens", "timeout")))
+check("llm 公开 API 在位", callable(_llm184.fix_document)
+      and any(_n.startswith("Fix") for _n in dir(_llm184)))
+def _batches184(_n184, _bs184):
+    return [list(range(_i, min(_i + _bs184, _n184)))
+            for _i in range(0, _n184, _bs184)]
+_b184 = _batches184(100, _cfg184.batch_size)
+check("100 行 30/批切 4 批", len(_b184) == 4 and len(_b184[-1]) == 10)
+check("prompt/glossary/参考稿出厂空", _cfg184.prompt_template == ""
+      and _cfg184.glossary == "" and _cfg184.reference_script == "")
+
 raise SystemExit(finish())
