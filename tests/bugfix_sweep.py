@@ -4319,6 +4319,25 @@ _cues231d = _fm147.parse_srt(
 check("多行保留", "第一行" in _cues231d[0].text
       and "第二行" in _cues231d[0].text)
 
+section("214. 多格式解析复测（第 232 轮钉子）")
+check("纯文本受控", isinstance(_fm147.parse_txt("你好世界"), list))
+_cues232 = _fm147.parse_lrc("[00:01.00]第一句\n[00:05.50]第二句\n")
+check("LRC 两条", len(_cues232) == 2)
+check("LRC 毫秒与文本", abs(_cues232[0].start - 1.0) < 0.01
+      and _cues232[1].text == "第二句")
+_cues232b = _fm147.parse_lrc("[ti:标题]\n[ar:歌手]\n[00:02.00]正文\n")
+check("元数据跳过", len(_cues232b) == 1
+      and _cues232b[0].text == "正文")
+check("MD 编号受控", isinstance(_fm147.parse_md("1. 你好\n2. 世界\n"), list))
+check("HTML 受控", isinstance(_fm147.parse_html("<p>甲</p><p>乙</p>"), list))
+for _f232 in (_fm147.parse_txt, _fm147.parse_lrc, _fm147.parse_md,
+              _fm147.parse_html):
+    if not isinstance(_f232(""), list):
+        check("空串安全", False)
+        break
+else:
+    check("四解析器空串安全", True)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
