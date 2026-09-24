@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.170] - 2026-09-24
+
+v1.17.170：测试加固——bugfix_sweep 第 144 节运行时实测主题层行为：is_dark 返回 bool、五态着色（asr/llm/edited/review/confirmed）双皮肤都有效且文案非空、未知状态回落不抛、status_hex 与 accent_hex 返回 hex 串、monospace 按 Cascadia Mono 到 Courier New 优先级取等宽字体且字号正确、_crisp 对小字号 CJK 设置 PreferFullHinting 全 hinting 提升清晰度——theme.py 二轮复扫全部通过，无产品缺陷
+
 ## [1.17.169] - 2026-09-24
 
 v1.17.169：测试加固——bugfix_sweep 第 143 节运行时实测启动页与单实例守护：Splash 带 version 位置参数实例化（run.py 调用一致）、淡出结束令牌与 600ms 强制关闭兜底、守护名按数据目录 md5 派生防多安装误伤、活实例靠连接探测互斥（Windows 命名管道 listen 恒真故判据是 connectToServer）、SS_NEW_INSTANCE 环境变量逃生门旁路僵死实例；并修正第 143 节与第 13 节同进程占锁的场景冲突——splash 与 single_instance 二轮复扫全部通过，无产品缺陷
