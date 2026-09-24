@@ -4226,6 +4226,26 @@ _cfg227.save()
 _cfg227c = _CF216.load()
 check("batch_size 持久化", _cfg227c.batch_size == 10)
 
+section("210. LLM 配置档复测（第 228 轮钉子）")
+from sstudio.core.llm import LLMProfile as _LP228  # noqa: E402
+_p228 = _LP228(name="测试", base_url="http://127.0.0.1:8000/v1",
+               api_key="sk-x", model="qwen", temperature=0.3,
+               max_tokens=2048, no_reasoning=True)
+check("profile 字段保留", _p228.name == "测试"
+      and _p228.no_reasoning is True and _p228.temperature == 0.3)
+_cfg228 = _CF216()
+check("默认 profile 非空", len(_cfg228.profiles) >= 1)
+_cfg228.profiles.append(_LP228(name="第二个", base_url="http://x/v1",
+                               model="glm", temperature=0.1))
+_cfg228.active_profile = "第二个"
+_cfg228.save()
+_cfg228b = _CF216.load()
+check("profiles 往返两条", len(_cfg228b.profiles) == 2)
+_p228b = [q for q in _cfg228b.profiles if q.name == "第二个"][0]
+check("自定义字段往返", _p228b.model == "glm"
+      and _p228b.temperature == 0.1)
+check("active_profile 往返", _cfg228b.active_profile == "第二个")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
