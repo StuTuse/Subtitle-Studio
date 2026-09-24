@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.182] - 2026-09-24
+
+v1.17.182：测试加固——bugfix_sweep 第 156 节以真实子进程实测命令行集成：python -m sstudio --headless 无 --video 参数预检退出码 2 且提示可读、不存在的媒体文件退出码 2（isfile 预检在转写前防白跑几小时）、--out 非法扩展名退出码 2 且提示全部可选格式、--help 退出码 0——CLI 集成链路实测全部通过，无产品缺陷
+
 ## [1.17.181] - 2026-09-24
 
 v1.17.181：测试加固——bugfix_sweep 第 155 节运行时实测线程收尾链集成：ThreadedCall 成功路径 sig_done queued 携带结果值、工作函数抛异常走 sig_failed 带可读消息、进度回调两次经 queued 信号按序到达主线程、reap 已结束 worker 重复调用幂等、cancel 长任务在检查点生效不挂死、orphanize 摘父子后线程自然收尾、KeyboardInterrupt 等 BaseException 同样走 sig_failed 兜底——workers 线程链路集成全部通过，无产品缺陷
