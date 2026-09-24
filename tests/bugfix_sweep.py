@@ -3116,4 +3116,38 @@ _d186f.remove([_d186f.index_of(_c186)])        # remove 接受 Iterable[int]
 check("remove 按下标列表删", len(_d186f.cues) == 1 and _d186f.cues[0].text == "留")
 check("stats 返回可用统计", _d186f.stats() is not None)
 
+section("168. 全格式导出边界实测（第 187 轮钉子）")
+_d187 = _CD147()
+_d187.cues = [_Cue147(start=0, end=1.5, text="第一句", speaker="旁白"),
+              _Cue147(start=2, end=3.5, text="第二句")]
+_md187 = _fm147.to_md(_d187)
+check("MD 含 speaker 与文本", "旁白" in _md187 and "第二句" in _md187)
+_he187 = _fm147.to_html(_d187)
+check("HTML 结构在位", "<" in _he187 and "第一句" in _he187)
+_d187e = _CD147()
+_d187e.cues = [_Cue147(start=0, end=1, text="<b>&\"'")]
+check("HTML 实体转义", "&lt;b&gt;" in _fm147.to_html(_d187e)
+      and "&amp;" in _fm147.to_html(_d187e))
+_lrc187 = _fm147.to_lrc(_d187)
+check("LRC 从零计时含全文", _lrc187.count("[00:") >= 1
+      and "第一句" in _lrc187 and "第二句" in _lrc187)
+check("TXT 两形态时间戳分野", "00" in _fm147.to_txt(_d187, with_time=True)
+      and "00:00" not in _fm147.to_txt(_d187, with_time=False))
+_ass187 = _fm147.to_ass(_d187)
+check("ASS speaker 与两条 Dialogue", "旁白" in _ass187
+      and _ass187.count("Dialogue:") == 2)
+_vtt187 = _fm147.to_vtt(_d187)
+check("VTT 头与小时进位", _vtt187.startswith("WEBVTT"))
+_d187h = _CD147()
+_d187h.cues = [_Cue147(start=3600, end=3601, text="一小时后")]
+check("VTT 小时位 01:", "01:" in _fm147.to_vtt(_d187h))
+for _fn187 in ("to_srt", "to_vtt", "to_ass", "to_txt", "to_md",
+               "to_html", "to_lrc", "to_json"):
+    try:
+        getattr(_fm147, _fn187)(_CD147())
+        _ok187 = True
+    except Exception:
+        _ok187 = False
+    check(f"空文档 {_fn187} 不抛", _ok187)
+
 raise SystemExit(finish())
