@@ -2423,4 +2423,43 @@ check("set_position 不抛", True)
 check("信号四件套在位", all(hasattr(_Tl159, _s159) for _s159 in
       ("seek_requested", "cue_clicked", "cue_range", "content_changed")))
 
+section("141. 字幕表格行为实测（第 160 轮钉子）")
+from sstudio.ui.cue_table import (CueTable as _CT160, _duration_warn as _dw160,  # noqa: E402
+                                  _state_badge as _sb160, _tip as _tip160, _wrap_lines as _wl160)
+check("时长警示三分支", "拆分" in _dw160(_Cue147(start=0, end=9, text="长"))
+      and "一闪" in _dw160(_Cue147(start=0, end=0.3, text="短"))
+      and "字/秒" in _dw160(_Cue147(start=0, end=1, text="一二三四五六七八九十十一十二十三"))
+      and _dw160(_Cue147(start=0, end=2, text="正好")) == "")
+check("徽章五态不透明", all(_sb160(_s, True).alpha() > 0 for _s in
+      ("asr", "llm", "edited", "review", "confirmed")))
+check("未知态徽章透明", _sb160("unknown", True).alpha() == 0)
+_CT160._style_cache.clear()
+_s160a = _CT160._styles("llm", True)
+_s160b = _CT160._styles("llm", True)
+check("样式缓存同对象", _s160a is _s160b)
+_t160 = _CT160()
+_t160.show()
+_t160.render(_d159.cues)
+check("render 行数与选中列", _t160.rowCount() == 2 and _t160.currentRow() in (-1, 0, 1))
+_t160.render(_d159.cues, select_row=1)
+check("render 显式选中", _t160.currentRow() == 1)
+_d159.cues[0].text = "甲改"
+_t160.update_row(0, _d159.cues[0])
+check("update_row 落文本", _t160.item(0, 5).text() == "甲改")
+_t160.mark_row_llm(1, "乙LLM")
+check("mark_row_llm 落文本与状态", _t160.item(1, 5).text() == "乙LLM"
+      and _t160.item(1, 4).text() != "")
+_t160.selectionModel().clearSelection()
+check("空选返回空表", _t160.selected_rows() == [])
+_d160b = _CD147()
+_d160b.cues = [_Cue147(start=0, end=1, text="多行\n" * 20)]
+_t160.render(_d160b.cues)
+check("行高夹逼上限 150", _t160.rowHeight(0) <= 150)
+check("wrap 单行算零", _wl160(_Cue147(start=0, end=1, text="短文本")) == 0)
+check("wrap 长行算正", _wl160(_Cue147(start=0, end=1, text="字" * 61)) >= 2)
+_tip160v = _tip160(_Cue147(start=1, end=2, text="T", original_text="O",
+                           state="review", confidence=0.87))
+check("tip 时间置信度原文复查齐", "00:00:01" in _tip160v and "0.87" in _tip160v
+      and "原文" in _tip160v and "待复查" in _tip160v)
+
 raise SystemExit(finish())
