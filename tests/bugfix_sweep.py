@@ -2957,4 +2957,18 @@ finally:
     os.environ.pop("SUBTITLE_STUDIO_HOME", None)
     _sh179.rmtree(_home179, ignore_errors=True)
 
+section("161. 覆盖度里程碑实测（第 180 轮钉子）")
+import re as _re180  # noqa: E402
+_files180 = []
+for _root180, _dirs180, _names180 in os.walk("sstudio"):
+    _dirs180[:] = [d for d in _dirs180 if d != "__pycache__"]
+    for _n180 in _names180:
+        if _n180.endswith(".py"):
+            _files180.append(os.path.basename(_n180)[:-3])
+_src180 = open("tests/bugfix_sweep.py", encoding="utf-8").read()
+check("源文件 30 个全有钉子覆盖", len(_files180) == 30
+      and all(_re180.search(_re180.escape(_n), _src180) for _n in _files180))
+_secs180 = _re180.findall(r'section\("(\d+)\.', _src180)
+check("sweep 节数持续增长", len(_secs180) >= 160)
+
 raise SystemExit(finish())
