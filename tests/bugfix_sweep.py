@@ -4064,6 +4064,43 @@ check("正常解析两条", _r221b.get(1) == "你好" and _r221b.get(2) == "世�
 _r221c = _llm.parse_numbered("```\n1. 甲\n2. 乙\n```", _EXP221)
 check("围栏剥离", _r221c.get(1) == "甲" and _r221c.get(2) == "乙")
 
+section("204. 启动屏实测（第 222 轮钉子）")
+from sstudio.ui.splash import Splash as _Sp222, app_icon as _ai222, \
+    paint_app_icon as _pai222  # noqa: E402
+_i222a, _i222b = _ai222(), _ai222()
+check("app_icon 非空幂等", _i222a is not None
+      and not _i222a.isNull()
+      and _i222a.pixmap(64, 64).toImage() == _i222b.pixmap(64, 64).toImage())
+from PyQt5.QtGui import QPixmap as _Pm222, QPainter as _Pp222  # noqa: E402
+from PyQt5.QtCore import QRectF as _RF222  # noqa: E402
+_pm222 = _Pm222(64, 64)
+_pp222 = _Pp222(_pm222)
+try:
+    _pai222(_pp222, _RF222(0, 0, 64, 64))
+    _pp222.end()
+    _ok222a = True
+except Exception:
+    _pp222.end()
+    _ok222a = False
+check("paint_app_icon(p,rect) 不炸", _ok222a)
+_s222 = _Sp222("1.17.228")
+for _st222 in ("加载界面…", "初始化…", "就绪"):
+    _s222.show_stage(_st222)
+_app159.processEvents()
+try:
+    _s222.fadeOut = 0.0
+    _s222.fadeOut = 5.0
+    _s222.fadeOut = -3.0
+    _app159.processEvents()
+    _ok222b = True
+except Exception:
+    _ok222b = False
+check("fadeOut 属性夹逼不炸", _ok222b)
+_s222.finish()
+_s222.finish()
+_app159.processEvents()
+check("finish 幂等不炸", True)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
