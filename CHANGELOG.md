@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.168] - 2026-09-24
+
+v1.17.168：修复 safe_spin 数值控件 validate 崩溃——状态枚举误用 QSpinBox.Intermediate（PyQt5 中该枚举只挂在 QValidator 上），用户清空温度/并发/超时等数值输入框的瞬间会抛 AttributeError（靠 PyQt 虚方法兜底才没闪退），改为 QValidator.Intermediate 后「允许临时为空、失焦夹回」的守卫首次真正生效，整数与小数两版同修；附 bugfix_sweep 第 142 节钉住防误触数值控件行为（显式候选与清空、自动候选按范围生成、validate 空串返回 Intermediate、小数候选 11 档一位小数标签、close_popup 幂等、keyboardTracking 关防输入中触发）
+
 ## [1.17.167] - 2026-09-24
 
 v1.17.167：测试加固——bugfix_sweep 第 141 节运行时实测字幕表格行为：时长列警示三分支（超 8s 建议拆分、不足 0.5s 一闪而过、超 9 字每秒观众跟不上）与导出预检同标准、状态徽章五态着色未知态透明、模块级样式缓存命中同对象防热路径上万个临时对象、render 行数与显式选中、update_row 单行落文本、mark_row_llm 流式回填保滚动位置、空选返回空表、行高夹逼 150 上限、自动换行估算、悬停提示含时间置信度原文待复查四要素——cue_table.py 三轮深读完成，无产品缺陷
