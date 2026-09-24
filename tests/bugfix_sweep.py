@@ -3377,6 +3377,34 @@ check("stats count 与 duration", isinstance(_st196, dict)
       and _st196.get("count") == 3
       and abs(_st196.get("duration", 0) - _d196.end_time) < 1e-9)
 
+section("178. 导入链解析器实测（第 197 轮钉子）")
+from sstudio.core import formats as _fm197  # noqa: E402
+_cu197, _k197 = _fm197.import_text("1\n00:00:00,000 --> 00:00:01,000\n甲\n", "a.srt")
+check("import srt 自动识别", _k197 == "srt" and len(_cu197) == 1
+      and abs(_cu197[0].end - _cu197[0].start - 1.0) < 1e-6)
+_cu197b, _k197b = _fm197.import_text(
+    "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n甲\n\n00:00:01.000 --> 00:00:02.500\n乙\n", "a.vtt")
+check("import vtt 毫秒精度", _k197b == "vtt" and len(_cu197b) == 2
+      and abs(_cu197b[1].end - 2.5) < 1e-6)
+check("lrc 多标签展开", len(_fm197.parse_lrc(
+      "[00:01.00]甲\n[00:02.50][00:05.00]乙\n")) >= 3)
+check("ass 解析 Dialogue 两条", len(_fm197.parse_ass(
+      "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+      "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,乙\n"
+      "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,甲\n")) == 2)
+_cu197c, _ = _fm197.parse_any("00:01:23,450 --> 00:01:25,000 侦测行\n")
+check("parse_any 时间轴行直读", len(_cu197c) >= 1)
+_ok197 = True
+for _t197, _f197 in (("", "srt"), ("", "vtt"), ("", "lrc"), ("", "")):
+    try:
+        _fm197.import_text(_t197, _f197)
+    except Exception:
+        _ok197 = False
+check("空内容导入不炸", _ok197)
+_srt197 = _fm197.to_srt(_CD147(cues=[_Cue147(start=0, end=1, text="甲")]))
+_cu197d = _fm197.parse_srt(_srt197)
+check("to_srt→parse_srt 往返", len(_cu197d) == 1 and _cu197d[0].text == "甲")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
