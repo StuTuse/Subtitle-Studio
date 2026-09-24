@@ -2517,4 +2517,31 @@ _si162c = _SI162(_app159)
 check("逃生门环境变量旁路", _si162c.try_start() is True)
 os.environ.pop("SS_NEW_INSTANCE", None)
 
+section("144. 主题层行为实测（第 163 轮钉子）")
+from PyQt5.QtGui import QFont as _QFont163  # noqa: E402
+from sstudio.ui import theme as _th163  # noqa: E402
+_dark163 = _th163.is_dark()
+check("is_dark 返回 bool", isinstance(_dark163, bool))
+for _st163 in ("asr", "llm", "edited", "review", "confirmed"):
+    _c163 = _th163.state_color(_st163, _dark163)
+    _t163 = _th163.state_text(_st163)
+    if _c163 is None or _c163.alpha() <= 0 or not (isinstance(_t163, str) and _t163):
+        check(f"五态着色与文案（{_st163}）", False)
+        break
+else:
+    check("五态着色与文案齐", True)
+check("未知态着色不抛", _th163.state_color("unknown", _dark163) is not None)
+check("status_hex 返回 hex", _th163.status_hex("review").startswith("#"))
+check("accent_hex 返回 hex", _th163.accent_hex().startswith("#"))
+_f163 = _th163.monospace(10)
+check("monospace 字号与等宽族", (_f163.pointSizeF() == 10.0 or _f163.pointSize() == 10)
+      and any(_k in _f163.family().lower() for _k in
+              ("consolas", "mono", "cascadia", "courier", "sarasa", "jetbrains")))
+_f163b = _th163.monospace(10)
+_th163._crisp(_f163b)
+check("_crisp 全 hinting 生效", _f163b.hintingPreference() == _QFont163.PreferFullHinting)
+_src163 = open("sstudio/ui/theme.py", encoding="utf-8").read()
+check("_crisp 源码 FullHinting 与 Antialias", "PreferFullHinting" in _src163
+      and "PreferAntialias" in _src163)
+
 raise SystemExit(finish())
