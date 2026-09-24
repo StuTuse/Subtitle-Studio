@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.206] - 2026-09-24
+
+v1.17.206：测试加固——bugfix_sweep 第 180 节运行时实测工作线程信号链集成：ThreadedCall sig_done 在主线程落地返回值、sig_failed 收异常类型名与消息、SystemExit 级 BaseException 也经信号上报不静默死线程、CB_CANCEL 占位回调注入协作取消、reap 重复回收幂等不抛、CB_PROGRESS 占位经 sig_progress 转发 0.5 进度——工作线程信号链实测全部通过，无产品缺陷
+
 ## [1.17.205] - 2026-09-24
 
 v1.17.205：测试加固——bugfix_sweep 第 179 节运行时实测时间戳转换边界：sec_to_ts 零秒 00 前缀与时分量级输出正确且默认 srt 逗号风格、sep 参数可切 vtt 点号风格、从零到两小时全量级 sec_to_ts 与 ts_to_sec 往返毫秒无损、ts_to_sec 对非时间文本返回 None 不抛、负数与超大秒数转换不炸——时间戳转换实测全部通过，无产品缺陷
