@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.181] - 2026-09-24
+
+v1.17.181：测试加固——bugfix_sweep 第 155 节运行时实测线程收尾链集成：ThreadedCall 成功路径 sig_done queued 携带结果值、工作函数抛异常走 sig_failed 带可读消息、进度回调两次经 queued 信号按序到达主线程、reap 已结束 worker 重复调用幂等、cancel 长任务在检查点生效不挂死、orphanize 摘父子后线程自然收尾、KeyboardInterrupt 等 BaseException 同样走 sig_failed 兜底——workers 线程链路集成全部通过，无产品缺陷
+
 ## [1.17.180] - 2026-09-24
 
 v1.17.180：测试加固——bugfix_sweep 第 154 节运行时实测跨模块全链集成：.ssp 工程落盘（doc.to_json）到 CueDocument.from_dict 载回条数与源视频路径完整、工程载回后导出 SRT 三条全在、SRT 导出再 parse_srt 导入条数文本时间全一致、VTT 往返文本一致、parse_any 按扩展名与内容头自动识别 SRT 与 VTT 与 JSON 三格式并返回 cues 与格式名二元组、JSON 工程往返 speaker 说话人字段全保留——跨模块链路集成实测全部通过，无产品缺陷
