@@ -2701,4 +2701,33 @@ check("窗口几何与音量与分栏比例持久化", "window_geometry" in _src
 check("后台任务协作取消", "self._worker.cancel()" in _src170
       and "fw.cancel()" in _src170)
 
+section("152. 编辑页状态机实测（第 171 轮钉子）")
+from sstudio.ui.editor_page import EditorInterface as _EI171  # noqa: E402
+class _Pl171:  # noqa: E302
+    def shutdown(self): pass
+    def volume(self): return 80
+class _EdHost171:  # noqa: E302
+    status = type("S", (), {"setText": staticmethod(lambda s: None)})()
+    player = _Pl171()
+class _FM171:  # noqa: E302
+    doc = _CD147()
+    editor = _EdHost171()
+    cfg = _CF120()
+    player = _Pl171()
+_ei171 = _EI171(_CF120(), _FM171())
+check("编辑页实例化不抛", _ei171 is not None)
+check("核心方法在位", all(callable(getattr(_ei171, _m, None)) for _m in
+      ("_act", "set_document", "update_status", "undo", "redo",
+       "apply_llm_text", "push_undo", "transport_key")))
+_d171 = _CD147()
+_d171.cues = [_Cue147(start=0, end=2, text="甲"), _Cue147(start=3, end=5, text="乙")]
+_ei171.set_document(_d171)
+check("set_document 全链不抛", True)
+_ei171.update_status()
+_ei171.update_status()
+check("update_status 幂等", True)
+_ei171.undo()
+_ei171.redo()
+check("空栈 undo/redo 不抛", True)
+
 raise SystemExit(finish())
