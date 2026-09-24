@@ -3564,6 +3564,20 @@ check("looks_translated 等长 False", _llm.looks_translated("你好", "你们")
 check("no_reasoning_note 可生成", isinstance(
       _llm.no_reasoning_note(_CF120().profile()), str))
 
+section("184. 单实例互斥实测（第 203 轮钉子）")
+from sstudio.ui import single_instance as _si203  # noqa: E402
+# 注意：第 13 节已在同进程占住 _server_name() 锁（_a1 一直存活），
+# 所以这里直接钉「互斥仍生效 + 逃生门」，不重复钉首次 True。
+_si203b = _si203.SingleInstance(_app159)
+check("前锁存活时后实例 False 互斥", _si203b.try_start() is False)
+os.environ["SS_NEW_INSTANCE"] = "1"
+_si203c = _si203.SingleInstance(_app159)
+_ok203 = _si203c.try_start()
+os.environ.pop("SS_NEW_INSTANCE", None)
+check("环境变量逃生门 True", _ok203 is True)
+check("on_activate 槽位在位", hasattr(_si203b, "on_activate"))
+check("锁名按数据目录派生", _si203._server_name().startswith("SubtitleStudio-"))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
