@@ -3543,6 +3543,27 @@ _tr201.normalize_cues(_d201e)
 check("百条乱序归正", all(_d201e.cues[_i].start <= _d201e.cues[_i + 1].start
       for _i in range(99)))
 
+section("183. LLM 解析容错实测（第 202 轮钉子）")
+_exp202 = range(1, 3)
+_r202 = _llm.parse_numbered("1. 甲\n2. 乙\n", _exp202)
+check("正常编号解析", _r202.get(1) == "甲" and _r202.get(2) == "乙")
+_r202b = _llm.parse_numbered("好的，以下是结果：\n1. 甲\n2. 乙\n以上就是全部。", _exp202)
+check("噪声容错解析", _r202b.get(1) == "甲" and _r202b.get(2) == "乙")
+_r202c = _llm.parse_numbered("1. 甲\n", _exp202)
+check("截断缺号不炸", _r202c.get(1) == "甲" and 2 not in _r202c)
+_r202d = _llm.parse_numbered("", _exp202)
+check("空响应空字典", isinstance(_r202d, dict) and not _r202d)
+check("无编号受控", isinstance(_llm.parse_numbered("纯文本没有编号", _exp202), dict))
+check("超范围受控", isinstance(_llm.parse_numbered(
+      "1. 甲\n2. 乙\n3. 丙\n", _exp202), dict))
+check("sanity 短文本等长 None", _llm.sanity_check("你好", "你们") is None)
+check("sanity 空输出报错", _llm.sanity_check("你好", "") is not None)
+check("sanity 中译英被拒", _llm.sanity_check(
+      "你好世界大家好", "Hello world everyone") is not None)
+check("looks_translated 等长 False", _llm.looks_translated("你好", "你们") is False)
+check("no_reasoning_note 可生成", isinstance(
+      _llm.no_reasoning_note(_CF120().profile()), str))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
