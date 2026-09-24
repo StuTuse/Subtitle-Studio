@@ -2890,4 +2890,34 @@ _d177.restore(_snap177)
 _ct177.render(_d177.cues)
 check("restore 后表格 2 行", _ct177.rowCount() == 2)
 
+section("159. LLM 回填联动集成实测（第 178 轮钉子）")
+_d178 = _CD147()
+_d178.cues = [_Cue147(start=0, end=2, text="原句", state="asr")]
+_ct178 = _CT177()
+_ct178.render(_d178.cues)
+_ct178.mark_row_llm(0, "改句")
+check("llm 回填落文本", _ct178.item(0, 5).text() == "改句")
+_d178b = _CD147()
+_d178b.cues = [_Cue147(start=0, end=1, text="A"), _Cue147(start=1, end=2, text="B"),
+               _Cue147(start=2, end=3, text="C")]
+_ct178b = _CT177()
+_ct178b.render(_d178b.cues)
+for _i178, _c178 in enumerate(_d178b.cues):
+    _ct178b.mark_row_llm(_i178, _c178.text + "改")
+check("批量回填全部落文本", all(_ct178b.item(_i, 5).text().endswith("改")
+      for _i in range(3)))
+_snap178 = _d178b.snapshot()
+_d178b.cues[0].text = "人工改"
+_d178b.cues[0].state = "confirmed"
+_ct178b.update_row(0, _d178b.cues[0])
+check("确认态后状态列变化", _ct178b.item(0, 4).text() != _ct178b.item(1, 4).text())
+_d178b.restore(_snap178)
+_ct178b.render(_d178b.cues)
+check("restore 回到快照时刻文本", [c.text for c in _d178b.cues] == ["A", "B", "C"])
+_c178x = _Cue147(start=0, end=1, text="原", state="asr", original_text="原")
+_c178x.text = "改"
+_c178x.state = "llm"
+check("is_changed 检出差异", _c178x.is_changed())
+check("display_text 取新文本", _c178x.display_text == "改")
+
 raise SystemExit(finish())
