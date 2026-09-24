@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.166] - 2026-09-24
+
+v1.17.166：测试加固——bugfix_sweep 第 140 节运行时实测时间轴控件语义：刻度步长锚点复测（2h/1000px 取 900s、极短/800px 取 1s）与中值实测（10min/1000px 取 60s、1h/1200px 取 300s）、点击命中第二条、空隙处 None（bisect 回看提前退出语义）、空文档恒 None、set_position 播放头更新、seek_requested/cue_clicked/cue_range/content_changed 信号四件套在位——二轮复扫时间轴控件全部通过，无产品缺陷
+
 ## [1.17.165] - 2026-09-24
 
 v1.17.165：测试加固——bugfix_sweep 第 139 节运行时实测动效库语义：页面推入正反方向与连续调用不叠加不抛、退场回调签名兼容、clear_effect 幂等且吞异常保收尾、页面推入 420ms 比退场 300ms 长的 mac 拍子分级、徽标绽放与卡片级联调用安全、动画结束立即摘 effect 防持续 CPU 光栅化、日期快进选单假点击判 NoButton 与 WA_DeleteOnClose 与 _menu_gone 收尾（归属 safe_spin）、启动页 cos 曲线亮块平滑呼吸（归属 splash）——二轮复扫动效链路全部通过，无产品缺陷
