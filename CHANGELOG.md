@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.201] - 2026-09-24
+
+v1.17.201：测试加固——bugfix_sweep 第 175 节运行时实测界面工具函数边界：human_time 从秒到小时全量级输出含数字且零与负数不抛、dim 与 ok 与 warn 与 err 四个 HTML span 函数保留原文、badge 与 edit 与 hero 与 ui 四个字体函数返回 QFont 且家族有效、monospace 等宽字体家族链非空、卡片与页面布局常量在位——界面工具函数实测全部通过，无产品缺陷
+
 ## [1.17.200] - 2026-09-24
 
 v1.17.200：测试加固——bugfix_sweep 第 174 节运行时实测模型目录与恢复默认链集成：models_dir 位于数据目录下且自动创建、模型源 modelscope 与 huggingface 双向切换即时生效、体检项 faster_whisper 与 pyav 在位与模型目录联动、出厂恢复默认后模型源回 modelscope 且 API Key 归空——模型目录与恢复默认链实测全部通过，无产品缺陷
