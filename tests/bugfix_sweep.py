@@ -4390,6 +4390,21 @@ except Exception:
     _ok234b = False
 check("on_progress 空态受控", _ok234b)
 
+section("217. 分句与行内清理复测（第 235 轮钉子）")
+check("中文标点分三句",
+      len(_fm147._split_sentences("你好。世界！再见？")) == 3)
+_r235 = _fm147._split_sentences("Hello. World! Bye?")
+check("英文切分真实语义", len(_r235) == 2
+      and _r235[0] == "Hello. World!" and _r235[1] == "Bye?")
+check("无标点整段",
+      len(_fm147._split_sentences("没有标点的一段话")) == 1)
+_r235b = _fm147._split_sentences("")
+check("空串受控", _r235b == [] or isinstance(_r235b, list))
+check("清理 HTML", "<b>" not in
+      _fm147._clean_inline("<b>粗</b>体"))
+check("空白真实语义", _fm147._clean_inline("  多  空格  ") == "多  空格")
+check("清理空串", _fm147._clean_inline("") == "")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
