@@ -2401,4 +2401,26 @@ check("快进选单假点击判 NoButton", "NoButton" in _src158c and "WA_Delete
 _src158d = open("sstudio/ui/splash.py", encoding="utf-8").read()
 check("启动页 cos 亮块平滑", "0.5 - 0.5 * math.cos" in _src158d)
 
+section("140. 时间轴控件语义实测（第 159 轮钉子）")
+from PyQt5.QtWidgets import QApplication as _App159  # noqa: E402
+from sstudio.ui.timeline import Timeline as _Tl159  # noqa: E402
+from sstudio.ui.timeline import _nice_step as _ns159  # noqa: E402
+_app159 = _App159.instance() or _App159([])
+check("刻度步长锚点复测", _ns159(7200, 1000) == 900 and _ns159(0.1, 800) == 1.0)
+check("刻度步长中值实测", _ns159(600, 1000) == 60 and _ns159(3600, 1200) == 300)
+_d159 = _CD147()
+_d159.cues = [_Cue147(start=0, end=2, text="A"), _Cue147(start=2.5, end=5, text="B")]
+_w159 = _Tl159()
+_w159.resize(800, 60)
+_w159.show()
+_w159.set_document(_d159)
+check("hit 命中第二条", _w159._hit(int(3.0 / 5.0 * 800)) == 1)
+check("hit 空隙 None", _w159._hit(int(2.2 / 5.0 * 800)) is None)
+_w159.set_document(_CD147())
+check("空文档 hit None", _w159._hit(100) is None)
+_w159.set_position(3.5)
+check("set_position 不抛", True)
+check("信号四件套在位", all(hasattr(_Tl159, _s159) for _s159 in
+      ("seek_requested", "cue_clicked", "cue_range", "content_changed")))
+
 raise SystemExit(finish())
