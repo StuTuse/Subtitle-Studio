@@ -4048,6 +4048,22 @@ check("state_text 空串兜空", _th189.state_text("") == "")
 check("is_dark 布尔", isinstance(_th189.is_dark(), bool))
 check("monospace 点阵生效", _th189.monospace(11).pointSize() == 11)
 
+section("203. 解析容错复测（第 221 轮钉子）")
+_EXP221 = range(1, 3)
+for _nm221, _tx221 in (("空串", ""), ("纯噪声", "abc def !!!"),
+                       ("只有分隔线", "---\n---\n"), ("截断编号", "1. 开头"),
+                       ("重复编号", "1. 甲\n1. 乙")):
+    try:
+        _r221 = _llm.parse_numbered(_tx221, _EXP221)
+        _ok221 = isinstance(_r221, dict)
+    except Exception:
+        _ok221 = False
+    check(f"parse_numbered {_nm221} 受控", _ok221)
+_r221b = _llm.parse_numbered("1. 你好\n2. 世界", _EXP221)
+check("正常解析两条", _r221b.get(1) == "你好" and _r221b.get(2) == "世界")
+_r221c = _llm.parse_numbered("```\n1. 甲\n2. 乙\n```", _EXP221)
+check("围栏剥离", _r221c.get(1) == "甲" and _r221c.get(2) == "乙")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
