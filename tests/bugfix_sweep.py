@@ -3508,6 +3508,41 @@ except Exception:
 check("空 wav 受控不炸", _ok200b)
 os.remove(_wav200c)
 
+section("182. normalize_cues 边界补钉（第 201 轮钉子）")
+import random as _random201  # noqa: E402
+from sstudio.core import transcriber as _tr201  # noqa: E402
+_d201 = _CD147()
+_d201.cues = [_Cue147(start=4, end=5, text="乙"), _Cue147(start=0, end=1, text="甲")]
+_tr201.normalize_cues(_d201)
+check("乱序排序", [_c.text for _c in _d201.cues] == ["甲", "乙"])
+_d201b = _CD147()
+_d201b.cues = [_Cue147(start=0, end=2, text="甲"), _Cue147(start=1, end=3, text="乙")]
+_tr201.normalize_cues(_d201b)
+check("重叠消除文本保留", _d201b.cues[0].end <= _d201b.cues[1].start + 1e-9
+      and [_c.text for _c in _d201b.cues] == ["甲", "乙"])
+_d201c = _CD147()
+_d201c.cues = [_Cue147(start=5, end=1, text="倒")]
+_tr201.normalize_cues(_d201c)
+check("负时长修正", _d201c.cues[0].end >= _d201c.cues[0].start)
+_d201d = _CD147()
+_d201d.cues = [_Cue147(start=1, end=1, text="零长")]
+_tr201.normalize_cues(_d201d)
+check("零长保留或受控", len(_d201d.cues) in (0, 1))
+try:
+    _tr201.normalize_cues(_CD147())
+    _ok201 = True
+except Exception:
+    _ok201 = False
+check("空文档不炸", _ok201)
+_d201e = _CD147()
+_cues201 = [_Cue147(start=float(_i), end=float(_i) + 0.5, text=f"t{_i}")
+            for _i in range(100)]
+_random201.shuffle(_cues201)
+_d201e.cues = _cues201
+_tr201.normalize_cues(_d201e)
+check("百条乱序归正", all(_d201e.cues[_i].start <= _d201e.cues[_i + 1].start
+      for _i in range(99)))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
