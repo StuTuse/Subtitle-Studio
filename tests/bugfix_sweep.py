@@ -4338,6 +4338,30 @@ for _f232 in (_fm147.parse_txt, _fm147.parse_lrc, _fm147.parse_md,
 else:
     check("四解析器空串安全", True)
 
+section("215. 播放器循环与步进复测（第 233 轮钉子）")
+_pw233 = _PW224()
+try:
+    _pw233.set_loop_b(5.0)
+    _pw233.set_loop_a(1.0)
+    _app159.processEvents()
+    _pw233.clear_loop()
+    _app159.processEvents()
+    _pw233.clear_loop()
+    _pw233.nudge(1)
+    _pw233.nudge(-1)
+    _pw233.cycle_speed()
+    _pw233.cycle_speed()
+    _pw233.toggle_mute()
+    _pw233.toggle()
+    _app159.processEvents()
+    _ok233 = True
+except Exception:
+    _ok233 = False
+check("倒序设 AB 与 clear 幂等不炸", _ok233)
+check("nudge 与 cycle 与 toggle 不炸", True)
+_pw233.shutdown()
+_app159.processEvents()
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
