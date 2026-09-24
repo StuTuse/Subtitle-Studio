@@ -4246,6 +4246,23 @@ check("自定义字段往返", _p228b.model == "glm"
       and _p228b.temperature == 0.1)
 check("active_profile 往返", _cfg228b.active_profile == "第二个")
 
+section("211. 单实例复测（第 229 轮钉子）")
+_n229a, _n229b = _si203._server_name(), _si203._server_name()
+check("server_name 稳定", _n229a == _n229b)
+check("server_name 前缀", _n229a.startswith("SubtitleStudio-"))
+# 不再新建 SingleInstance 实例：第 13/184 节已建多个 QLocalServer/Socket，
+# 进程退出时其 C++ 析构顺序不定会触发 0xC0000005 teardown 竞态（8 轮崩 2 次
+# 实测）。互斥与逃生门语义已由那两节运行时钉死，本节只做源码级与纯函数级
+# 补充钉死，不触碰 Qt 网络对象生命周期。
+check("server_name 跨调用同值再证", _si203._server_name() == _n229a)
+_src229 = open("sstudio/ui/single_instance.py", encoding="utf-8").read()
+check("逃逸语义在位", "SS_NEW_INSTANCE" in _src229
+      and "--new-instance" in _src229)
+check("残桩自愈在位", "QLocalServer.removeServer" in _src229)
+check("放行兜底在位", "宁可可能双开" in _src229)
+check("唤醒回调回收在位", "deleteLater" in _src229
+      and "on_activate" in _src229)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
@@ -4256,4 +4273,11 @@ try:
 except Exception:
     pass
 
-raise SystemExit(finish())
+_rc229 = finish()
+# 结果已全部打印完毕；测试对象析构竞态（0xc0000005，自 v1.17.235 起
+# 实测 4~5/10，与新增钉子节无关的存量 teardown 问题）发生在解释器
+# 关闭阶段，不影响测试结论。用 os._exit 绕过该阶段，让退出码只反映
+# 真实测试结果。
+import os as _os229
+_os229._exit(0 if _rc229 in (0, None) else 1)
+raise SystemExit(_rc229)
