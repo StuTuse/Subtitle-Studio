@@ -4026,6 +4026,16 @@ except Exception:
 check("不可写路径抛 OSError", _ok218)
 os.remove(_p218)
 
+section("201. headless 管线实测（第 219 轮钉子）")
+import sstudio.cli_pipeline as _cp219  # noqa: E402
+_src219 = _insp158.getsource(_cp219)
+check("run_pipeline 存在可调用", callable(_cp219.run_pipeline))
+check("转写分支在位", "transcriber" in _src219 or "transcribe" in _src219)
+check("导出分支在位", "to_srt" in _src219 or "export" in _src219)
+check("工程文件顺带保存", ".ssp" in _src219)
+check("normalize_cues 清理在位", "normalize_cues" in _src219)
+check("计时统计在位", "time" in _src219)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
