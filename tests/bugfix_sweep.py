@@ -2839,4 +2839,21 @@ check("扩展名提示完整", "不支持的输出扩展名" in (_r174c.stdout +
 _r174d = _cli174("--help")
 check("--help 退出码 0", _r174d.returncode == 0)
 
+section("157. 体检链集成实测（第 176 轮钉子）")
+from sstudio.core import doctor as _doc176  # noqa: E402
+_items176 = _doc176.check_all()
+_s176 = _doc176.summary(_items176)
+_req176 = _doc176.all_required_ok(_items176)
+check("check_all 非空且 summary 非空", len(_items176) > 0 and len(_s176) > 0)
+check("required 状态与汇总自洽",
+      (not any(not _i.ok and _i.level == "required" for _i in _items176)) == _req176)
+check("CheckItem 字段齐", all(hasattr(_items176[0], _a) for _a in
+      ("id", "title", "ok", "level", "detail", "why")))
+_frd176 = _FRD168(_CF120())
+_frd176._run_checks()
+check("对话框 items 与 doctor 一致", len(_frd176._items) == len(_items176))
+check("标题取 summary", _frd176.title.text() == _s176)
+check("按钮三态与必需状态自洽", (_frd176.btn_close.text() == "完成，开始使用") == _req176)
+_frd176.reject()
+
 raise SystemExit(finish())
