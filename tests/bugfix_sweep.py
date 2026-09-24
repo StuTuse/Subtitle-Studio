@@ -3082,4 +3082,38 @@ check("栈深封顶 60 且可回退", len(_ed185._undo) <= 60)
 _ed185.push_undo()
 check("push 后 redo 清空", len(_ed185._redo) == 0)
 
+section("167. 文档编辑操作实测（第 186 轮钉子）")
+_d186 = _CD147()
+_d186.cues = [_Cue147(start=0, end=1, text="甲"), _Cue147(start=4, end=5, text="丙")]
+_d186.insert(1, _Cue147(start=2, end=3, text="乙"))
+check("insert 中间落位", len(_d186.cues) == 3 and _d186.cues[1].text == "乙")
+_d186b = _CD147()
+_d186b.cues = [_Cue147(start=0, end=4, text="上半下半")]
+_d186b.split(0, 2.0)
+check("split 成两条对齐切点", len(_d186b.cues) == 2
+      and abs(_d186b.cues[0].end - 2.0) < 1e-6
+      and abs(_d186b.cues[1].start - 2.0) < 1e-6)
+_d186c = _CD147()
+_d186c.cues = [_Cue147(start=0, end=1, text="甲"), _Cue147(start=1, end=2, text="乙"),
+               _Cue147(start=2, end=3, text="丙")]
+_d186c.merge([0, 1])
+check("merge 前两条", len(_d186c.cues) == 2 and "甲" in _d186c.cues[0].text
+      and "乙" in _d186c.cues[0].text)
+_d186d = _CD147()
+_d186d.cues = [_Cue147(start=0, end=1, text="好"), _Cue147(start=1, end=2, text="好"),
+               _Cue147(start=2, end=3, text="真的")]
+_d186d.dedupe_repeats()
+check("dedupe 合并重复", len(_d186d.cues) == 2)
+_d186e = _CD147()
+_d186e.cues = [_Cue147(start=0, end=10,
+              text="这是一句非常非常非常长的字幕内容需要被切开" * 3)]
+_d186e.split_long()
+check("split_long 生效", len(_d186e.cues) >= 2)
+_d186f = _CD147()
+_c186 = _Cue147(start=0, end=1, text="目标")
+_d186f.cues = [_c186, _Cue147(start=2, end=3, text="留")]
+_d186f.remove([_d186f.index_of(_c186)])        # remove 接受 Iterable[int]
+check("remove 按下标列表删", len(_d186f.cues) == 1 and _d186f.cues[0].text == "留")
+check("stats 返回可用统计", _d186f.stats() is not None)
+
 raise SystemExit(finish())
