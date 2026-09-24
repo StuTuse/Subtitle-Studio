@@ -2977,13 +2977,35 @@ def _rel181(*_a181):
     return _sub181.run([sys.executable, "-X", "utf8", "release.py", *_a181],
                        capture_output=True, text=True, encoding="utf-8", timeout=120)
 _r181a = _rel181("--dry-run", "--bump", "patch", "-m", "v测试 dry-run")
+_ver181 = open("VERSION").read().strip()
 check("dry-run 退出码 0 且 VERSION 不动", _r181a.returncode == 0
-      and open("VERSION").read().strip() == "1.17.187")
+      and open("VERSION").read().strip() == _ver181)
 _r181b = _rel181("--dry-run", "--bump", "patch", "1.17.188", "-m", "v测试")
 check("bump 与版本号互斥退出码 1", _r181b.returncode == 1)
 check("互斥错误消息可读", "二选一" in (_r181b.stdout + _r181b.stderr))
-_r181c = _rel181("--dry-run", "1.17.187", "-m", "v1.17.187：测试防重")
+_r181c = _rel181("--dry-run", _ver181, "-m", "防重")
 check("版本未变 dry-run 跳过发版", "版本未变" in (_r181c.stdout + _r181c.stderr)
       and "跳过" in (_r181c.stdout + _r181c.stderr))
+
+section("163. 转写结果边界实测（第 182 轮钉子）")
+from sstudio.core import transcriber as _tr182  # noqa: E402
+from sstudio.core.model import normalize_cues as _nrm182  # noqa: E402
+check("transcribe 与 TranscriptResult 在位", callable(_tr182.transcribe)
+      and hasattr(_tr182, "TranscriptResult"))
+_rr182 = _tr182.TranscriptResult(cues=[], meta={})
+check("结果字段 cues/meta 可写", _rr182.cues == [] and _rr182.meta == {})
+_res182 = {"language": "zh", "elapsed": 1.2}
+_d182m = _CD147(source_video="x.mp4", duration=5.0,
+                language=_res182.get("language", ""), cues=[], meta=dict(_res182))
+check("meta language 进 doc", _d182m.language == "zh")
+_d182n = _CD147()
+_d182n.cues = [_Cue147(start=0.0, end=1.0, text="你"), _Cue147(start=1.0, end=2.0, text="好")]
+_nrm182(_d182n)
+check("normalize_cues 保序不重叠", _d182n.cues[0].start <= _d182n.cues[1].start)
+_cfg182 = _CF120()
+check("model_source/beam_size 边界默认", _cfg182.model_source in
+      ("modelscope", "huggingface") and isinstance(_cfg182.beam_size, int)
+      and _cfg182.beam_size >= 1)
+check("initial_prompt 空串不注 None", _cfg182.initial_prompt == "")
 
 raise SystemExit(finish())
