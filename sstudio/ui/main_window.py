@@ -377,6 +377,17 @@ class MainWindow(FluentWindow):
             return
         if self._autosave_worker is not None:
             return          # 上一次自动保存还没落地：下次 mark_dirty 会再排
+        # 落盘限速：LLM 流式纠错每条回调一次 mark_dirty，5000 条会在
+        # 10 分钟里触发约 240 次「全量序列化 + fsync + replace」，纯写放大
+        # （SSD 磨损 + 杀软反复扫描）。两次自动保存至少隔 45s；间隔不足
+        # 时用尾随定时器顺延到点再存，最新内容不会丢——脏标还在。
+        now = time.time()
+        last = getattr(self, "_last_autosave_ts", 0.0)
+        wait = 45.0 - (now - last)
+        if wait > 0:
+            QTimer.singleShot(int(wait * 1000) + 250, self._auto_save)
+            return
+        self._last_autosave_ts = now
         doc, path = self.doc, self.doc.path
         # 序列化在工作线程跑，期间 UI 还在改 doc.cues（normalize 的
         # list.sort() 迭代中改列表会让 to_json 崩或漏条目）：在 UI 线程

@@ -308,6 +308,12 @@ def _friendly_err(e: Exception) -> str:
     return s[:220]
 
 
+def _friendly_short(err: str) -> str:
+    """换档提示里引用的失败原因：一句话足够，不贴大段 SDK 文案。"""
+    head = (err or "").strip().splitlines()
+    return (head[0][:80] if head else "连接失败")
+
+
 # ------------------------------------------------------------------ 提示词
 DEFAULT_SYSTEM = """你是一名专业的中文字幕校对员。你的唯一任务是：修正语音识别（ASR）字幕中的**错别字、同音字错误、标点错误、明显的分词/断词错误**，并统一规范用字。
 
@@ -514,6 +520,13 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     if (not prof.api_key and prof.kind != "ollama"
             and not _is_local_base(prof.base_url)):
         raise LLMError("尚未配置 API Key。请到「模型设置」里填写。")
+    # 备用档：当前档连不上时按顺序热切换（base_url 必须与已挂档不同，
+    # 同一网关换档名没有意义）。多档配置的用户在端点重启时不再整篇报废。
+    _failover: List[LLMProfile] = [
+        p for p in (cfg.profiles or [])
+        if getattr(p, "enabled", True) and p.base_url
+        and p.base_url.rstrip("/") != (prof.base_url or "").rstrip("/")
+    ]
     bundle = PromptBundle.from_cfg(cfg)
     glossary = (cfg.glossary or "").strip()
     if extra.strip():
@@ -525,6 +538,10 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     done = 0
     lock = __import__("threading").Lock()
     _abort_flag: List[Optional[str]] = [None]   # 服务连不上：全局止损标记
+    _prof_holder: List[LLMProfile] = [prof]     # 当前生效档（故障转移时热替换）
+    _failed_bases: set = {(prof.base_url or "").rstrip("/")}
+    _bases_seen_at_start: set = set(_failed_bases)   # 换档判据基线（主档计入）
+    _failover_note: List[str] = []              # 给完成日志的换档说明
 
     def one(idx: int, batch: List[Cue], attempt: int = 0) -> Optional[Dict[int, str]]:
         msg = bundle.render(batch, idx, glossary, script)
@@ -533,12 +550,50 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                                         last=idx + len(batch) - 1)
         messages = [{"role": "system", "content": bundle.system},
                     {"role": "user", "content": msg}]
-        raw = chat(prof, messages, None)
+        raw = chat(_prof_holder[0], messages, None)
         got = parse_numbered(raw, range(idx, idx + len(batch)))
         missing = [n for n in range(idx, idx + len(batch)) if n not in got]
         if cfg.strict_mode and (missing or len(got) != len(batch)):
             raise ValueError(f"编号缺失/多余（期望 {len(batch)}，得到 {len(got)}）")
         return got
+
+    def _try_failover(err: str) -> bool:
+        """止损瞬间找下一个可用档；找到就热切换并清止损。线程安全：
+        只有一个线程能把换档跑完（双重检查）。返回是否换成了新档。
+
+        返回 True 只代表「真的换到（或换过了）一个还没试过的档」。全部
+        备用档都进过 _failed_bases 后必须返回 False，让 worker 走止损
+        分支退出——否则并发 worker 会互相把"已换过"当成"有新档可换"，
+        无限循环重试（实测 230k 条 progress 刷屏）。"""
+        if not _failover:
+            return False
+        with lock:
+            # 快速路径「别的线程已换好档」：本线程拿到的错误是换档前的
+            # 旧档报的，重试一次新档。判据用「当前档不是主档」——
+            # _abort_flag 初始就是 None（首次 refused 还没设过），且
+            # 全部备档耗尽时 _failed_bases 不再增长，绝不能返回 True，
+            # 否则 attempt 上限一过又 continue，永远退不出来。
+            if _prof_holder[0] is not prof and len(_failed_bases) > len(_bases_seen_at_start):
+                # 还有没试过的档才值得再试；没有则 False
+                if any((p.base_url or "").rstrip("/") not in _failed_bases
+                       for p in _failover):
+                    return True
+                return False
+            nxt = None
+            for p in _failover:
+                b = (p.base_url or "").rstrip("/")
+                if b not in _failed_bases:
+                    nxt = p
+                    break
+            if nxt is None:
+                return False
+            _failed_bases.add((nxt.base_url or "").rstrip("/"))
+            _prof_holder[0] = nxt
+            _abort_flag[0] = None
+            note = (f"「{prof.name}」连不上（{_friendly_short(err)}），"
+                    f"已自动切换到「{nxt.name}」继续。")
+            _failover_note.append(note)
+            return True
 
     def _sleep(seconds: float) -> None:
         """可中断的等待：取消时不必等完整退避时间。"""
@@ -562,7 +617,11 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
         if cancel and cancel():
             return idx, None, "已取消"
         err = ""
-        for attempt in range(max(1, int(cfg.auto_retry) + 1)):
+        # 换档重试不消耗 attempt 名额：auto_retry=0 的用户在主档挂掉时
+        # 仍要能吃到备档的完整一轮。上限 = 配置轮数 + 每个备用档各一轮。
+        max_attempt = max(1, int(cfg.auto_retry) + 1) + len(_failover)
+        attempt = 0
+        while attempt < max_attempt:
             if _abort_flag[0] is not None:
                 return idx, None, _ABORT_NOTE
             if attempt:
@@ -583,14 +642,19 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                 if "API Key" in err or "模型名不存在" in err:
                     return idx, None, err          # 参数错误，重试无意义
                 if _is_conn_refused(e):
-                    # 服务根本没开/地址写错：立刻放弃本批并全局止损。
-                    # 注意只认「连不上」，不把偶发超时算进来——单批超时重试就好，
-                    # 误判成服务挂掉会把整篇纠错半途掐掉。
+                    # 服务根本没开/地址写错。先试故障转移：还有别的启用档
+                    # 就热切换清止损，本批用新档重试；没有备用档才全局止损。
+                    if _try_failover(err):
+                        with lock:
+                            if progress:
+                                progress(_failover_note[-1], -1)
+                        continue       # 立即用新档重试本批（不耗 attempt 退避）
                     if _abort_flag[0] is None:
                         _abort_flag[0] = err
                     return idx, None, err
                 if cancel and cancel():
                     return idx, None, "已取消"
+                attempt += 1
         return idx, None, err
 
     workers = max(1, min(int(cfg.concurrency), len(batches) or 1))
@@ -646,6 +710,10 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                             on_cue(no, new)
                         except Exception:
                             pass
+    if _failover_note:
+        # 换过档的说明进失败清单（警告性质）：用户要知道这轮结果其实
+        # 是备用档出的，模型/风格可能与主档不同。
+        result.failures.extend(_failover_note)
     if _abort_flag[0] is not None:
         # 止损时已经写回 cue 的批次成果不能丢：把部分结果随异常带上，
         # 调用方（FixWorker/UI）能展示"已修正 N 条 + 失败原因"，而不是
@@ -655,7 +723,7 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
             "连不上模型服务，已停止剩余批次。\n\n" + _abort_flag[0]
             + "\n\n请检查：模型服务是否启动（本地网关要先开）、"
               "地址是否正确、网络/代理是否正常。", result)
-    note = no_reasoning_note(prof)
+    note = no_reasoning_note(_prof_holder[0])
     if note:
         result.failures.append(note)       # 跑完提示一次即可，不逐批刷屏
     return result

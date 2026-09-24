@@ -169,6 +169,25 @@ class EditorInterface(QWidget):
         root.addWidget(self.hero)
         self._flow = "empty"
 
+        # ------------------------------ 最近工程（空态时显示，回头客直达）
+        # cfg.recent_files 一直被认真维护却从没有 UI 读它：改字幕的用户
+        # 只能去资源管理器考古。这里放一条可点链接行，仅在空态出现。
+        self.recent_row = QWidget(self)
+        rr = QHBoxLayout(self.recent_row)
+        rr.setContentsMargins(0, 0, 0, 0)
+        rr.setSpacing(6)
+        self.recent_label = CaptionLabel("最近：", self.recent_row)
+        rr.addWidget(self.recent_label)
+        self.recent_links = [CaptionLabel("", self.recent_row) for _ in range(4)]
+        for lb in self.recent_links:
+            lb.setVisible(False)
+            lb.setCursor(Qt.PointingHandCursor)
+            lb.linkActivated.connect(lambda _u, w=lb: self._open_recent(w._recent_path))
+            rr.addWidget(lb)
+        rr.addStretch(1)
+        self.recent_row.setVisible(False)
+        root.addWidget(self.recent_row)
+
         # -------------------------------------------------- 播放器 + 字幕表
         # 排版参考 Subtitle Edit：上带「播放器 | 修改区」并排（时间轴/控件条
         # 全宽压在下面），下带字幕表独占整行。列表横竖都 ≥ 半屏：
@@ -467,13 +486,39 @@ class EditorInterface(QWidget):
             self.hero_sub.setText("导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线")
             self.hero_pct.setText("")
             self.hero_bar.setRange(0, 1000); self.hero_bar.setValue(0)
+            self._refresh_recent()
         elif state == "ready":
             self.hero_title.setText(msg or "视频已就绪")
             self.hero_sub.setText("点「开始转写」：自动提取音频 → 本地 Whisper 识别（全程离线）")
+            self.recent_row.setVisible(False)
         elif state == "busy":
             self.hero_title.setText("正在转写…")
             self.hero_sub.setText(msg or "提取音频 → 识别中，请稍候")
+            self.recent_row.setVisible(False)
         self.hero.setVisible(state != "done")
+
+    def _refresh_recent(self) -> None:
+        """空态下展示最近打开的工程/媒体；失效路径直接跳过不占位。"""
+        import os as _os
+        recents = [p for p in (self.cfg.recent_files or []) if _os.path.isfile(p)][:4]
+        any_link = False
+        for i, lb in enumerate(self.recent_links):
+            if i < len(recents):
+                p = recents[i]
+                lb._recent_path = p
+                name = _os.path.basename(p)
+                lb.setText(f'<a href="#" style="text-decoration:none">{name}</a>')
+                lb.setToolTip(p)
+                lb.setVisible(True)
+                any_link = True
+            else:
+                lb.setVisible(False)
+        self.recent_row.setVisible(any_link)
+
+    def _open_recent(self, path: str) -> None:
+        if not path:
+            return
+        self.main._load_any(path)   # ssp 走工程，其余按扩展名导入
 
     def set_flow_progress(self, msg: str, pct: float) -> None:
         """由主窗转写进度驱动 hero 读条。pct<0 表示不确定阶段。"""
@@ -704,7 +749,10 @@ class EditorInterface(QWidget):
             self.push_undo()
             for r in rows:
                 doc.cues[r].state = action
-            self.table.render(doc.cues, rows[0])
+            # 状态切换不改行号：局部 update_row 替代全表 render——5000 行
+            # 时全量重建 6 个 QTableWidgetItem/行只为改两行底色，可感卡顿
+            for r in rows:
+                self.table.update_row(r, doc.cues[r])
             self.timeline.update()
         elif action == "revert":
             self.push_undo()
@@ -715,7 +763,8 @@ class EditorInterface(QWidget):
                 if c.original_text:
                     c.text = c.original_text
                 c.state = "asr"
-            self.table.render(doc.cues, rows[0])
+            for r in rows:
+                self.table.update_row(r, doc.cues[r])
         elif action == "strip_punct":
             self.push_undo()
             import re as _re
@@ -723,7 +772,7 @@ class EditorInterface(QWidget):
                 c = doc.cues[r]
                 c.text = _re.sub(r"[，。！？、；：,.!?;:\s]+$", "", c.display_text).strip()
                 c.state = "edited"
-            self.table.render(doc.cues, rows[0])
+                self.table.update_row(r, c)
         elif action == "close_gaps":
             self.push_undo()
             mg = float(getattr(self.cfg, "gap_max", 0.5) or 0.5)

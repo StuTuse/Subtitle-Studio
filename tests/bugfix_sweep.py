@@ -596,6 +596,7 @@ with TempDir() as _td:
     _mw._dirty_gen = 0
     _mw._autosave_worker = None
     _mw._closing = False
+    _mw._last_autosave_ts = 0.0    # 限速计时器初值：首轮立即放行
     _doc = _CD(cues=[_Cue(0.0, 1.0, "自动保存冒烟")])
     _doc.path = _os.path.join(_td, "autosave.ssp")
     _mw.doc = _doc
@@ -607,6 +608,7 @@ with TempDir() as _td:
     _mw._save_gen = 0
     _mw._auto_save()
     check("自动保存线程已启动", _mw._autosave_worker is not None)
+    check("首轮落盘后记录限速时间戳", _mw._last_autosave_ts > 0)
     _loop = QEventLoop()
     QTimer.singleShot(3000, _loop.quit)
     _mw._autosave_worker.sig_done.connect(lambda _o: _loop.quit())
@@ -4553,6 +4555,103 @@ check("分组引用兼容", _r241 == r"\1 你好")
 # 整体撤销：回到替换前
 _e241.undo()
 check("整体撤销恢复原文", _doc241.cues[0].text == "张三你好")
+
+section("222. 自动保存限速与 LLM 故障转移（第 239 轮钉子）")
+_src239 = _insp238.getsource(_mw238.MainWindow._auto_save)
+check("落盘限速 45s 顺延", "45.0" in _src239 and "_last_autosave_ts" in _src239)
+check("限速先于快照", _src239.index("wait > 0") < _src239.index("snapshot()"))
+from sstudio.core import llm as _llm239  # noqa: E402
+from sstudio.core.config import LLMProfile as _LP239  # noqa: E402
+_src239b = _insp238.getsource(_llm239.fix_document)
+check("备用档列表构建", "_failover" in _src239b and "enabled" in _src239b)
+check("止损先试换档", "_try_failover(err)" in _src239b
+      and "_abort_flag[0] = err" in _src239b)
+check("换档说明进失败清单", "result.failures.extend(_failover_note)" in _src239b)
+check("no_reasoning 用当前档", "no_reasoning_note(_prof_holder[0])" in _src239b)
+check("同网关不重复换", 'p.base_url.rstrip("/") != (prof.base_url or "").rstrip("/")' in _src239b)
+# 运行时：主档 refused → 备档接住（批从 idx=0 起，编号 [0]）
+_calls239 = []
+_real_chat239 = _llm239.chat
+def _fc239(prof, messages, on_delta=None, **kw):
+    _calls239.append(prof.name)
+    if prof.name == "主档":
+        raise ConnectionError("[Errno 111] Connection refused")
+    return "[0] 修正后"
+_llm239.chat = _fc239
+_cfg239 = _CF216()
+_cfg239.batch_size = 1
+_cfg239.auto_retry = 0
+_cfg239.strict_mode = False
+_cfg239.profiles = [_LP239(name="主档", base_url="http://127.0.0.1:9999/v1", api_key="k", model="m"),
+                    _LP239(name="备档", base_url="http://127.0.0.1:7777/v1", api_key="k", model="m"),
+                    _LP239(name="禁档", base_url="http://127.0.0.1:5555/v1", api_key="k", model="m", enabled=False)]
+_cfg239.active_profile = "主档"
+_cues239 = [_Cue147(start=0, end=1, text="甲乙")]
+_res239 = _llm239.fix_document(_cfg239, _cues239)
+_llm239.chat = _real_chat239
+check("切到备档完成", _calls239 == ["主档", "备档"]
+      and _res239.changed == 1 and _cues239[0].text == "修正后")
+check("禁档不参与", all(n in ("主档", "备档") for n in _calls239))
+check("换档说明在清单", any("已自动切换到「备档」" in f for f in _res239.failures))
+# 全部档挂 → 维持止损不无限循环
+_calls239b = []
+def _fc239b(prof, messages, on_delta=None, **kw):
+    _calls239b.append(prof.name)
+    raise ConnectionError("[Errno 111] Connection refused")
+_llm239.chat = _fc239b
+_cfg239b = _CF216()
+_cfg239b.batch_size = 1
+_cfg239b.auto_retry = 0
+_cfg239b.concurrency = 1
+_cfg239b.profiles = [_LP239(name="主档", base_url="http://127.0.0.1:9999/v1", api_key="k", model="m"),
+                     _LP239(name="备档", base_url="http://127.0.0.1:7777/v1", api_key="k", model="m")]
+_cfg239b.active_profile = "主档"
+_cues239b = [_Cue147(start=0, end=1, text="甲乙")]
+try:
+    _llm239.fix_document(_cfg239b, _cues239b)
+    _ok239b = False
+except _llm239.LLMPartialError:
+    _ok239b = True
+except Exception:
+    _ok239b = False
+_llm239.chat = _real_chat239
+check("全挂维持止损退出", _ok239b and len(_calls239b) <= 4)
+# 纯超时只重试不换档
+_calls239c = []
+class _TO239(Exception):
+    pass
+def _fc239c(prof, messages, on_delta=None, **kw):
+    _calls239c.append(prof.name)
+    if prof.name == "主档" and _calls239c.count("主档") <= 1:
+        raise _TO239("Request timed out")
+    return "[0] 重试成功"
+_llm239.chat = _fc239c
+_cfg239c = _CF216()
+_cfg239c.batch_size = 1
+_cfg239c.auto_retry = 1
+_cfg239c.strict_mode = False
+_cfg239c.profiles = [_LP239(name="主档", base_url="http://127.0.0.1:9999/v1", api_key="k", model="m"),
+                     _LP239(name="备档", base_url="http://127.0.0.1:7777/v1", api_key="k", model="m")]
+_cfg239c.active_profile = "主档"
+_cues239c = [_Cue147(start=0, end=1, text="甲乙")]
+_res239c = _llm239.fix_document(_cfg239c, _cues239c)
+_llm239.chat = _real_chat239
+check("超时不换档只重试", _calls239c == ["主档", "主档"] and _res239c.changed == 1)
+
+section("223. 最近工程入口与局部刷新（第 239 轮钉子）")
+_src239d = _insp238.getsource(_EI241.__init__)
+check("最近工程行存在", "recent_row" in _src239d and "recent_links" in _src239d)
+check("链接点击接打开", "linkActivated" in _src239d)
+_src239e = _insp238.getsource(_EI241._refresh_recent)
+check("失效路径跳过", "isfile" in _src239e)
+check("最多 4 条", "[:4]" in _src239e)
+_src239f = _insp238.getsource(_EI241._act)
+_seg239 = _src239f.split('elif action in ("review", "confirmed"):')[1].split('elif action ==')[0]
+check("状态切换走 update_row", "update_row" in _seg239 and "table.render" not in _seg239)
+_seg239b = _src239f.split('elif action == "revert":')[1].split('elif action ==')[0]
+check("revert 走 update_row", "update_row" in _seg239b and "table.render" not in _seg239b)
+_seg239c = _src239f.split('elif action == "close_gaps":')[1].split('elif action ==')[0]
+check("close_gaps 保留全量 render", "table.render" in _seg239c)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
