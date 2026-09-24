@@ -2784,4 +2784,38 @@ check("parse_any 三格式识别", len(_c173a) == 3 and "srt" in _f173a.lower()
       and len(_c173c) == 3 and "json" in _f173c.lower())
 check("JSON 往返 speaker 保留", [c.speaker for c in _c173c] == ["旁白", "甲", "B"])
 
+section("155. 线程收尾链集成实测（第 174 轮钉子）")
+from PyQt5.QtWidgets import QApplication as _App174  # noqa: E402
+from sstudio.ui.workers import (ThreadedCall as _TC174, reap as _reap174,  # noqa: E402
+                                orphanize as _orph174, CB_PROGRESS, CB_LOG, CB_CANCEL)
+_app174 = _App174.instance() or _App174([])
+_done174 = []
+_tc174 = _TC174(lambda p, l, c: "结果值", CB_PROGRESS, CB_LOG, CB_CANCEL)
+_tc174.sig_done.connect(lambda r: _done174.append(r))
+_tc174.start()
+_tc174.wait(5000)
+_app174.processEvents()
+check("成功链 sig_done 携带结果", _done174 == ["结果值"])
+_failed174 = []
+_tc174b = _TC174(lambda p, l, c: 1 / 0, CB_PROGRESS, CB_LOG, CB_CANCEL)
+_tc174b.sig_failed.connect(lambda m: _failed174.append(m))
+_tc174b.start()
+_tc174b.wait(5000)
+_app174.processEvents()
+check("失败链 sig_failed 有消息", len(_failed174) == 1)
+_prog174 = []
+def _work174(p, l, c):
+    p("阶段一", 0.25)
+    p("阶段二", 0.75)
+    return "ok"
+_tc174c = _TC174(_work174, CB_PROGRESS, CB_LOG, CB_CANCEL)
+_tc174c.sig_progress.connect(lambda m, v: _prog174.append((m, v)))
+_tc174c.start()
+_tc174c.wait(5000)
+_app174.processEvents()
+check("进度链两次回调", _prog174 == [("阶段一", 0.25), ("阶段二", 0.75)])
+_reap174(_tc174)
+_reap174(_tc174b)
+check("reap 已结束 worker 幂等", True)
+
 raise SystemExit(finish())
