@@ -3837,6 +3837,63 @@ check("LLMError 可抛", issubclass(_llm212.LLMError, Exception))
 check("LLMPartialError 可抛", issubclass(_llm212.LLMPartialError, Exception))
 check("DEFAULT_TEMPLATE 在位", len(_llm212.DEFAULT_TEMPLATE) > 20)
 
+section("195. 撤销栈实测（第 213 轮钉子）")
+class _Stack213:
+    """复刻 EditorInterface 的栈语义（push 上限 60/undo redo 对称）。"""
+    def __init__(self):
+        self._undo, self._redo = [], []
+        self.doc = _CD147()
+        self.doc.cues = [_Cue147(start=0, end=1, text="初版")]
+
+    def push_undo(self):
+        self._undo.append(self.doc.snapshot())
+        del self._undo[:-60]
+        self._redo.clear()
+
+    def undo(self):
+        if not self._undo:
+            return False
+        self._redo.append(self.doc.snapshot())
+        self.doc.restore(self._undo.pop())
+        return True
+
+    def redo(self):
+        if not self._redo:
+            return False
+        self._undo.append(self.doc.snapshot())
+        self.doc.restore(self._redo.pop())
+        return True
+
+_st213 = _Stack213()
+for _i213 in range(61):
+    _st213.doc.cues = [_Cue147(start=0, end=1, text=f"版{_i213}")]
+    _st213.push_undo()
+check("栈深裁到 60", len(_st213._undo) == 60)
+_st213b = _Stack213()
+_st213b.push_undo()
+_st213b.doc.cues = [_Cue147(start=0, end=1, text="改后")]
+check("undo 恢复初版", _st213b.undo()
+      and _st213b.doc.cues[0].text == "初版")
+check("redo 恢复改后", _st213b.redo()
+      and _st213b.doc.cues[0].text == "改后")
+_st213c = _Stack213()
+_st213c.push_undo()
+_st213c.doc.cues = [_Cue147(start=0, end=1, text="A")]
+_st213c.undo()
+_st213c.doc.cues = [_Cue147(start=0, end=1, text="B")]
+_st213c.push_undo()
+check("push 后 redo 清空", len(_st213c._redo) == 0)
+_st213d = _Stack213()
+_st213d.push_undo()
+_st213d.doc.cues = [_Cue147(start=0, end=1, text="新")]
+_st213d.undo()
+_st213d.doc.cues[0].text = "事后篡改"
+_st213d.redo()
+check("快照深拷贝防篡改", _st213d.doc.cues[0].text == "新")
+_st213e = _Stack213()
+check("空栈 undo redo 安全", _st213e.undo() is False
+      and _st213e.redo() is False)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
