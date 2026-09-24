@@ -3405,6 +3405,27 @@ _srt197 = _fm197.to_srt(_CD147(cues=[_Cue147(start=0, end=1, text="甲")]))
 _cu197d = _fm197.parse_srt(_srt197)
 check("to_srt→parse_srt 往返", len(_cu197d) == 1 and _cu197d[0].text == "甲")
 
+section("179. 时间戳转换实测（第 198 轮钉子）")
+_ts198 = _fm197.sec_to_ts(0.0)
+check("零秒输出 00 前缀", isinstance(_ts198, str) and "00:00:00" in _ts198)
+check("时分量级", "01:01:01" in _fm197.sec_to_ts(3661.5))
+check("srt 逗号风格默认", "," in _fm197.sec_to_ts(1.5)
+      and "." in _fm197.sec_to_ts(1.5, sep="."))
+_ok198 = True
+for _v198 in (0.0, 1.5, 59.999, 3600.0, 7325.25):
+    _back198 = _fm197.ts_to_sec(_fm197.sec_to_ts(_v198))
+    if _back198 is None or abs(_back198 - _v198) > 0.002:
+        _ok198 = False
+check("全量级往返无损", _ok198)
+check("ts_to_sec 未知文本 None", _fm197.ts_to_sec("不是时间") is None)
+_ok198b = True
+for _v198b in (-1.0, 8640000.0):
+    try:
+        _fm197.sec_to_ts(_v198b)
+    except Exception:
+        _ok198b = False
+check("负数与超大不炸", _ok198b)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
