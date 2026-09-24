@@ -4170,6 +4170,32 @@ check("update 与 mark 与 jump 不炸", _ok225)
 check("空选返回空", _t225.selected_rows() in ([], None)
       or isinstance(_t225.selected_rows(), list))
 
+section("208. 欢迎向导栈复测（第 226 轮钉子）")
+from sstudio.ui.welcome_wizard import WelcomeWizard as _WW226  # noqa: E402
+_cfg226 = _CF216()
+_cfg226.setup_done = False
+_w226 = _WW226(_cfg226)
+_n226 = len(_w226._pages) if hasattr(_w226, "_pages") else 5
+check("页面栈非空", _n226 >= 5)
+check("起始第 0 页", _w226._idx == 0)
+try:
+    for _ in range(_n226):
+        _w226._go_next()
+        _app159.processEvents()
+    _ok226a = True
+except Exception:
+    _ok226a = False
+check("go_next 连续推进不炸", _ok226a
+      and 0 <= _w226._idx <= _n226)
+try:
+    _w226._show_page(0)
+    _w226._show_page(_n226 - 1)
+    _app159.processEvents()
+    _ok226b = True
+except Exception:
+    _ok226b = False
+check("show_page 边界不炸", _ok226b)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
