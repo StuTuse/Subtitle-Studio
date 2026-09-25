@@ -3645,10 +3645,9 @@ _c205c = _Cue147(start=0, end=1, text="甲",
                  words=[{"start": 0, "end": 0.5, "word": "甲", "prob": 0.9}])
 check("words 字段保留", len(_c205c.words) == 1
       and _c205c.words[0]["prob"] == 0.9)
-_c205d = _Cue147(start=0, end=1, text="甲", speaker="小明",
-                 confidence=0.87, notes="备注")
-check("speaker 与 confidence 与 notes", _c205d.speaker == "小明"
-      and abs(_c205d.confidence - 0.87) < 1e-9 and _c205d.notes == "备注")
+_c205d = _Cue147(start=0, end=1, text="甲", speaker="小明", confidence=0.87)
+check("speaker 与 confidence", _c205d.speaker == "小明"
+      and abs(_c205d.confidence - 0.87) < 1e-9)
 
 section("187. CUDA 预探测缓存实测（第 205 轮钉子·真缺陷修复）")
 _src205 = open("sstudio/core/doctor.py", encoding="utf-8").read()
@@ -5036,6 +5035,38 @@ _src245 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
 check("编辑器 load_waveform 防重入", "_wave_job_path" in _src245
       and "ThreadedCall(_wave_peaks" in _src245)
 check("set_document 自动触发", "self.load_waveform(doc.source_video)" in _src245)
+
+section("231. 死代码清理（第 245 轮 backlog ⑦ 钉子）")
+# 全仓无引用的三个符号已删除；钉「删除后不得复活」+ 旧工程兼容语义
+_src231 = {
+    "transcriber": open(os.path.join(_harness.ROOT, "sstudio", "core",
+                                     "transcriber.py"), encoding="utf-8").read(),
+    "llm": open(os.path.join(_harness.ROOT, "sstudio", "core", "llm.py"),
+                encoding="utf-8").read(),
+    "workers": open(os.path.join(_harness.ROOT, "sstudio", "ui", "workers.py"),
+                    encoding="utf-8").read(),
+    "model": open(os.path.join(_harness.ROOT, "sstudio", "core", "model.py"),
+                  encoding="utf-8").read(),
+}
+check("discover_ggml_models 已删", "def discover_ggml_models"
+      not in _src231["transcriber"])
+check("ChatWorker 已删", "class ChatWorker" not in _src231["workers"])
+check("rewrite_with_llm 已删", "def rewrite_with_llm" not in _src231["llm"])
+check("Cue.notes 字段已删", "notes: str" not in _src231["model"]
+      and "notes=" not in _src231["model"].split("def from_dict")[1]
+      .split("\n\n")[0])
+# 兼容性：带 notes 键的旧工程 JSON 仍能加载（键被静默丢弃）
+import json as _json231  # noqa: E402
+from sstudio.core.model import Cue as _Cue231  # noqa: E402
+_old231 = _Cue231.from_dict({"start": 0, "end": 1, "text": "甲",
+                             "notes": "旧备注", "id": "legacy123"})
+check("旧工程 notes 键不炸", _old231.text == "甲"
+      and _old231.id == "legacy123")
+check("旧 notes 值被丢弃", not hasattr(_old231, "notes"))
+import sstudio.core.transcriber as _trc231  # noqa: E402
+import sstudio.ui.workers as _wk231  # noqa: E402
+check("运行时无 discover_ggml_models", not hasattr(_trc231, "discover_ggml_models"))
+check("运行时无 ChatWorker", not hasattr(_wk231, "ChatWorker"))
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

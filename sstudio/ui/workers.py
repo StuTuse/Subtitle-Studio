@@ -239,26 +239,6 @@ class FixWorker(_BaseWorker):
         self.sig_cue.emit(row, text)
 
 
-class ChatWorker(_BaseWorker):
-    """自由对话 / 自定义提示词处理。"""
-
-    sig_chunk = pyqtSignal(str)
-
-    def __init__(self, prof, system: str, user: str):
-        super().__init__()
-        self.prof = prof
-        self.system = system
-        self.user = user
-
-    def run(self) -> None:
-        try:
-            out = llm.rewrite_with_llm(self.prof, self.system, self.user,
-                                       on_delta=lambda d: self.sig_chunk.emit(d))
-            self.sig_done.emit(out)
-        except Exception as e:
-            self.sig_failed.emit(llm._friendly_err(e))
-
-
 class TestLLMWorker(_BaseWorker):
     def __init__(self, parent, prof):
         super().__init__(parent)

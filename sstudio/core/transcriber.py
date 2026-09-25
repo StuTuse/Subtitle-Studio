@@ -340,30 +340,6 @@ def _dir_size_mb(path: str) -> float:
         return 0.0
 
 
-def discover_ggml_models() -> List[Dict[str, str]]:
-    """whisper.cpp 的 ggml-*.bin。"""
-    out = []
-    roots = [os.path.expanduser("~"), "D:\\", os.path.expandvars(r"%LOCALAPPDATA%")]
-    seen = set()
-    for r in roots:
-        if not os.path.isdir(r):
-            continue
-        for dp, dn, fn in os.walk(r):
-            dn[:] = [d for d in dn if d not in ("Windows", "node_modules", "__pycache__",
-                                                ".git", "venv", "site-packages")]
-            if dp[len(r):].count(os.sep) > 6:
-                dn[:] = []
-                continue
-            for f in fn:
-                if f.startswith("ggml") and f.endswith(".bin"):
-                    p = os.path.join(dp, f)
-                    if p in seen:
-                        continue
-                    seen.add(p)
-                    out.append({"name": f, "id": p, "path": p, "size": _dir_size_mb(dp)})
-    return out
-
-
 def find_external_whisper_cli() -> List[str]:
     """找独立版 whisper CLI（whisper-cli.exe / main.exe 之类）。
 

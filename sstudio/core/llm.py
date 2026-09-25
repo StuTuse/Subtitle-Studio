@@ -827,10 +827,3 @@ class LLMPartialError(LLMError):
     def __init__(self, msg: str, partial_result: "FixResult"):
         super().__init__(msg)
         self.partial_result = partial_result
-
-
-def rewrite_with_llm(prof: LLMProfile, system: str, user: str,
-                     on_delta: Optional[Callable[[str], None]] = None) -> str:
-    """给"自由提示词/润色"面板用的直通调用。"""
-    return chat(prof, [{"role": "system", "content": system},
-                       {"role": "user", "content": user}], on_delta)

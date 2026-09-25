@@ -75,7 +75,6 @@ class Cue:
     speaker: str = ""
     confidence: Optional[float] = None
     words: List[Dict[str, Any]] = field(default_factory=list)  # [{start,end,word,prob}]
-    notes: str = ""
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
 
     # ------------------------------------------------------------------ utils
@@ -124,7 +123,7 @@ class Cue:
             speaker=str(d.get("speaker", "") or ""),
             confidence=conf,
             words=list(d.get("words", []) or []),
-            notes=str(d.get("notes", "") or ""),
+            # 旧工程里的 notes 键直接丢弃：字段从未有 UI 使用，已从数据类移除
             id=str(d.get("id") or uuid.uuid4().hex[:16]),
         )
 
