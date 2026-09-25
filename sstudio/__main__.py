@@ -46,23 +46,44 @@ def _scale_factor_for(ui_scale: float) -> float:
 
 def main(argv=None) -> int:
     _bootstrap()
+    # 语言先于 argparse：帮助文本也是界面的一部分（SUBTITLE_STUDIO_LANG
+    # 与 config.lang 双入口；config 要等 _bootstrap 后才能 import）。
+    try:
+        from sstudio.core.i18n import set_language as _sl, current_language as _cl
+        from sstudio.core.config import Config as _C0
+        _sl(getattr(_C0.load(), "lang", "zh") if os.environ.get(
+            "SUBTITLE_STUDIO_LANG", "") == "" else _cl())
+    except Exception:
+        pass
+    from sstudio.core.i18n import S
     parser = argparse.ArgumentParser(
         prog="subtitle-studio",
-        description="视频字幕工坊：本地 Whisper 转写 + 大模型纠错 + 多格式导出")
-    parser.add_argument("file", nargs="?", help="要打开的视频/音频/字幕/工程文件")
-    parser.add_argument("--version", action="store_true", help="打印版本后退出")
-    parser.add_argument("--check", action="store_true", help="打印运行环境自检结果")
+        description=S("视频字幕工坊：本地 Whisper 转写 + 大模型纠错 + 多格式导出",
+                      "Subtitle workshop: local Whisper transcription + LLM "
+                      "fixing + multi-format export"))
+    parser.add_argument("file", nargs="?", help=S("要打开的视频/音频/字幕/工程文件",
+                                                  "Video/audio/subtitle/project file to open"))
+    parser.add_argument("--version", action="store_true", help=S("打印版本后退出",
+                                                                 "Print version and exit"))
+    parser.add_argument("--check", action="store_true", help=S("打印运行环境自检结果",
+                                                               "Print environment self-check"))
     parser.add_argument("--headless", action="store_true",
-                        help="无界面跑完整流水线：转写 + 纠错 + 导出（配合 --video 等）")
-    parser.add_argument("--video", help="headless 模式：视频路径")
-    parser.add_argument("--out", help="headless 模式：输出文件（.srt/.txt/…）")
-    parser.add_argument("--no-fix", action="store_true", help="headless 模式：跳过 LLM 纠错")
+                        help=S("无界面跑完整流水线：转写 + 纠错 + 导出（配合 --video 等）",
+                               "Run the full pipeline headless: transcribe + fix + "
+                               "export (with --video etc.)"))
+    parser.add_argument("--video", help=S("headless 模式：视频路径",
+                                          "headless mode: video path"))
+    parser.add_argument("--out", help=S("headless 模式：输出文件（.srt/.txt/…）",
+                                        "headless mode: output file (.srt/.txt/…)"))
+    parser.add_argument("--no-fix", action="store_true", help=S("headless 模式：跳过 LLM 纠错",
+                                                                "headless mode: skip LLM fixing"))
     args, extra = parser.parse_known_args(argv)
 
     if args.headless and extra:
         # headless 是给脚本用的：拼错的参数必须当场报错（exit 2），
         # 不能像 GUI 那样把多余项当成"要打开的文件"静默走偏
-        parser.error("headless 模式不认识的参数：" + " ".join(extra))
+        parser.error(S("headless 模式不认识的参数：", "Unrecognized arguments in "
+                       "headless mode: ") + " ".join(extra))
 
     if args.version:
         from sstudio import describe
@@ -112,7 +133,8 @@ def main(argv=None) -> int:
     cfg = Config.load()
 
     # 界面语言：config.lang → i18n.S()。必须在任何界面构建前写入——字符串
-    # 在控件构造期取定，事后改只影响之后新建的界面。
+    # 在控件构造期取定，事后改只影响之后新建的界面。（argparse 段已按
+    # env/config 预置过一次；这里再以 cfg 为准对齐一次，幂等。）
     try:
         from sstudio.core.i18n import set_language
         set_language(getattr(cfg, "lang", "zh"))
@@ -154,7 +176,7 @@ def main(argv=None) -> int:
     splash = Splash(__version__)
     splash.show_splash()
 
-    splash.show_stage("正在加载界面…")
+    splash.show_stage(S("正在加载界面…", "Loading UI…"))
     from sstudio.ui.main_window import MainWindow
 
     # CUDA 预探测必须在 MainWindow/播放器（DirectShow 后端）激活之前做：
@@ -167,7 +189,7 @@ def main(argv=None) -> int:
     except Exception:
         pass
 
-    splash.show_stage("正在初始化工作区…")
+    splash.show_stage(S("正在初始化工作区…", "Initializing workspace…"))
     win = MainWindow(cfg)
 
     def _wake():
@@ -201,18 +223,23 @@ def main(argv=None) -> int:
                 return
             s = snaps[0]
             from PyQt5.QtWidgets import QMessageBox
+            from sstudio.core.i18n import S as _S
             src = os.path.basename(s.get("source") or "") or s["title"]
             box = QMessageBox(win)
-            box.setWindowTitle("恢复未保存的工程")
+            box.setWindowTitle(_S("恢复未保存的工程", "Restore unsaved project"))
             box.setIcon(QMessageBox.Question)
-            box.setText(f"检测到上次会话未保存的工程：\n{src}\n\n要恢复它吗？")
+            box.setText(_S(f"检测到上次会话未保存的工程：\n{src}\n\n要恢复它吗？",
+                           f"An unsaved project from the last session was found:\n"
+                           f"{src}\n\nRestore it?"))
             box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            box.button(QMessageBox.Yes).setText("恢复")
-            box.button(QMessageBox.No).setText("暂不")
+            box.button(QMessageBox.Yes).setText(_S("恢复", "Restore"))
+            box.button(QMessageBox.No).setText(_S("暂不", "Not now"))
             if box.exec_() == QMessageBox.Yes:
                 doc = _rec.load_snapshot(s["file"])
                 if doc is None:
-                    QMessageBox.warning(win, "恢复失败", "快照文件已损坏，无法读取。")
+                    QMessageBox.warning(win, _S("恢复失败", "Restore failed"),
+                                        _S("快照文件已损坏，无法读取。",
+                                           "The snapshot file is corrupt and cannot be read."))
                     return
                 doc.path = s.get("path") or ""
                 if doc.source_video and not os.path.isfile(doc.source_video):
@@ -245,7 +272,7 @@ def main(argv=None) -> int:
             from sstudio.core.config import data_dir
             with open(os.path.join(data_dir(), "crash.log"), "a",
                       encoding="utf-8") as f:
-                f.write("\n# 欢迎向导异常\n")
+                f.write("\n# " + S("欢迎向导异常", "Welcome wizard exception") + "\n")
                 traceback.print_exc(file=f)
         except Exception:
             pass
@@ -268,8 +295,10 @@ def main(argv=None) -> int:
 
             def _warn_missing():
                 try:
-                    QMessageBox.warning(win, "文件不存在",
-                                        f"找不到要打开的文件：\n{target}")
+                    from sstudio.core.i18n import S as _S
+                    QMessageBox.warning(win, _S("文件不存在", "File not found"),
+                                        _S(f"找不到要打开的文件：\n{target}",
+                                           f"Cannot find the file to open:\n{target}"))
                 except Exception:
                     pass
             QTimer.singleShot(250, _warn_missing)
@@ -299,12 +328,16 @@ def main(argv=None) -> int:
         except Exception:
             pass
         try:
-            _append_crash("运行期异常", traceback.format_exc())
+            _append_crash(S("运行期异常", "Runtime exception"), traceback.format_exc())
             try:
                 from PyQt5.QtWidgets import QMessageBox
+                from sstudio.core.i18n import S as _S
                 QMessageBox.critical(win if win.isVisible() else None,
-                                     "Subtitle Studio 遇到问题",
-                                     "操作触发了一个错误，详情已保存到：\n\n" + _crash_log)
+                                     _S("Subtitle Studio 遇到问题",
+                                        "Subtitle Studio ran into a problem"),
+                                     _S("操作触发了一个错误，详情已保存到：\n\n",
+                                        "An operation triggered an error; details "
+                                        "were saved to:\n\n") + _crash_log)
             except Exception:
                 pass
         except Exception:
@@ -315,11 +348,14 @@ def main(argv=None) -> int:
         # 解释器拆机阶段 Qt 调不进 Python 的异常走 unraisablehook，此前无人接
         try:
             import traceback
+            from sstudio.core.i18n import S as _S
             obj = getattr(ua, "object", None)
             exc = getattr(ua, "exc_value", None)
-            _append_crash("析构期异常", "".join(
-                traceback.format_exception(type(exc), exc, getattr(exc, "__traceback__", None))
-            ) if exc else f"{ua!r}  (对象: {obj!r})\n")
+            _append_crash(_S("析构期异常", "Exception during teardown"),
+                          "".join(
+                              traceback.format_exception(type(exc), exc, getattr(exc, "__traceback__", None))
+                          ) if exc else _S(f"{ua!r}  (对象: {obj!r})\n",
+                                           f"{ua!r}  (object: {obj!r})\n"))
         except Exception:
             pass
     sys.unraisablehook = _unraisable_hook

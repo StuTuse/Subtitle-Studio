@@ -1461,7 +1461,7 @@ import sstudio.__main__ as _sm104  # noqa: E402
 _src104 = _insp104.getsource(_sm104.main)
 check("excepthook 打印失败不丢落盘", "traceback.print_exception(etype, value, tb)" in _src104)
 check("Qt DEBUG 级不落盘（r59）", "if int(mode) <= 0:" in _src104)
-check("unraisablehook 析构期异常落盘", "_append_crash(\"析构期异常\"" in _src104)
+check("unraisablehook 析构期异常落盘", '_append_crash(_S("析构期异常", "Exception during teardown")' in _src104)
 check("headless 拼错参数当场报错", "headless 模式不认识的参数" in _src104)
 
 section("85. 单实例守护语义（第 105 轮钉子）")
@@ -5477,6 +5477,38 @@ _sl241("zh")
 check("sanity zh", _llm241.sanity_check("abc", "") == "输出为空")
 _sl241("zh")
 check("回收 zh 后体检回中文", _doc241.check_all()[0].title == "Python 运行环境")
+
+section("242. core i18n 收尾（第 246 轮：selfcheck zh/en 运行时 + cli 钉）")
+# selfcheck：--check 是终端入口，en 模式输出必须整体可读（进程级探针已验，
+# 这里钉双语关键段）。set_language 在本进程内对 selfcheck 输出直接生效。
+_sl241("zh")
+import io as _io242, contextlib as _cl242      # noqa: E402
+from sstudio.selfcheck import run_check as _rc242  # noqa: E402
+_buf242z = _io242.StringIO()
+with _cl242.redirect_stdout(_buf242z):
+    _code242z = _rc242()
+_zh242 = _buf242z.getvalue()
+check("zh selfcheck 退出码", _code242z in (0, 1))
+check("zh selfcheck 标题", "环境自检" in _zh242 and "自检通过" in _zh242)
+_sl241("en")
+_buf242e = _io242.StringIO()
+with _cl242.redirect_stdout(_buf242e):
+    _code242e = _rc242()
+_en242 = _buf242e.getvalue()
+check("en selfcheck 标题", "environment self-check" in _en242
+      and "Self-check" in _en242)
+check("en selfcheck 可读", "Run mode:" in _en242 or "packaged exe" in _en242
+      or "from source" in _en242)
+_sl241("zh")
+# cli：头less 参数错误文案双语（源码钉 + 运行时入口存在性）
+_cli_src242 = open(os.path.join(_harness.ROOT, "sstudio", "cli_pipeline.py"),
+                   encoding="utf-8").read()
+check("cli 错误文案双语", 'S("请用 --video 指定一个存在的视频/音频文件。"' in _cli_src242
+      and "Specify an existing video/audio file" in _cli_src242)
+check("cli 退出码约定注释在", "0=成功；1=转写/导出等运行失败；2=参数错误" in _cli_src242)
+check("__main__ 语言先于 argparse", "from sstudio.core.i18n import set_language as _sl" in
+      open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
+           encoding="utf-8").read())
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

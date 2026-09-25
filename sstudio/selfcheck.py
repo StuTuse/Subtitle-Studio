@@ -8,9 +8,10 @@ import sys
 
 def run_check() -> int:
     from .version import describe
+    from .core.i18n import S
     line = "=" * 62
     print(line)
-    print(f" {describe()} 环境自检")
+    print(f" {describe()} " + S("环境自检", "environment self-check"))
     print(line)
 
     ok = True
@@ -27,8 +28,9 @@ def run_check() -> int:
         print(f" [{'✓' if good else '!'}] {name:<22} {detail}")
 
     frozen = getattr(sys, "frozen", False)
-    print(f"\n 运行形态：{'打包版 exe' if frozen else '源码运行'}"
-          f"    Python {sys.version.split()[0]}")
+    print(f"\n " + S(f"运行形态：{'打包版 exe' if frozen else '源码运行'}",
+                     f"Run mode: {'packaged exe' if frozen else 'from source'}")
+          + f"    Python {sys.version.split()[0]}")
     print(f" {sys.executable}\n")
 
     # PyQt
@@ -67,10 +69,13 @@ def run_check() -> int:
                     for f in os.listdir(os.path.join(root, "mediaservice")))
             for root in plugin_roots)
         if found_backend:
-            row("QtMultimedia", True, "后端插件在位（预览通常可用）")
+            row("QtMultimedia", True, S("后端插件在位（预览通常可用）",
+                                        "backend plugins present (preview usually works)"))
         else:
             warn("QtMultimedia", False,
-                 "未找到 DirectShow/WMF 后端插件——视频预览可能不可用（不影响字幕功能）")
+                 S("未找到 DirectShow/WMF 后端插件——视频预览可能不可用（不影响字幕功能）",
+                   "DirectShow/WMF backend plugins not found — video preview may "
+                   "not work (subtitle features unaffected)"))
     except Exception as e:
         row("QtMultimedia", False, "pip install PyQt5（含 Multimedia）")
 
@@ -88,14 +93,18 @@ def run_check() -> int:
             from sstudio.core import cuda_rt
             rt = cuda_rt.register()
             loadable = cuda_rt.probe_loadable(rt)
-            row("GPU 可推理", bool(rt.usable) and loadable,
-                (f"{n} 块 GPU，CUDA12 运行库 {rt.cublas_dir}"
+            row(S("GPU 可推理", "GPU inference"),
+                bool(rt.usable) and loadable,
+                (S(f"{n} 块 GPU，CUDA12 运行库 {rt.cublas_dir}",
+                   f"{n} GPU(s), CUDA12 runtime {rt.cublas_dir}")
                  if rt.usable and loadable else
-                 "检测到 GPU 但 CUDA 12 运行库缺失 → 将自动使用 CPU"))
+                 S("检测到 GPU 但 CUDA 12 运行库缺失 → 将自动使用 CPU",
+                   "GPU detected but CUDA 12 runtime missing → CPU will be used")))
             if not (rt.usable and loadable):
                 print(f"        {rt.note}")
         else:
-            print("        未检测到 GPU，将使用 CPU（int8）")
+            print("        " + S("未检测到 GPU，将使用 CPU（int8）",
+                                 "No GPU detected; CPU (int8) will be used"))
     except Exception as e:
         row("CTranslate2", False, str(e)[:60])
 
@@ -109,7 +118,8 @@ def run_check() -> int:
     # ffmpeg
     from sstudio.core import media
     ff = media.find_ffmpeg()
-    row("ffmpeg", bool(ff), ff or "未找到（将回退到 PyAV 解码）")
+    row("ffmpeg", bool(ff), ff or S("未找到（将回退到 PyAV 解码）",
+                                    "not found (falls back to PyAV decoding)"))
     try:
         import av
         row("PyAV", True, av.__version__)
@@ -119,25 +129,33 @@ def run_check() -> int:
     # 模型
     from sstudio.core.transcriber import discover_ct2_models
     cands = discover_ct2_models()
-    print(f"\n 本地 CTranslate2 模型（faster-whisper 可直接用）：{len(cands)} 个")
+    print("\n " + S(f"本地 CTranslate2 模型（faster-whisper 可直接用）：{len(cands)} 个",
+                    f"Local CTranslate2 models (usable by faster-whisper directly): {len(cands)}"))
     for c in cands:
         print(f"   • {c['name']:<44} {c['size']:>8.0f} MB")
         print(f"     {c['path']}")
     if not cands:
-        print("   （无：首次转写会联网下载模型）")
+        print("   " + S("（无：首次转写会联网下载模型）",
+                        "(none: the first transcription downloads the model)"))
 
     # 配置
     from sstudio.core.config import Config, config_path, data_dir
     cfg = Config.load()
     p = cfg.profile()
-    print(f"\n 配置文件 {config_path()}")
-    print(f" 数据目录 {data_dir()}")
-    print(f" 当前接入点 {p.name} · {p.model} · {p.base_url} · "
-          f"{'key 已填' if p.api_key else 'key 未填'}")
-    print(f" 转写引擎 {cfg.asr_engine} / 模型 {cfg.whisper_model} / "
-          f"设备 {cfg.whisper_device}\n")
+    print(S(f"\n 配置文件 {config_path()}", f"\n Config file {config_path()}"))
+    print(S(f" 数据目录 {data_dir()}", f" Data dir {data_dir()}"))
+    print(S(f" 当前接入点 {p.name} · {p.model} · {p.base_url} · "
+            f"{'key 已填' if p.api_key else 'key 未填'}",
+            f" Active profile {p.name} · {p.model} · {p.base_url} · "
+            f"{'key set' if p.api_key else 'key not set'}"))
+    print(S(f" 转写引擎 {cfg.asr_engine} / 模型 {cfg.whisper_model} / "
+            f"设备 {cfg.whisper_device}\n",
+            f" ASR engine {cfg.asr_engine} / model {cfg.whisper_model} / "
+            f"device {cfg.whisper_device}\n"))
     print(line)
-    print(" 自检" + ("通过。" if ok else "存在缺失项，请按上面提示安装。"))
+    print(" " + S("自检", "Self-check")
+          + (S("通过。", " passed.") if ok else S("存在缺失项，请按上面提示安装。",
+                                                 " has missing items; install per the hints above.")))
     print(line)
     return 0 if ok else 1
 
