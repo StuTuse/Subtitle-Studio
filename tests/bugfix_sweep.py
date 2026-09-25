@@ -2979,7 +2979,7 @@ for _root180, _dirs180, _names180 in os.walk("sstudio"):
         if _n180.endswith(".py"):
             _files180.append(os.path.basename(_n180)[:-3])
 _src180 = open("tests/bugfix_sweep.py", encoding="utf-8").read()
-check("源文件 31 个全有钉子覆盖", len(_files180) == 31
+check("源文件 32 个全有钉子覆盖", len(_files180) == 32
       and all(_re180.search(_re180.escape(_n), _src180) for _n in _files180))
 _secs180 = _re180.findall(r'section\("(\d+)\.', _src180)
 check("sweep 节数持续增长", len(_secs180) >= 160)
@@ -5146,6 +5146,54 @@ _body233 = _src233.split("class OpenAIApiEngine")[1].split("\nclass ")[0]
 ck232("预检查在建 client 之前",
       _body233.index("MAX_UPLOAD_MB") < _body233.index("load_client"))
 ck232("小文件不拦（走正常路径）", _OAE233.MAX_UPLOAD_MB == 25.0)
+
+section("234. LLM 纠错逐条 diff 复查（第 245 轮 backlog ② 钉子）")
+from sstudio.ui.diff_review import DiffReviewDialog as _DRV234  # noqa: E402
+_doc234 = _CD232(cues=[
+    _Cue232(0, 1, "改正后", original_text="原始错别字"),
+    _Cue232(1, 2, "未动", original_text=""),
+    _Cue232(2, 3, "原样", original_text="原样"),
+    _Cue232(3, 4, "第二条改动", original_text="第二条原始"),
+])
+_ent234 = _DRV234.collect(_doc234)
+check("collect 只收改动条目", len(_ent234) == 2, f"len={len(_ent234)}")
+check("带 row 与稳定 id", _ent234[0]["row"] == 0 and len(_ent234[0]["id"]) == 16)
+check("original/fixed 正确", _ent234[0]["original"] == "原始错别字"
+      and _ent234[0]["fixed"] == "改正后")
+_dlg234 = _DRV234(_ent234, None)
+_dlg234.show()
+_app159.processEvents()
+check("列表行数=条目数", _dlg234.list.count() == 2)
+_dlg234._decide_all("reject")
+_a234 = _dlg234.result_actions()
+check("全部拒绝写 actions", len(_a234) == 2
+      and all(v == "reject" for v in _a234.values()))
+_dlg234._decide_all("accept")
+check("全部采纳覆盖", all(v == "accept"
+                          for v in _dlg234.result_actions().values()))
+_dlg234.list.setCurrentRow(0)
+_dlg234._decide("reject")
+check("单条决策推进光标", _dlg234._cur == 1)
+_app159.processEvents()
+_dlg234.accept()
+# fix_page 接线（源码级）：按钮 + 按 id 回滚 + undo 保护
+_fp234 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "fix_page.py"),
+              encoding="utf-8").read()
+check("逐条复查按钮在位", "btn_review" in _fp234
+      and "_review_one_by_one" in _fp234)
+check("按 id 回滚不错位", "by_id" in _fp234 and "c.id" in _fp234)
+check("拒绝走 push_undo", _fp234.index("_review_one_by_one")
+      < _fp234.index("def _revert_all"))
+check("拒绝后 render+dirty", "mark_all_llm" in
+      _fp234.split("_review_one_by_one")[1].split("def _revert_all")[0])
+# 回滚语义实测
+_byid234 = {c.id: c for c in _doc234.cues}
+_c234 = _byid234[_ent234[0]["id"]]
+_c234.text = _c234.original_text
+_c234.state = "asr"
+check("回滚后 text=original", _doc234.cues[0].text == "原始错别字")
+check("回滚后 is_changed=0", not _doc234.cues[0].is_changed())
+check("未拒绝条目保持修正", _doc234.cues[3].text == "第二条改动")
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

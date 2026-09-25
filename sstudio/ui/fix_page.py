@@ -186,11 +186,15 @@ class FixInterface(QWidget):
         bar2 = QHBoxLayout()
         self.btn_compare = PushButton("查看修改对比", right)
         self.btn_compare.clicked.connect(self._compare)
+        self.btn_review = PushButton("逐条复查…", right)
+        self.btn_review.setToolTip("原文 → 修正 逐条对比，可单独采纳或拒绝每一条改动。")
+        self.btn_review.clicked.connect(self._review_one_by_one)
         self.btn_revert = PushButton("全部回滚为原始文本", right)
         self.btn_revert.clicked.connect(self._revert_all)
         self.btn_next_review = PushButton("跳到下一条待复查", right)
         self.btn_next_review.clicked.connect(self._next_review)
         bar2.addWidget(self.btn_compare)
+        bar2.addWidget(self.btn_review)
         bar2.addWidget(self.btn_revert)
         bar2.addWidget(self.btn_next_review)
         bar2.addStretch(1)
@@ -404,6 +408,44 @@ class FixInterface(QWidget):
         from .preview import TextPreviewDialog
         TextPreviewDialog(f"修改对比（{len(lines)} 处）", "\n".join(lines),
                           self.main).show()
+
+    def _review_one_by_one(self) -> None:
+        """逐条复查：原文→修正 逐条对比，按条采纳/拒绝。
+
+        按 cue 稳定 id 定位：纠错后用户增删/排序导致行号漂移也不会错位。
+        拒绝的条目回滚为 original_text；未处理的条目保持修正现状。
+        """
+        from .diff_review import DiffReviewDialog
+        doc = self.main.doc
+        if not doc:
+            return
+        entries = DiffReviewDialog.collect(doc)
+        if not entries:
+            InfoBar.info("无差异", "目前没有与原始文本不同的条目。", parent=self.main,
+                         position=InfoBarPosition.TOP, duration=2500)
+            return
+        dlg = DiffReviewDialog(entries, self.main)
+        dlg.exec_()
+        actions = dlg.result_actions()
+        rejects = [e for e in entries if actions.get(e["id"]) == "reject"]
+        if not rejects:
+            return
+        self.main.editor.push_undo()
+        by_id = {c.id: c for c in doc.cues}
+        restored = 0
+        for e in rejects:
+            c = by_id.get(e["id"])
+            if c is None or not c.original_text:
+                continue
+            c.text = c.original_text
+            c.state = "asr"
+            restored += 1
+        if restored:
+            self.main.editor.table.render(doc.cues)
+            self.main.editor.mark_all_llm()
+            self.main.mark_dirty()
+            self.log.append(f"逐条复查：拒绝并回滚 {restored} 条，"
+                            f"保留修正 {len(entries) - restored} 条。")
 
     def _revert_all(self) -> None:
         # 用主窗的无动画确认框：裸 MessageBox 的淡出动画对象无父级、随时
