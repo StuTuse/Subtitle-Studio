@@ -60,11 +60,6 @@ MODELSCOPE = "https://modelscope.cn"
 os.environ.setdefault("HF_ENDPOINT", HF_MIRROR)
 
 
-def _ensure_hf_endpoint() -> None:
-    """惰性兜底：即使别处抢先 import 了 hub 库，至少把环境变量摆正。"""
-    os.environ.setdefault("HF_ENDPOINT", HF_MIRROR)
-
-
 def _is_net_error(msg: str) -> bool:
     low = msg.lower()
     return any(k in low for k in (

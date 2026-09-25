@@ -34,19 +34,6 @@ _FINISH_MS = 820        # 完成遮罩扩张
 _FINAL_FADE_MS = 700    # 遮罩消散
 
 
-def _animate(target, prop: bytes, v0, v1, duration: int, ease,
-             on_done=None) -> QPropertyAnimation:
-    a = QPropertyAnimation(target, prop, target)
-    a.setDuration(duration)
-    a.setStartValue(v0)
-    a.setEndValue(v1)
-    a.setEasingCurve(ease)
-    if on_done:
-        a.finished.connect(on_done)
-    a.start(QPropertyAnimation.DeleteWhenStopped)
-    return a
-
-
 def _fade_blur(widget: QWidget, blur_from: float, duration: int, ease,
                fade_from: float = 0.0, fade_to: float = 1.0,
                on_done=None) -> QParallelAnimationGroup:

@@ -103,11 +103,6 @@ def git_dirty(here: Optional[str] = None) -> bool:
     return bool(_git(["status", "--porcelain"], root))
 
 
-def _nearest_tag() -> str:
-    return _git(["describe", "--tags", "--abbrev=0"],
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
 def _read_buildinfo() -> dict:
     """打包时由 build.spec 生成的 ``BUILDINFO``：记录构建时的 git 号。
 

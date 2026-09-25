@@ -86,11 +86,6 @@ def _apply_app_palette(dark: bool) -> None:
     app.setPalette(p)
 
 
-def crisp(f: QFont) -> None:
-    """小字号 CJK 更清晰：全 hinting + 抗锯齿。公开接口（编辑区等就地调字号的场景用）。"""
-    _crisp(f)
-
-
 def ui_font(size: int = 13) -> QFont:
     for fam in ("Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC"):
         if fam in QFontDatabase().families():
@@ -136,12 +131,6 @@ PAGE_SPACING = 14                   # 页面纵向行距
 CARD_MARGINS = (18, 16, 18, 16)     # CardWidget 内边距
 CARD_SPACING = 10                   # 卡片内纵向行距
 PRIMARY_MIN_W = 160                 # 主操作按钮最小宽
-
-
-def apply_card_margins(v) -> None:
-    """统一卡片内边距：v 是 QVBoxLayout/QHBoxLayout 均可。"""
-    v.setContentsMargins(*CARD_MARGINS)
-    v.setSpacing(CARD_SPACING)
 
 
 def _crisp(f: QFont) -> None:
