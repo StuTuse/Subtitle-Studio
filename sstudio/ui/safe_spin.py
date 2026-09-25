@@ -127,6 +127,13 @@ class SafeSpinBox(QSpinBox, _WheelGuard):
         self.setCorrectionMode(QSpinBox.CorrectToNearestValue)
         self.setAccelerated(False)
 
+    def stepBy(self, steps: int) -> None:  # noqa: N802
+        # 必须定义在子类本体：混入类的 stepBy 在 MRO 里排在
+        # QAbstractSpinBox（C++ 虚实现）之后，PyQt5 对 C++ 虚方法不按
+        # Python MRO 派发——兜底从未生效，实测 stepBy(1) 照样 +1。
+        # 子类自有定义才真正压住 QAbstractSpinBox 的解析。
+        _WheelGuard.stepBy(self, steps)
+
     def set_choices(self, choices: Optional[Sequence] = None) -> None:
         """设置候选列表；传 None 才按范围+步长自动生成，传 [] 明确清空弹窗。"""
         self._explicit = None if choices is None else list(choices)
@@ -162,6 +169,11 @@ class SafeDoubleSpinBox(QDoubleSpinBox, _WheelGuard):
         self.setKeyboardTracking(False)
         self.setCorrectionMode(QDoubleSpinBox.CorrectToNearestValue)
         self.setAccelerated(False)
+
+    def stepBy(self, steps: int) -> None:  # noqa: N802
+        # 同 SafeSpinBox：必须定义在子类本体才能压住 QAbstractSpinBox 的
+        # C++ 虚解析（混入类排在其后，从不被调用）
+        _WheelGuard.stepBy(self, steps)
 
     def set_choices(self, choices: Optional[Sequence] = None) -> None:
         self._explicit = None if choices is None else list(choices)

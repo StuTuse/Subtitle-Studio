@@ -5195,6 +5195,42 @@ check("回滚后 text=original", _doc234.cues[0].text == "原始错别字")
 check("回滚后 is_changed=0", not _doc234.cues[0].is_changed())
 check("未拒绝条目保持修正", _doc234.cues[3].text == "第二条改动")
 
+section("235. stepBy 子类压制 + ui_scale 出厂值一致（第 245 轮 backlog ⑨⑩ 钉子）")
+# ① 真缺陷修复：混入类 stepBy 在 MRO 排 QAbstractSpinBox 之后，PyQt5 对
+#   C++ 虚方法不按 Python MRO 派发——旧兜底从未生效，stepBy(1) 实测 +1。
+#   子类本体定义才真正压住。运行时行为钉（非源码钉）：
+from sstudio.ui.safe_spin import SafeSpinBox as _SS235, \
+    SafeDoubleSpinBox as _SDS235  # noqa: E402
+_sp235 = _SS235()
+_sp235.setRange(0, 100)
+_sp235.setValue(50)
+_sp235.stepBy(1)
+_sp235.stepBy(5)
+check("int stepBy 全拦（运行时）", _sp235.value() == 50, _sp235.value())
+check("setValue 编程改值仍生效", (_sp235.setValue(88) or _sp235.value()) == 88)
+_sp235b = _SS235()
+_sp235b.setRange(0, 100)
+_sp235b.setValue(50)
+_sp235b.stepBy(-3)
+check("负向 stepBy 也拦", _sp235b.value() == 50)
+_dp235 = _SDS235()
+_dp235.setRange(0.0, 10.0)
+_dp235.setValue(4.2)
+_dp235.stepBy(1)
+check("double stepBy 全拦（运行时）", abs(_dp235.value() - 4.2) < 1e-9)
+# MRO 诊断钉：子类 __dict__ 必须自有 stepBy（否则回归回旧病）
+check("子类本体定义 stepBy", "stepBy" in vars(_SS235)
+      and "stepBy" in vars(_SDS235))
+# ② ui_scale 出厂值与设置页推荐一致（config 默认 1.5 vs 页面「1.00（推荐）」）
+from sstudio.core.config import Config as _Cfg235  # noqa: E402
+check("ui_scale 出厂 1.0", _Cfg235().ui_scale == 1.0)
+_src235cfg = open(os.path.join(_harness.ROOT, "sstudio", "core", "config.py"),
+                  encoding="utf-8").read()
+check("出厂值注释同步", "1.0=物理 1:1 最清晰（推荐出厂值" in _src235cfg)
+_src235set = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
+                  encoding="utf-8").read()
+check("设置页推荐标仍是 1.00", "1.00 ×（推荐）" in _src235set)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

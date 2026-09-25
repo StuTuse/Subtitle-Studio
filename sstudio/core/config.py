@@ -235,8 +235,10 @@ class Config:
     export_encoding: str = "utf-8-sig"
     theme: str = "auto"                      # light | dark | auto
     accent: str = "#0aa2c0"
-    ui_scale: float = 1.5                    # 界面缩放（相对物理像素）。
-                                             # 1.5=舒适；1.25/1.0=更紧凑；0=跟随系统
+    ui_scale: float = 1.0                    # 界面缩放（相对物理像素）。
+                                             # 1.0=物理 1:1 最清晰（推荐出厂值，
+                                             # 与设置页「1.00 ×（推荐）」一致）；
+                                             # 1.25/1.5=更大控件；0=跟随系统
     window_geometry: str = ""
     editor_hsplit: List[int] = field(default_factory=list)  # 编辑页「播放器|修改区」分栏记忆
     recent_files: List[str] = field(default_factory=list)
