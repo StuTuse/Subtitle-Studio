@@ -5671,6 +5671,32 @@ check("外观页标题双语", 'S("选一个顺眼的外观", "Pick a look you l
 check("体检行标签双语拼装", "'required' if it.level == 'required'" in _ww249)
 check("色板样本是字体预览（保留 zh）", 'swatch.setText("Aa 字幕 · 00:12")' in _ww249)
 
+section("250. JSON 导出/导入字段往返（第 246 期续：真缺陷修复——confidence/words 丢失）")
+from sstudio.core.formats import to_json as _tj250, parse_json as _pj250  # noqa: E402
+from sstudio.core.model import Cue as _Cu250, CueDocument as _CD250  # noqa: E402
+_d250 = _CD250(cues=[
+    _Cu250(start=0, end=1, text="a", original_text="a", confidence=0.91),
+    _Cu250(start=1, end=2, text="b", original_text="b",
+           words=[{"start": 1.0, "end": 1.5, "word": "b"}]),
+])
+_rt250 = _pj250(_tj250(_d250))
+check("json confidence 往返", _rt250[0].confidence == 0.91, repr(_rt250[0].confidence))
+check("json words 往返", _rt250[1].words == [{"start": 1.0, "end": 1.5, "word": "b"}],
+      repr(_rt250[1].words))
+check("json 空字段缺省", _rt250[0].words == [] and _rt250[1].confidence is None)
+# 导入端防御：畸形词表丢弃、字符串置信度转换、avg_logprob 回退
+_bad250 = _pj250('{"cues": [{"start": 0, "end": 1, "text": "x", "words": ['
+                 '"垃圾", {"word": "无start"}, {"start": 0.1, "word": "好"}], '
+                 '"confidence": "0.9"}, '
+                 '{"start": 1, "end": 2, "text": "y", "avg_logprob": -0.3}]}')
+check("畸形词表过滤", len(_bad250[0].words) == 1 and _bad250[0].words[0]["word"] == "好")
+check("字符串置信度转换", _bad250[0].confidence == 0.9)
+check("无置信度字段归 None", _bad250[1].confidence is not None
+      and isinstance(_bad250[1].confidence, float))  # avg_logprob 行见下一条
+check("avg_logprob 回退保留", abs(_bad250[1].confidence - (-0.3)) < 1e-9,
+      repr(_bad250[1].confidence))
+check("数值置信度归一 float", isinstance(_bad250[1].confidence, float))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

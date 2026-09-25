@@ -182,10 +182,24 @@ def parse_json_obj(data) -> List[Cue]:
         txt = item.get("text", item.get("content", "")) or ""
         if st is None or en is None or not str(txt).strip():
             continue
+        # words 只收合法的逐词 dict（start/end/word 至少有 start+word）：
+        # 外部工具的畸形词表直接丢弃，不让坏字段进工程。
+        raw_words = item.get("words") or []
+        words = [w for w in raw_words
+                 if isinstance(w, dict) and "start" in w and "word" in w]
+        conf = item.get("confidence", item.get("avg_logprob"))
+        if isinstance(conf, str):
+            try:
+                conf = float(conf)              # "0.9" 也收，与 Cue.from_dict 同规
+            except ValueError:
+                conf = None
+        elif not isinstance(conf, (int, float)):
+            conf = None
         cues.append(Cue(start=float(st), end=float(en), text=str(txt).strip(),
                         original_text=str(txt).strip(),
-                        confidence=item.get("confidence", item.get("avg_logprob")),
-                        speaker=str(item.get("speaker", "") or "")))
+                        confidence=float(conf) if conf is not None else None,
+                        speaker=str(item.get("speaker", "") or ""),
+                        words=words))
     return cues
 
 
@@ -517,6 +531,10 @@ def to_json(doc: CueDocument, indent: int = 2) -> str:
                 "original_text": c.original_text,
                 "speaker": c.speaker,
                 "state": c.state,
+                # confidence/words 是 JSON 格式的核心卖点（词级时间戳/二次
+                # 开发）：漏写会让「导出 JSON 备份→再导入」静默丢掉置信度
+                # 与逐词时间戳，旧版只有 words 有写出、confidence 压根没有。
+                "confidence": c.confidence,
                 "words": c.words,
             }
             for i, c in enumerate(doc.cues, 1)
