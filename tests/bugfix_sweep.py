@@ -5656,6 +5656,21 @@ _pw248.set_loop_b(10.0)
 check("A/B 交叉清理", _pw248.loop() == (None, 10.0))
 _pw248.shutdown()
 
+section("249. 首启向导深审钉子（第 246 末轮：体检窗/向导关键语义 + 残留清零）")
+_fr249 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "first_run_dialog.py"),
+              encoding="utf-8").read()
+check("InfoBar 安装失败双语", 'S("安装失败", "Install failed")' in _fr249)
+check("必需缺失关闭语义 abort", "self.abort_app = True" in _fr249
+      and "return not getattr(dlg, \"abort_app\", False)" in _fr249)
+check("closeEvent 单一定义守卫", "不能直接 QApplication.quit" in _fr249)
+check("修复连点防护", "orphanize(w)" in _fr249 and "w.wait(1500)" in _fr249)
+_ww249 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "welcome_wizard.py"),
+              encoding="utf-8").read()
+check("欢迎标题双语", 'S("欢迎使用 Subtitle Studio", "Welcome to Subtitle Studio")' in _ww249)
+check("外观页标题双语", 'S("选一个顺眼的外观", "Pick a look you like")' in _ww249)
+check("体检行标签双语拼装", "'required' if it.level == 'required'" in _ww249)
+check("色板样本是字体预览（保留 zh）", 'swatch.setText("Aa 字幕 · 00:12")' in _ww249)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

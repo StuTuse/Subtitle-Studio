@@ -345,7 +345,8 @@ class FirstRunDialog(QDialog):
                                              self.fix_label.setVisible(False)))
         else:
             self.fix_label.setText(msg)
-            InfoBar.error(title="安装失败", content=msg.splitlines()[0][:120],
+            InfoBar.error(title=S("安装失败", "Install failed"),
+                          content=msg.splitlines()[0][:120],
                           orient=Qt.Horizontal, isClosable=True, duration=8000,
                           parent=self)
             self.btn_log.click() if not self.log_box.isVisible() else None

@@ -89,7 +89,7 @@ class _WelcomePage(_Page):
         icon.setPixmap(app_icon().pixmap(96, 96))
         icon.setAlignment(Qt.AlignHCenter)
         self.v.addWidget(icon)
-        t = TitleLabel(f"欢迎使用 Subtitle Studio", self)
+        t = TitleLabel(S("欢迎使用 Subtitle Studio", "Welcome to Subtitle Studio"), self)
         t.setAlignment(Qt.AlignHCenter)
         self.v.addWidget(t)
         v = BodyLabel(S(f"版本 {__version__} · 视频字幕工坊",
@@ -113,7 +113,8 @@ class _WelcomePage(_Page):
 class _AppearancePage(_Page):
     def __init__(self, w: "WelcomeWizard"):
         super().__init__(w)
-        self.title("选一个顺眼的外观", "之后在「设置」里随时可以改。")
+        self.title(S("选一个顺眼的外观", "Pick a look you like"),
+                   S("之后在「设置」里随时可以改。", "You can change it anytime in Settings."))
 
         self.cards: List[CardWidget] = []
         row = QHBoxLayout()
