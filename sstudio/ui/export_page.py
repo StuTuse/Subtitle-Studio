@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLis
 
 from ..core import formats
 from ..core.config import Config
+from ..core.i18n import S
 from .theme import CARD_MARGINS, PRIMARY_MIN_W, err_span, ok_span, open_path
 from .workers import ThreadedCall
 
@@ -46,7 +47,7 @@ def _write_exports(pairs, out_dir, enc):
                     pass
             errors.append((name, str(e)))
     if not written:
-        raise OSError("；".join(f"{n}: {e}" for n, e in errors) or "没有写出任何文件")
+        raise OSError("；".join(f"{n}: {e}" for n, e in errors) or S("没有写出任何文件", "No files were written"))
     return written, errors
 
 
@@ -54,7 +55,7 @@ class ExportInterface(QWidget):
     def __init__(self, cfg: Config, main):
         super().__init__()
         self.setObjectName("export")
-        self.setWindowTitle("导出成品")
+        self.setWindowTitle(S("导出成品", "Export"))
         self.cfg = cfg
         self.main = main
         self.setLayout(QVBoxLayout(self))
@@ -62,7 +63,7 @@ class ExportInterface(QWidget):
         lay.setContentsMargins(28, 20, 28, 20)
         lay.setSpacing(14)
 
-        head = SubtitleLabel("导出成品字幕", self)
+        head = SubtitleLabel(S("导出成品字幕", "Export final subtitles"), self)
         lay.addWidget(head)
 
         body = QHBoxLayout()
@@ -72,7 +73,7 @@ class ExportInterface(QWidget):
         left = CardWidget(self)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(*CARD_MARGINS)
-        lv.addWidget(StrongBodyLabel("选择导出格式（可多选）", left))
+        lv.addWidget(StrongBodyLabel(S("选择导出格式（可多选）", "Export formats (multi-select)"), left))
         self.fmt_list = QListWidget(left)
         self.fmt_list.setSelectionMode(QListWidget.NoSelection)
         for key in formats.EXPORT_ORDER:
@@ -86,8 +87,8 @@ class ExportInterface(QWidget):
             self.fmt_list.addItem(it)
         lv.addWidget(self.fmt_list, 1)
         row = QHBoxLayout()
-        self.btn_all = PushButton("全选", left)
-        self.btn_none = PushButton("全不选", left)
+        self.btn_all = PushButton(S("全选", "Select all"), left)
+        self.btn_none = PushButton(S("全不选", "Select none"), left)
         self.btn_all.clicked.connect(lambda: self._check_all(Qt.Checked))
         self.btn_none.clicked.connect(lambda: self._check_all(Qt.Unchecked))
         row.addWidget(self.btn_all)
@@ -100,41 +101,47 @@ class ExportInterface(QWidget):
         right = CardWidget(self)
         rv = QVBoxLayout(right)
         rv.setContentsMargins(*CARD_MARGINS)
-        rv.addWidget(StrongBodyLabel("输出设置", right))
+        rv.addWidget(StrongBodyLabel(S("输出设置", "Output settings"), right))
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.out_dir = LineEdit(right)
-        self.out_dir.setPlaceholderText("留空则输出到视频所在文件夹")
+        self.out_dir.setPlaceholderText(S("留空则输出到视频所在文件夹",
+                                          "Empty = the video's folder"))
         self.out_dir.setText(self.cfg.export_dir or "")
-        pick = PushButton("浏览…", right)
+        pick = PushButton(S("浏览…", "Browse…"), right)
         pick.clicked.connect(self._pick_dir)
         drow = QHBoxLayout()
         drow.addWidget(self.out_dir, 1)
         drow.addWidget(pick)
-        form.addRow("输出目录", drow)
+        form.addRow(S("输出目录", "Output folder"), drow)
 
         self.name_tpl = LineEdit(right)
         self.name_tpl.setText("{name}")
-        self.name_tpl.setToolTip("可用占位符：{name} 视频文件名，{lang} 语言，{ext} 由格式决定")
-        form.addRow("文件名模板", self.name_tpl)
+        self.name_tpl.setToolTip(S("可用占位符：{name} 视频文件名，{lang} 语言，{ext} 由格式决定",
+                                   "Placeholders: {name} video filename, {lang} language, {ext} by format"))
+        form.addRow(S("文件名模板", "Filename template"), self.name_tpl)
 
         self.enc = ComboBox(right)
-        self.enc.addItems(["utf-8-sig（Windows 记事本友好）", "utf-8（推荐/播放器）", "gbk（老设备）"])
+        self.enc.addItems([S("utf-8-sig（Windows 记事本友好）", "utf-8-sig (Notepad-friendly)"),
+                           S("utf-8（推荐/播放器）", "utf-8 (recommended/players)"),
+                           S("gbk（老设备）", "gbk (legacy devices)")])
         self.enc.setCurrentIndex(["utf-8-sig", "utf-8", "gbk"].index(self.cfg.export_encoding)
                                  if self.cfg.export_encoding in ("utf-8-sig", "utf-8", "gbk") else 0)
-        form.addRow("文本编码", self.enc)
+        form.addRow(S("文本编码", "Text encoding"), self.enc)
 
-        self.chk_video_name = CheckBox("以视频文件名命名（否则用当前工程名）", right)
+        self.chk_video_name = CheckBox(S("以视频文件名命名（否则用当前工程名）",
+                                         "Name by video filename (else project name)"), right)
         self.chk_video_name.setChecked(True)
-        form.addRow("命名", self.chk_video_name)
+        form.addRow(S("命名", "Naming"), self.chk_video_name)
 
-        self.chk_burn = CheckBox("导出后自动打开所在文件夹", right)
+        self.chk_burn = CheckBox(S("导出后自动打开所在文件夹",
+                                   "Open the output folder after export"), right)
         self.chk_burn.setChecked(True)
         form.addRow("", self.chk_burn)
         rv.addLayout(form)
 
-        rv.addWidget(StrongBodyLabel("导出前检查", right))
+        rv.addWidget(StrongBodyLabel(S("导出前检查", "Pre-export check"), right))
         self.precheck = BodyLabel("—", right)
         self.precheck.setWordWrap(True)
         self.precheck.setTextFormat(Qt.RichText)
@@ -144,9 +151,9 @@ class ExportInterface(QWidget):
 
         # 底部按钮
         bar = QHBoxLayout()
-        self.btn_preview = PushButton(FIF.VIEW, "预览 SRT 前 30 行", self)
+        self.btn_preview = PushButton(FIF.VIEW, S("预览 SRT 前 30 行", "Preview first 30 SRT lines"), self)
         self.btn_preview.clicked.connect(self._preview)
-        self.btn_export = PrimaryPushButton(FIF.SAVE_AS, "导出", self)
+        self.btn_export = PrimaryPushButton(FIF.SAVE_AS, S("导出", "Export"), self)
         self.btn_export.setMinimumWidth(PRIMARY_MIN_W)
         self.btn_export.clicked.connect(self._export)
         bar.addStretch(1)
@@ -161,7 +168,8 @@ class ExportInterface(QWidget):
     def refresh(self) -> None:
         doc = self.main.doc
         if not doc or not doc.cues:
-            self.precheck.setText("当前没有字幕，先完成转写。")
+            self.precheck.setText(S("当前没有字幕，先完成转写。",
+                                    "No subtitles yet — transcribe first."))
             self.btn_export.setEnabled(False)
             return
         self.btn_export.setEnabled(True)
@@ -176,21 +184,28 @@ class ExportInterface(QWidget):
                       if doc.cues[i].end > doc.cues[i + 1].start + 0.01)
         empty = [i for i, c in enumerate(doc.cues) if not c.display_text.strip()]
         if too_long:
-            problems.append(f"{len(too_long)} 条过长（>28 字）")
+            problems.append(S(f"{len(too_long)} 条过长（>28 字）",
+                              f"{len(too_long)} too long (>28 chars)"))
         if too_short:
-            problems.append(f"{len(too_short)} 条 <0.5 秒")
+            problems.append(S(f"{len(too_short)} 条 <0.5 秒",
+                              f"{len(too_short)} under 0.5s"))
         if too_slow:
-            problems.append(f"{len(too_slow)} 条语速过快（>9 字/秒）")
+            problems.append(S(f"{len(too_slow)} 条语速过快（>9 字/秒）",
+                              f"{len(too_slow)} too fast (>9 chars/s)"))
         if overlap:
-            problems.append(f"{overlap} 处时间重叠")
+            problems.append(S(f"{overlap} 处时间重叠",
+                              f"{overlap} overlapping timing(s)"))
         if empty:
-            problems.append(f"{len(empty)} 条内容为空")
-        html = (f"共 <b>{st['count']}</b> 条 · 总时长 <b>{st['duration']:.1f}s</b> · "
-                f"平均 <b>{st['avg_cps']:.1f}</b> 字/条 · 已修正 <b>{st['changed']}</b> 条")
+            problems.append(S(f"{len(empty)} 条内容为空",
+                              f"{len(empty)} empty"))
+        html = (S(f"共 <b>{st['count']}</b> 条 · 总时长 <b>{st['duration']:.1f}s</b> · "
+                  f"平均 <b>{st['avg_cps']:.1f}</b> 字/条 · 已修正 <b>{st['changed']}</b> 条",
+                  f"<b>{st['count']}</b> cues · total <b>{st['duration']:.1f}s</b> · "
+                  f"avg <b>{st['avg_cps']:.1f}</b> chars/cue · <b>{st['changed']}</b> changed"))
         if problems:
-            html += "<br>" + err_span("⚠ " + "；".join(problems))
+            html += "<br>" + err_span("⚠ " + S("；".join(problems), "; ".join(problems)))
         else:
-            html += "<br>" + ok_span("✓ 未发现明显问题")
+            html += "<br>" + ok_span(S("✓ 未发现明显问题", "✓ No obvious issues"))
         self.precheck.setText(html)
 
     def _check_all(self, state) -> None:
@@ -198,7 +213,7 @@ class ExportInterface(QWidget):
             self.fmt_list.item(i).setCheckState(state)
 
     def _pick_dir(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, "选择输出目录",
+        d = QFileDialog.getExistingDirectory(self, S("选择输出目录", "Choose output folder"),
                                              self.out_dir.text() or self.cfg.last_dir or "")
         if d:
             self.out_dir.setText(d)
@@ -249,19 +264,21 @@ class ExportInterface(QWidget):
     def _export(self) -> None:
         doc = self.main.doc
         if not doc or not doc.cues:
-            InfoBar.warning("没有内容", "当前没有可导出的字幕。", parent=self.main,
-                            position=InfoBarPosition.TOP, duration=2500)
+            InfoBar.warning(S("没有内容", "Nothing to export"),
+                            S("当前没有可导出的字幕。", "There are no subtitles to export."),
+                            parent=self.main, position=InfoBarPosition.TOP, duration=2500)
             return
         keys = self._targets()
         if not keys:
-            InfoBar.warning("未选格式", "请至少勾选一种导出格式。", parent=self.main,
-                            position=InfoBarPosition.TOP, duration=2500)
+            InfoBar.warning(S("未选格式", "No format selected"),
+                            S("请至少勾选一种导出格式。", "Check at least one export format."),
+                            parent=self.main, position=InfoBarPosition.TOP, duration=2500)
             return
         out_dir = self._out_dir()
         try:
             os.makedirs(out_dir, exist_ok=True)
         except OSError as e:
-            InfoBar.error("目录不可写", str(e), parent=self.main,
+            InfoBar.error(S("目录不可写", "Folder not writable"), str(e), parent=self.main,
                           position=InfoBarPosition.TOP, duration=4000)
             return
         if getattr(self, "_worker", None) is not None:
@@ -280,7 +297,7 @@ class ExportInterface(QWidget):
             except Exception as e:
                 render_errors.append((spec.label, str(e)))
         for label, err in render_errors:
-            InfoBar.error("导出失败", f"{label}: {err}", parent=self.main,
+            InfoBar.error(S("导出失败", "Export failed"), f"{label}: {err}", parent=self.main,
                           position=InfoBarPosition.TOP, duration=4000)
         if not pairs:
             return
@@ -303,14 +320,14 @@ class ExportInterface(QWidget):
 
     def _on_export_failed(self, msg: str) -> None:
         self._finish_export()
-        InfoBar.error("导出失败", msg, parent=self.main,
+        InfoBar.error(S("导出失败", "Export failed"), msg, parent=self.main,
                       position=InfoBarPosition.TOP, duration=4000)
 
     def _on_export_done(self, outcome) -> None:
         self._finish_export()
         written, errors = outcome
         for name, err in errors:
-            InfoBar.error("写入失败", f"{name}: {err}", parent=self.main,
+            InfoBar.error(S("写入失败", "Write failed"), f"{name}: {err}", parent=self.main,
                           position=InfoBarPosition.TOP, duration=4000)
         if not written:
             return
@@ -323,19 +340,22 @@ class ExportInterface(QWidget):
         self.cfg.last_dir = out_dir
         self.cfg.save()
         self._last_files = written
-        InfoBar.success("导出完成",
+        InfoBar.success(S("导出完成", "Export done"),
                         "\n".join(os.path.basename(p) for p in written),
                         parent=self.main, position=InfoBarPosition.TOP, duration=4500)
         if self.chk_burn.isChecked():
             open_path(os.path.dirname(written[0]))
-        self.main.editor.status.setText(f"已导出 {len(written)} 个文件 → {out_dir}")
+        self.main.editor.status.setText(
+            S(f"已导出 {len(written)} 个文件 → {out_dir}",
+              f"Exported {len(written)} file(s) → {out_dir}"))
 
     def _preview(self) -> None:
         doc = self.main.doc
         if not doc or not doc.cues:
             return
         from .preview import TextPreviewDialog
-        TextPreviewDialog("SRT 预览", formats.to_srt(doc)[:6000], self.main).exec_()
+        TextPreviewDialog(S("SRT 预览", "SRT preview"), formats.to_srt(doc)[:6000],
+                          self.main).exec_()
 
     def open_last(self) -> None:
         if self._last_files:

@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QComboBox, QDi
 
 from ..core import formats
 from ..core.config import Config
+from ..core.i18n import S
 from ..core.model import Cue, CueDocument, normalize_cues, sec_to_ts, ts_to_sec
 from .cue_table import COL_S, CueTable
 from .player import PlayerWidget
@@ -74,20 +75,20 @@ class EditorInterface(QWidget):
 
         self.bar.addActions([
             act(FIF.VIDEO, "导入视频", lambda: self.main.open_media_dialog()),
-            act(FIF.PLAY, "开始转写", lambda: self.main.start_transcribe()),
-            act(FIF.BROOM, "AI 纠错", lambda: self.main.goto_fix()),
-            act(FIF.SAVE, "导出", lambda: self.main.switch_to("export")),
+            act(FIF.PLAY, S("开始转写", "Transcribe"), lambda: self.main.start_transcribe()),
+            act(FIF.BROOM, S("AI 纠错", "AI Fix"), lambda: self.main.goto_fix()),
+            act(FIF.SAVE, S("导出", "Export"), lambda: self.main.switch_to("export")),
         ])
         self.bar.addSeparator()
         self.bar.addActions([
-            act(FIF.FOLDER, "打开工程", self._open_project),
-            act(FIF.SAVE_AS, "保存工程", lambda: self.main.save_project()),
-            act(FIF.ADD, "导入字幕", self._import_subtitle),
-            act(FIF.REMOVE, "撤销", self.undo),
-            act(FIF.SYNC, "重做", self.redo),
+            act(FIF.FOLDER, S("打开工程", "Open project"), self._open_project),
+            act(FIF.SAVE_AS, S("保存工程", "Save project"), lambda: self.main.save_project()),
+            act(FIF.ADD, S("导入字幕", "Import subtitles"), self._import_subtitle),
+            act(FIF.REMOVE, S("撤销", "Undo"), self.undo),
+            act(FIF.SYNC, S("重做", "Redo"), self.redo),
         ])
         self.bar.addSeparator()
-        self.btn_filter = act(FIF.SEARCH, "筛选", self._toggle_filter)
+        self.btn_filter = act(FIF.SEARCH, S("筛选", "Filter"), self._toggle_filter)
         self.bar.addAction(self.btn_filter)
         root.addWidget(self.bar)
 
@@ -96,7 +97,8 @@ class EditorInterface(QWidget):
         fr = QHBoxLayout(self.filter_row)
         fr.setContentsMargins(0, 0, 0, 0)
         self.search = SearchLineEdit(self.filter_row)
-        self.search.setPlaceholderText("搜索字幕文本 / 输入 #数字 跳到第 N 条 / 支持正则")
+        self.search.setPlaceholderText(S("搜索字幕文本 / 输入 #数字 跳到第 N 条 / 支持正则",
+                                         "Search subtitle text / #N to jump to cue N / regex supported"))
         self.search.setMaximumWidth(420)
         # 每 keystroke 全表 setRowHidden + 正则匹配：5000 条时中文输入法
         # 连续上字明显掉帧。180ms 防抖，末键才真正过滤
@@ -109,11 +111,13 @@ class EditorInterface(QWidget):
         fr.addWidget(self.search)
         self.chk_only_problem = PushButton(self.filter_row)
         self.chk_only_problem.setCheckable(True)
-        self.chk_only_problem.setText("只看待复查/过长/过快")
+        self.chk_only_problem.setText(S("只看待复查/过长/过快",
+                                        "Review/long/fast only"))
         self.chk_only_problem.clicked.connect(self._filter)
         fr.addWidget(self.chk_only_problem)
-        self.btn_replace = PushButton("替换…", self.filter_row)
-        self.btn_replace.setToolTip("按当前搜索词批量替换（支持正则），可撤销")
+        self.btn_replace = PushButton(S("替换…", "Replace…"), self.filter_row)
+        self.btn_replace.setToolTip(S("按当前搜索词批量替换（支持正则），可撤销",
+                                      "Batch replace by the current search (regex ok), undoable"))
         self.btn_replace.clicked.connect(self._replace_dialog)
         fr.addWidget(self.btn_replace)
         fr.addStretch(1)
@@ -132,24 +136,28 @@ class EditorInterface(QWidget):
         hv = QVBoxLayout(self.hero)
         hv.setContentsMargins(24, 18, 24, 18)
         hv.setSpacing(8)
-        self.hero_title = StrongBodyLabel("拖入视频，或选择一个文件开始", self.hero)
+        self.hero_title = StrongBodyLabel(S("拖入视频，或选择一个文件开始",
+                                            "Drop a video here, or pick a file to start"), self.hero)
         from .theme import hero_font
         self.hero_title.setFont(hero_font())
         hv.addWidget(self.hero_title, 0, Qt.AlignHCenter)
         self.hero_sub = CaptionLabel(
-            "导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线", self.hero)
+            S("导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线",
+              "After importing, press Transcribe: audio is extracted automatically "
+              "and recognized by local Whisper, fully offline"), self.hero)
         hv.addWidget(self.hero_sub, 0, Qt.AlignHCenter)
         brow = QHBoxLayout()
         brow.setSpacing(10)
         brow.addStretch(1)
-        self.btn_import2 = PushButton(" 选择视频", self.hero)
+        self.btn_import2 = PushButton(S(" 选择视频", " Choose video"), self.hero)
         self.btn_import2.clicked.connect(lambda: self.main.open_media_dialog())
         brow.addWidget(self.btn_import2)
-        self.btn_start = PrimaryPushButton(" 开始转写", self.hero, FIF.PLAY)
+        self.btn_start = PrimaryPushButton(S(" 开始转写", " Start transcription"), self.hero, FIF.PLAY)
         self.btn_start.setMinimumHeight(34)
         self.btn_start.setMinimumWidth(150)
         self.btn_start.setEnabled(False)
-        self.btn_start.setToolTip("提取音频并开始识别（需先在上方或此处导入视频）")
+        self.btn_start.setToolTip(S("提取音频并开始识别（需先在上方或此处导入视频）",
+                                    "Extract audio and recognize (import a video first)"))
         self.btn_start.clicked.connect(lambda: self.main.start_transcribe())
         brow.addWidget(self.btn_start)
         brow.addStretch(1)
@@ -167,7 +175,7 @@ class EditorInterface(QWidget):
         self.hero_pct.setMinimumWidth(42)
         self.hero_pct.setVisible(False)
         prow.addWidget(self.hero_pct)
-        self.btn_cancel = PushButton("取消", self.hero)
+        self.btn_cancel = PushButton(S("取消", "Cancel"), self.hero)
         self.btn_cancel.setEnabled(False)
         self.btn_cancel.clicked.connect(lambda: self.main.cancel_transcribe())
         prow.addWidget(self.btn_cancel)
@@ -188,7 +196,7 @@ class EditorInterface(QWidget):
         rr = QHBoxLayout(self.recent_row)
         rr.setContentsMargins(0, 0, 0, 0)
         rr.setSpacing(6)
-        self.recent_label = CaptionLabel("最近：", self.recent_row)
+        self.recent_label = CaptionLabel(S("最近：", "Recent:"), self.recent_row)
         rr.addWidget(self.recent_label)
         self.recent_links = [CaptionLabel("", self.recent_row) for _ in range(4)]
         for lb in self.recent_links:
@@ -270,14 +278,23 @@ class EditorInterface(QWidget):
         er2 = QHBoxLayout()
         er2.setSpacing(6)
         for label, slot, tip in (
-                ("F2 拆分", lambda: self._act("split"), "在播放头位置把选中字幕一分为二"),
-                ("F3 合并", lambda: self._act("merge"), "把选中的多条合成一条"),
-                ("−0.1s", lambda: self._act("shift:-0.1"), "整条时间轴前移"),
-                ("+0.1s", lambda: self._act("shift:0.1"), "整条时间轴后移"),
-                ("消空隙", lambda: self._act("close_gaps"),
-                 "连续说话时字幕之间若有小空隙，播放会闪断：把不超过阈值的前一条"
-                 "结束时间拉齐到后一条开始。句末标点（。！？）结尾、或换了说话人"
-                 "的空隙会保留。阈值在 设置→其它 调。Ctrl+Z 撤销。")):
+                (S("F2 拆分", "F2 Split"), lambda: self._act("split"),
+                 S("在播放头位置把选中字幕一分为二",
+                   "Split the selected cue at the playhead")),
+                (S("F3 合并", "F3 Merge"), lambda: self._act("merge"),
+                 S("把选中的多条合成一条", "Merge selected cues into one")),
+                ("−0.1s", lambda: self._act("shift:-0.1"),
+                 S("整条时间轴前移", "Shift the whole cue earlier")),
+                ("+0.1s", lambda: self._act("shift:0.1"),
+                 S("整条时间轴后移", "Shift the whole cue later")),
+                (S("消空隙", "Close gaps"), lambda: self._act("close_gaps"),
+                 S("连续说话时字幕之间若有小空隙，播放会闪断：把不超过阈值的前一条"
+                   "结束时间拉齐到后一条开始。句末标点（。！？）结尾、或换了说话人"
+                   "的空隙会保留。阈值在 设置→其它 调。Ctrl+Z 撤销。",
+                   "Tiny gaps between cues flicker during playback: pulls the previous "
+                   "cue's end to the next cue's start when within the threshold. Gaps "
+                   "ending with sentence punctuation or a different speaker are kept. "
+                   "Threshold in Settings→Misc. Ctrl+Z to undo."))):
             b = PushButton(edit_box)
             b.setText(label)
             b.setToolTip(tip)
@@ -306,18 +323,18 @@ class EditorInterface(QWidget):
         th.setContentsMargins(0, 0, 0, 0)
         th.setSpacing(4)
         self.b_prev = ToolButton(FIF.LEFT_ARROW, transport)
-        self.b_prev.setToolTip("上一条 ←")
+        self.b_prev.setToolTip(S("上一条 ←", "Previous ←"))
         self.b_play = PrimaryToolButton(FIF.PLAY, transport)
-        self.b_play.setToolTip("播放/暂停 空格")
+        self.b_play.setToolTip(S("播放/暂停 空格", "Play/pause — Space"))
         self.b_next = ToolButton(FIF.RIGHT_ARROW, transport)
-        self.b_next.setToolTip("下一条 →")
+        self.b_next.setToolTip(S("下一条 →", "Next →"))
         self.b_rewind = ToolButton(transport)
         self.b_rewind.setText("−5s")
         self.b_forward = ToolButton(transport)
         self.b_forward.setText("+5s")
         self.b_speed = ToolButton(transport)
         self.b_speed.setText("1.0x")
-        self.b_speed.setToolTip("播放速度（点击切换）")
+        self.b_speed.setToolTip(S("播放速度（点击切换）", "Playback speed (click to cycle)"))
         self.b_mute = ToolButton(FIF.VOLUME, transport)
         self.vol = Slider(Qt.Horizontal, transport)
         self.vol.setRange(0, 100)
@@ -326,18 +343,19 @@ class EditorInterface(QWidget):
         self.time_label = BodyLabel("0:00.00 / 0:00.00", transport)
         self.b_loop_a = ToolButton(transport)
         self.b_loop_a.setText("A")
-        self.b_loop_a.setToolTip("循环起点")
+        self.b_loop_a.setToolTip(S("循环起点", "Loop start"))
         self.b_loop_b = ToolButton(transport)
         self.b_loop_b.setText("B")
-        self.b_loop_b.setToolTip("循环终点")
+        self.b_loop_b.setToolTip(S("循环终点", "Loop end"))
         self.b_loop_clear = ToolButton(transport)
         self.b_loop_clear.setText("A-B")
-        self.b_loop_clear.setToolTip("取消循环")
+        self.b_loop_clear.setToolTip(S("取消循环", "Clear loop"))
         self.follow_btn = ToolButton(transport)
         self.follow_btn.setCheckable(True)
         self.follow_btn.setChecked(True)
-        self.follow_btn.setText("跟随")
-        self.follow_btn.setToolTip("播放时自动滚动到当前字幕")
+        self.follow_btn.setText(S("跟随", "Follow"))
+        self.follow_btn.setToolTip(S("播放时自动滚动到当前字幕",
+                                     "Auto-scroll to the current cue while playing"))
         for w in (self.b_prev, self.b_play, self.b_next, self.b_rewind, self.b_forward,
                   self.time_label, self.b_speed, self.vol, self.b_mute,
                   self.b_loop_a, self.b_loop_b, self.b_loop_clear, self.follow_btn):
@@ -362,7 +380,8 @@ class EditorInterface(QWidget):
         split.setStretchFactor(1, 1)
 
         # ---------------------------------------------------- 状态条
-        self.status = BodyLabel("就绪。拖入一个视频开始。", self)
+        self.status = BodyLabel(S("就绪。拖入一个视频开始。",
+                                  "Ready. Drop a video to begin."), self)
         self.status.setObjectName("editorStatus")
         root.addWidget(self.status)
 
@@ -380,9 +399,9 @@ class EditorInterface(QWidget):
         self.b_speed.clicked.connect(lambda: self.b_speed.setText(f"{self.player.cycle_speed():.2f}x"))
         self.b_mute.clicked.connect(lambda: self.vol.setValue(self.player.toggle_mute()))
         self.vol.valueChanged.connect(self.player.set_volume)
-        self.b_loop_a.clicked.connect(lambda: (self.player.set_loop_a(), self._say("已设循环起点 A")))
-        self.b_loop_b.clicked.connect(lambda: (self.player.set_loop_b(), self._say("已设循环终点 B")))
-        self.b_loop_clear.clicked.connect(lambda: (self.player.clear_loop(), self._say("已取消循环")))
+        self.b_loop_a.clicked.connect(lambda: (self.player.set_loop_a(), self._say(S("已设循环起点 A", "Loop start A set"))))
+        self.b_loop_b.clicked.connect(lambda: (self.player.set_loop_b(), self._say(S("已设循环终点 B", "Loop end B set"))))
+        self.b_loop_clear.clicked.connect(lambda: (self.player.clear_loop(), self._say(S("已取消循环", "Loop cleared"))))
         self.follow_btn.toggled.connect(lambda v: setattr(self, "_follow", bool(v)))
         self.player.positionChanged.connect(self._on_position)
         self.player.durationChanged.connect(self._on_duration)
@@ -503,24 +522,31 @@ class EditorInterface(QWidget):
         busy = state == "busy"
         ready = state == "ready"
         self.btn_start.setEnabled(ready)
-        self.btn_start.setText(" 正在转写…" if busy else " 开始转写")
+        self.btn_start.setText(S(" 正在转写…", " Transcribing…") if busy
+                               else S(" 开始转写", " Start transcription"))
         self.btn_import2.setEnabled(not busy)
         self.btn_cancel.setEnabled(busy)
         self.hero_bar.setVisible(busy)
         self.hero_pct.setVisible(busy)
         if state == "empty":
-            self.hero_title.setText("拖入视频，或选择一个文件开始")
-            self.hero_sub.setText("导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线")
+            self.hero_title.setText(S("拖入视频，或选择一个文件开始",
+                                      "Drop a video here, or pick a file to start"))
+            self.hero_sub.setText(S("导入后点「开始转写」：自动提取音频 → 本地 Whisper 识别，全程离线",
+                                    "After importing, press Transcribe: audio is extracted "
+                                    "automatically and recognized by local Whisper, fully offline"))
             self.hero_pct.setText("")
             self.hero_bar.setRange(0, 1000); self.hero_bar.setValue(0)
             self._refresh_recent()
         elif state == "ready":
-            self.hero_title.setText(msg or "视频已就绪")
-            self.hero_sub.setText("点「开始转写」：自动提取音频 → 本地 Whisper 识别（全程离线）")
+            self.hero_title.setText(msg or S("视频已就绪", "Video ready"))
+            self.hero_sub.setText(S("点「开始转写」：自动提取音频 → 本地 Whisper 识别（全程离线）",
+                                    "Press Transcribe: audio is extracted automatically and "
+                                    "recognized by local Whisper (fully offline)"))
             self.recent_row.setVisible(False)
         elif state == "busy":
-            self.hero_title.setText("正在转写…")
-            self.hero_sub.setText(msg or "提取音频 → 识别中，请稍候")
+            self.hero_title.setText(S("正在转写…", "Transcribing…"))
+            self.hero_sub.setText(msg or S("提取音频 → 识别中，请稍候",
+                                           "Extracting audio → recognizing, please wait"))
             self.recent_row.setVisible(False)
         self.hero.setVisible(state != "done")
 
@@ -757,7 +783,7 @@ class EditorInterface(QWidget):
             cur = self.table.currentRow()
             rows = [cur] if cur >= 0 else []
         if not rows and action not in ("insert", "close_gaps"):
-            self._say("先选中字幕条目。", 2000)
+            self._say(S("先选中字幕条目。", "Select a cue first."), 2000)
             return
         # 行号不是身份：去重+排序。来自右键菜单/框选/快捷键的列表可能
         # 乱序带重复，后面按 rows[0] 定位锚点会落在意想不到的行上
@@ -792,7 +818,8 @@ class EditorInterface(QWidget):
                 pos = cue.start + cue.duration / 2
             doc.split(r, pos)
             self._after_struct(r)
-            self._say(f"已在 {sec_to_ts(pos)} 拆分", 2000)
+            self._say(S(f"已在 {sec_to_ts(pos)} 拆分",
+                        f"Split at {sec_to_ts(pos)}"), 2000)
         elif action.startswith("shift:"):
             d = float(action.split(":", 1)[1])
             self.push_undo()
@@ -817,7 +844,8 @@ class EditorInterface(QWidget):
             item = self.table.item(r, col)
             v = ts_to_sec(item.text() if item else "")
             if v is None:
-                self._say("时间格式无法识别，请用 00:00:12.340 或 12.34", 2500)
+                self._say(S("时间格式无法识别，请用 00:00:12.340 或 12.34",
+                            "Time not recognized. Use 00:00:12.340 or 12.34"), 2500)
                 self.table.render(doc.cues, r)
                 return
             self.push_undo()
@@ -864,16 +892,18 @@ class EditorInterface(QWidget):
             self.push_undo()
             n = doc.split_long()
             self._after_struct(rows[0])
-            self._say(f"智能断句完成：拆出 {n} 条，Ctrl+Z 可撤销", 4000)
+            self._say(S(f"智能断句完成：拆出 {n} 条，Ctrl+Z 可撤销",
+                        f"Smart re-split done: {n} cues now, Ctrl+Z to undo"), 4000)
         elif action == "dedupe":
             # 删除 Whisper 复读机式的连续重复句（文档级，顺带合并时长）。
             self.push_undo()
             n = doc.dedupe_repeats()
             self._after_struct(0 if n else rows[0])
             if n:
-                self._say(f"已删除 {n} 条连续重复句，Ctrl+Z 可撤销", 4000)
+                self._say(S(f"已删除 {n} 条连续重复句，Ctrl+Z 可撤销",
+                            f"Removed {n} repeated lines, Ctrl+Z to undo"), 4000)
             else:
-                self._say("没有连续重复句需要删除。", 2500)
+                self._say(S("没有连续重复句需要删除。", "No repeated lines to remove."), 2500)
         elif action == "close_gaps":
             self.push_undo()
             # 阈值统一取 config 默认 0.35（曾与 CLI/workers 的 0.5 兜底
@@ -884,15 +914,19 @@ class EditorInterface(QWidget):
             self.timeline.update()
             self.main.mark_dirty()
             if touched:
-                self._say(f"已衔接 {touched} 处空隙（共 {saved:.1f}s，"
-                          f"阈值 ≤{mg:g}s），Ctrl+Z 可撤销", 4000)
+                self._say(S(f"已衔接 {touched} 处空隙（共 {saved:.1f}s，"
+                            f"阈值 ≤{mg:g}s），Ctrl+Z 可撤销",
+                            f"Closed {touched} gaps ({saved:.1f}s total, "
+                            f"threshold ≤{mg:g}s), Ctrl+Z to undo"), 4000)
             else:
-                self._say(f"没有 ≤{mg:g}s 的空隙需要处理。", 2500)
+                self._say(S(f"没有 ≤{mg:g}s 的空隙需要处理。",
+                            f"No gaps ≤{mg:g}s to close."), 2500)
         elif action == "copy":
             from PyQt5.QtWidgets import QApplication
             QApplication.clipboard().setText("\n".join(
                 doc.cues[r].display_text for r in rows))
-            self._say(f"已复制 {len(rows)} 条文本", 2000)
+            self._say(S(f"已复制 {len(rows)} 条文本",
+                        f"Copied {len(rows)} line(s)"), 2000)
         elif action == "play_range":
             c = doc.cues[rows[0]]
             self.player.set_loop_a(c.start)
@@ -941,7 +975,7 @@ class EditorInterface(QWidget):
 
     def undo(self) -> None:
         if not self.doc or not self._undo:
-            self._say("没有可撤销的操作。", 1500)
+            self._say(S("没有可撤销的操作。", "Nothing to undo."), 1500)
             return
         self._redo.append(self.doc.snapshot())
         self.doc.restore(self._undo.pop())
@@ -1103,17 +1137,18 @@ class EditorInterface(QWidget):
     def _replace_dialog(self) -> None:
         """批量替换：搜索词来自当前筛选框（与筛选同源），支持正则。"""
         if not self.doc or not self.doc.cues:
-            self._say("还没有字幕内容。", 2000)
+            self._say(S("还没有字幕内容。", "No subtitles yet."), 2000)
             return
         pat = self.search.text().strip()
         if not pat or pat.startswith("#"):
-            self._say("先在搜索框输入要找的内容（支持正则），再点替换。", 3500)
+            self._say(S("先在搜索框输入要找的内容（支持正则），再点替换。",
+                        "Type what to find in the search box (regex ok), then Replace."), 3500)
             return
         import re as _re
         try:
             rx = _re.compile(pat, _re.I)
         except _re.error as e:
-            self._say(f"正则无效：{e}", 4000)
+            self._say(S(f"正则无效：{e}", f"Invalid regex: {e}"), 4000)
             return
         # 收集命中的行与匹配数，让用户先看规模再动手
         hits: List[Tuple[int, Cue]] = []
@@ -1124,28 +1159,33 @@ class EditorInterface(QWidget):
                 hits.append((i, c))
                 total_matches += n
         if not hits:
-            self._say("没有匹配的行。", 2500)
+            self._say(S("没有匹配的行。", "No matching lines."), 2500)
             return
         dlg = QDialog(self)
-        dlg.setWindowTitle("批量替换")
+        dlg.setWindowTitle(S("批量替换", "Batch replace"))
         v = QVBoxLayout(dlg)
         v.setContentsMargins(18, 14, 18, 12)
         info = BodyLabel(
-            f"搜索词：{pat}\n命中 {len(hits)} 行 / {total_matches} 处（正则，忽略大小写）", dlg)
+            S(f"搜索词：{pat}\n命中 {len(hits)} 行 / {total_matches} 处（正则，忽略大小写）",
+              f"Search: {pat}\n{len(hits)} line(s) / {total_matches} match(es) "
+              "(regex, case-insensitive)"), dlg)
         info.setWordWrap(True)
         v.addWidget(info)
         row = QHBoxLayout()
-        row.addWidget(BodyLabel("替换为（留空即删除匹配内容）", dlg))
+        row.addWidget(BodyLabel(S("替换为（留空即删除匹配内容）",
+                                  "Replace with (empty = delete matches)"), dlg))
         inp = LineEdit(dlg)
-        inp.setPlaceholderText("可直接引用分组，如 $1 或 \\1")
+        inp.setPlaceholderText(S("可直接引用分组，如 $1 或 \\1",
+                                 "Group refs allowed, e.g. $1 or \\1"))
         row.addWidget(inp, 1)
         v.addLayout(row)
-        note = CaptionLabel("作用于全部命中行 · Ctrl+Z 可整体撤销", dlg)
+        note = CaptionLabel(S("作用于全部命中行 · Ctrl+Z 可整体撤销",
+                              "Applies to all matched lines · Ctrl+Z undoes all"), dlg)
         v.addWidget(note)
         btns = QHBoxLayout()
         btns.addStretch(1)
-        b_cancel = PushButton("取消", dlg)
-        b_ok = PrimaryPushButton("全部替换", dlg)
+        b_cancel = PushButton(S("取消", "Cancel"), dlg)
+        b_ok = PrimaryPushButton(S("全部替换", "Replace all"), dlg)
         btns.addWidget(b_cancel)
         btns.addWidget(b_ok)
         v.addLayout(btns)
@@ -1168,35 +1208,42 @@ class EditorInterface(QWidget):
             c.state = "edited"
             changed += 1
         if not changed:
-            self._say("替换后内容没有变化。", 2500)
+            self._say(S("替换后内容没有变化。", "Nothing changed after replace."), 2500)
             return
         self.table.render(self.doc.cues, hits[0][0])
         self.timeline.update()
         self._filter(self.search.text())
         self.update_status()
         self.main.mark_dirty()
-        self._say(f"已替换 {changed} 行（{total_matches} 处），Ctrl+Z 可撤销", 4000)
+        self._say(S(f"已替换 {changed} 行（{total_matches} 处），Ctrl+Z 可撤销",
+                    f"Replaced {changed} line(s) ({total_matches} match(es)), Ctrl+Z to undo"), 4000)
 
     def _open_project(self) -> None:
-        fp, _ = QFileDialog.getOpenFileName(self, "打开工程", self.cfg.last_dir or "",
-                                            "字幕工程 (*.ssp *.json);;所有文件 (*)")
+        fp, _ = QFileDialog.getOpenFileName(self, S("打开工程", "Open project"),
+                                            self.cfg.last_dir or "",
+                                            S("字幕工程", "Subtitle project") + " (*.ssp *.json);;"
+                                            + S("所有文件", "All files") + " (*)")
         if fp:
             self.main.load_project(fp)
 
     def _import_subtitle(self) -> None:
-        fp, _ = QFileDialog.getOpenFileName(self, "导入字幕/文稿", self.cfg.last_dir or "",
-                                            "字幕与文本 (*.srt *.vtt *.ass *.lrc *.txt *.json *.md);;所有文件 (*)")
+        fp, _ = QFileDialog.getOpenFileName(self, S("导入字幕/文稿", "Import subtitles/text"),
+                                            self.cfg.last_dir or "",
+                                            S("字幕与文本", "Subtitles & text")
+                                            + " (*.srt *.vtt *.ass *.lrc *.txt *.json *.md);;"
+                                            + S("所有文件", "All files") + " (*)")
         if not fp:
             return
         try:
             with open(fp, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read()
         except OSError as e:
-            self._say(f"读取失败：{e}", 4000)
+            self._say(S(f"读取失败：{e}", f"Read failed: {e}"), 4000)
             return
         cues, fmt = formats.import_text(text, fp)
         if not cues:
-            self._say("没能从这个文件解析出字幕。", 3000)
+            self._say(S("没能从这个文件解析出字幕。",
+                        "Could not parse any subtitles from this file."), 3000)
             return
         if self.doc is None:
             self.doc = CueDocument(source_video="", path="")
@@ -1213,7 +1260,8 @@ class EditorInterface(QWidget):
         # 会把表格渲染进不可见区域、hero 仍显示"拖入视频"，看着像导入没生效。
         self.set_document(self.doc, reset_history=False)
         self.main.mark_dirty()
-        self._say(f"已按 {fmt} 格式导入 {len(cues)} 条字幕。", 4000)
+        self._say(S(f"已按 {fmt} 格式导入 {len(cues)} 条字幕。",
+                    f"Imported {len(cues)} cue(s) as {fmt}."), 4000)
         self.main.switch_to("editor")
 
     # ------------------------------------------------------------ 状态
@@ -1222,11 +1270,15 @@ class EditorInterface(QWidget):
             return
         st = self.doc.stats()
         rev = st["review"]
-        msg = (f"共 <b>{st['count']}</b> 条 · {human_time(st['duration'])} · "
-               f"均 {st['avg_cps']:.0f} 字/条 · {st['chars_per_sec']:.1f} 字/秒 · "
-               f"已修正 {st['changed']}")
+        msg = (S(f"共 <b>{st['count']}</b> 条 · {human_time(st['duration'])} · "
+                 f"均 {st['avg_cps']:.0f} 字/条 · {st['chars_per_sec']:.1f} 字/秒 · "
+                 f"已修正 {st['changed']}",
+                 f"<b>{st['count']}</b> cues · {human_time(st['duration'])} · "
+                 f"avg {st['avg_cps']:.0f} chars/cue · {st['chars_per_sec']:.1f} chars/s · "
+                 f"changed {st['changed']}"))
         if rev:
-            msg += f" · {err_span(f'待复查 {rev}')}"
+            msg += S(f" · {err_span(f'待复查 {rev}')}",
+                     f" · {err_span(f'review {rev}')}")
         self.status.setText(msg)
         self.doc_changed.emit()
 
