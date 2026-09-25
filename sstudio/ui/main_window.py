@@ -104,8 +104,6 @@ class MainWindow(FluentWindow):
         self._fit_to_screen()
         self.setAcceptDrops(True)
 
-        apply_theme(self.cfg)
-
         # ------------------------------------------------------------ 界面叠影修复
         # qfluentwidgets 1.8.4 在 Win11 上默认开启 Mica：DWM 背板
         # （ACCENT_ENABLE_HOSTBACKDROP + SYSTEMBACKDROP）+ 框架延伸拉满整个
@@ -113,11 +111,17 @@ class MainWindow(FluentWindow):
         # StackedWidget 的半透明白样式和本程序的自定义 QApplication 调色板，
         # DWM 合成一步跟不上，用户看到的就是「界面渲染了好几层，叠在一起」。
         # 关掉 Mica 回到不透明实底，并把被拉满的框架延伸复位成标准窗口。
+        # 注意必须**先**关 Mica 再 apply_theme：setMicaEffectEnabled(False)
+        # 会触发 120ms 底色动画（alpha=0→实色），若放在 apply_theme 之后，
+        # show() 时动画仍在跑，首帧合成跳变 = 窗口闪一下。先关 Mica，
+        # 底色动画在 splash 背后（MainWindow 尚未显示）就结束。
         self.setMicaEffectEnabled(False)
         try:
             self.windowEffect.addShadowEffect(self.winId())
         except Exception:
             pass
+
+        apply_theme(self.cfg)
 
         # ------------------------------------------------------------ 页面
         self.editor = EditorInterface(self.cfg, self)

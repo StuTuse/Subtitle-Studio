@@ -4962,8 +4962,10 @@ section("229. 启动叠影修复：Mica 关闭 + 不透明底色 + 向导拆机�
 _src244 = _insp238.getsource(_MW242.MainWindow.__init__)
 check("init 里显式关 Mica", "setMicaEffectEnabled(False)" in _src244
       and "addShadowEffect" in _src244)
-check("关 Mica 在 apply_theme 之后", _src244.index("apply_theme(self.cfg)")
-      < _src244.index("setMicaEffectEnabled(False)"))
+# 第 252 节改为「先关 Mica 再 apply_theme」：底色动画必须在窗口可见前结束
+check("关 Mica 在 apply_theme 之前（防首帧闪烁）",
+      _src244.index("setMicaEffectEnabled(False)")
+      < _src244.index("apply_theme(self.cfg)"))
 # ② 向导拆机硬化：关窗路径必须停动画 + 摘 effect（0xC0000005 防护）
 _src244b = _insp238.getsource(__import__("sstudio.ui.welcome_wizard",
                                          fromlist=["WelcomeWizard"]).WelcomeWizard)
@@ -5731,6 +5733,44 @@ check("split words 归属", _p251[0].words[0]["word"] == "甲"
 _dd251 = _CD251(cues=[_Cu251(0, 1, "重复"), _Cu251(1, 2, " 重复 ")])
 check("dedupe 空白差异重复", _dd251.dedupe_repeats() == 1
       and len(_dd251.cues) == 1 and _dd251.cues[0].end == 2.0)
+
+section("252. 动效曲线与启动闪烁修复（用户体验反馈：返回动画后半段过猛/开窗闪烁）")
+_fx252 = _fx158 if "_fx158" in dir() else None
+if _fx252 is None:
+    from sstudio.ui import wizard_fx as _fx252  # noqa: E402
+# InCubic 前半段几乎不动、后半段骤加速（t=0.5 才走 12.5%）= 用力过猛的根源
+_inc = _fx252.EASE_IN.valueForProgress(0.5)
+_out = _fx252.EASE_INOUT.valueForProgress(0.5)
+check("InCubic 后半段确实骤加速（缺陷佐证）", _inc < 0.15, str(_inc))
+check("InOutCubic 中点对称", abs(_out - 0.5) < 1e-9, str(_out))
+check("page_out 用对称曲线", "EASE_INOUT" in
+      _insp238.getsource(_fx252.page_out) if _fx252 else
+      "EASE_INOUT" in open(os.path.join(_harness.ROOT, "sstudio", "ui", "wizard_fx.py"),
+                           encoding="utf-8").read())
+_fx252src = open(os.path.join(_harness.ROOT, "sstudio", "ui", "wizard_fx.py"),
+                 encoding="utf-8").read()
+check("page_out 不再用 InCubic", "a2.setEasingCurve(EASE_IN)" not in _fx252src)
+check("拍子常量新值", _fx252._PAGE_MS == 380 and _fx252._PAGE_OUT_MS == 260,
+      f"{_fx252._PAGE_MS}/{_fx252._PAGE_OUT_MS}")
+check("推入慢于退出（重叠节奏前提保持）", _fx252._PAGE_MS > _fx252._PAGE_OUT_MS)
+# 启动链：splash 必须盖住底色动画（200ms singleShot 延迟 finish），
+# Mica 关闭必须先于 apply_theme（底色动画在窗口可见前结束）
+_main252 = open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
+                encoding="utf-8").read()
+check("splash 延迟 finish 盖住底色动画", "QTimer.singleShot(200, splash.finish)" in _main252)
+check("show 前预排事件两圈", _main252.count("app.processEvents()") >= 4)
+_mw252 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
+              encoding="utf-8").read()
+check("Mica 先关再 apply_theme", _mw252.index("setMicaEffectEnabled(False)")
+      < _mw252.index("apply_theme(self.cfg)"))
+check("Mica 时序注释在位", "先关 Mica，" in _mw252)
+# 运行时实测：page_out 起停平滑（值域单调）
+from PyQt5.QtCore import QEasingCurve as _EC252, QCoreApplication as _CA252  # noqa: E402
+_app252 = _CA252.instance() or _CA252([])
+_e252 = _EC252(_EC252.InOutCubic)
+_mono252 = all(_e252.valueForProgress(a) <= _e252.valueForProgress(b) + 1e-9
+               for a, b in zip((0.0, 0.2, 0.4, 0.6, 0.8), (0.2, 0.4, 0.6, 0.8, 1.0)))
+check("InOutCubic 全程单调", _mono252)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

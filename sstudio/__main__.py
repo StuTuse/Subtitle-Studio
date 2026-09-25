@@ -192,6 +192,16 @@ def main(argv=None) -> int:
     splash.show_stage(S("正在初始化工作区…", "Initializing workspace…"))
     win = MainWindow(cfg)
 
+    # ---- 启动闪烁根治 ----
+    # MainWindow 构造时 setMicaEffectEnabled(False) 会触发底色动画（120ms
+    # QPropertyAnimation），apply_theme 的 setTheme 会全量刷新样式表——这些都
+    # 发生在窗口 show() 之前，但首次 show 的 1~2 帧里动画/重排还在收尾，
+    # DWM 合成跟不上就跳变 = 用户看到"窗口闪一下"。对策：show 之前先 process
+    # 事件把构造期遗留的样式/排版事件吃干净，show 后再等底色动画彻底结束才让
+    # splash 开始淡出（splash 盖住整个动画期，跳变发生在 splash 背后）。
+    app.processEvents()
+    app.processEvents()
+
     def _wake():
         # 第二实例请求唤醒：从托盘/最小化拉回前台
         try:
@@ -210,7 +220,8 @@ def main(argv=None) -> int:
         _p.requestUpdate()
     app.processEvents()
     app.processEvents()      # 第二圈：让 resize/排版事件真正落一帧，防"半成品第一帧"
-    splash.finish()
+    # 底色动画 120ms + 合成余量：splash 多盖 200ms 再淡出，闪烁全被挡在背后
+    QTimer.singleShot(200, splash.finish)
 
     # 崩溃恢复：上次会话有未保存的工程快照 → 主动问一次要不要恢复。
     # 延后一拍弹（InfoBar/对话框要等主窗真出来）；「不恢复」只忽略这一次，

@@ -22,11 +22,12 @@ from PyQt5.QtWidgets import (QGraphicsBlurEffect, QWidget)
 # macOS 同款缓动曲线
 EASE_OUT = QEasingCurve(QEasingCurve.OutCubic)          # 通用入场
 SPRING = QEasingCurve(QEasingCurve.OutBack)             # 徽标回弹
-EASE_IN = QEasingCurve(QEasingCurve.InCubic)            # 退场加速
+EASE_IN = QEasingCurve(QEasingCurve.InCubic)            # 深化（仅非对称场景）
+EASE_INOUT = QEasingCurve(QEasingCurve.InOutCubic)      # 退场：前后半段对称
 FINISH_EASE = QEasingCurve(QEasingCurve.InOutQuart)     # 完成仪式
 
-_PAGE_MS = 420          # 新页推入
-_PAGE_OUT_MS = 300      # 旧页退出
+_PAGE_MS = 380          # 新页推入
+_PAGE_OUT_MS = 260      # 旧页退出（对称曲线后可缩短，观感不变拖沓）
 _CASCADE_MS = 460       # 卡片级联
 _CASCADE_STAGGER = 55   # 级联错开
 _POP_MS = 520           # 徽标绽放
@@ -102,7 +103,7 @@ def cascade_in(widgets: List[Optional[QWidget]], delay: int = 90,
 
 
 def page_in(widget: QWidget, direction: int) -> None:
-    """页面推入：模糊消散入场（macOS 拍子 420ms）。
+    """页面推入：模糊消散入场（380ms，OutCubic 全程递减）。
 
     历史版本这里还会 move() 做侧向滑入——但页面由 QVBoxLayout 管几何，
     布局的 LayoutRequest 下一拍就把位置拍回槽位，位移从未真正可见过；
@@ -113,9 +114,13 @@ def page_in(widget: QWidget, direction: int) -> None:
 
 
 def page_out(widget: QWidget, direction: int, on_done=None) -> None:
-    """旧页退出：模糊加深（0→8px，300ms）。
+    """旧页退出：模糊加深（0→8px，260ms）。
 
     同 page_in：位移动画与布局打架且不可见，只保留模糊部分。
+    缓动用 InOutCubic 而不是 InCubic：InCubic 前半段几乎不动、后半段
+    骤然加速（t=0.5 才走 12.5%，t=0.7→1.0 走完 87.5%），观感是
+    "退出前半段没反应、后半段猛地糊一下"——正是"用力过猛"的来源。
+    InOutCubic 前后速率对称，模糊均匀加深，退场不再突兀。
     """
     blur = QGraphicsBlurEffect(widget)
     blur.setBlurRadius(0.0)
@@ -124,7 +129,7 @@ def page_out(widget: QWidget, direction: int, on_done=None) -> None:
     a2.setDuration(_PAGE_OUT_MS)
     a2.setStartValue(0.0)
     a2.setEndValue(8.0)
-    a2.setEasingCurve(EASE_IN)
+    a2.setEasingCurve(EASE_INOUT)
     grp = QParallelAnimationGroup(widget)
     grp.addAnimation(a2)
     if on_done:
