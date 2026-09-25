@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.271] - 2026-09-25
+
+v1.17.271：性能深审——5000 条大文档离屏剖析：全量构建 164ms、选行 1ms、切页 0ms、fix.refresh 4ms，QTableWidget 全量模式在当前量级余量充足（结论：暂不迁 model/view）；样式缓存/搜索防抖/行高钳制关键实现入钉防回退；补筛选统计与已导入提示双语
+
 ## [1.17.270] - 2026-09-25
 
 v1.17.270：死代码清理二期——新增全库 AST 引用扫描（探针）：移除 version._nearest_tag、transcriber._ensure_hf_endpoint、theme.crisp、theme.apply_card_margins、wizard_fx._animate 五个无调用点符号，sstudio 全库未引用符号归零
