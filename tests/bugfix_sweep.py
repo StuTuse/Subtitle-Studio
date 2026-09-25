@@ -5231,6 +5231,65 @@ _src235set = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py
                   encoding="utf-8").read()
 check("设置页推荐标仍是 1.00", "1.00 ×（推荐）" in _src235set)
 
+section("236. 批量队列多文件顺序转写（第 245 轮 backlog ③ 钉子）")
+from sstudio.ui.main_window import MainWindow as _MW236  # noqa: E402
+_w236 = _MW236(_Cfg235())
+_w236.show()
+_app159.processEvents()
+_a236 = os.path.abspath("nonexist_a_236.mp4")
+_b236 = os.path.abspath("nonexist_b_236.mp4")
+_w236.enqueue_batch([_a236, _b236])
+check("队列 2 项", len(_w236._queue) == 2)
+_w236.enqueue_batch([_a236, _b236])
+check("重复拖入去重", len(_w236._queue) == 2)
+_w236._queue = [os.path.abspath(f"nonexist_x_{i}_236.mp4") for i in range(200)]
+_w236.enqueue_batch([os.path.abspath("nonexist_y_236.mp4")])
+check("队列上限 200", len(_w236._queue) == 200)
+_w236._queue = []
+_w236._queue_active = True
+_w236._queue = []
+_w236._queue_next()
+check("空队列关闸", not _w236._queue_active)
+_w236._queue_active = True
+_w236._queue = [_a236, _b236]
+_w236._queue_next()
+_app159.processEvents()
+check("消失文件全跳过关闸", not _w236._queue_active)
+_w236._queue_active = True
+_w236.cancel_transcribe()
+check("cancel 停队", not _w236._queue_active and _w236._queue == [])
+_w236._queue_active = False
+_w236._queue_advance()
+check("关闸时 advance 不动", not _w236._queue_running())
+# 自动保存语义：存视频旁、doc.path 回写、清脏标、可读回
+_tp236d = _CD232(source_video=_wavp245 if os.path.isfile(_wavp245) else
+                 "D:/no-such-236.mp4", duration=5.0,
+                 cues=[_Cue232(0, 1, "甲")])
+_sv236 = os.path.join(_tp175.gettempdir(), "batchq_236.mp4")
+with open(_sv236, "wb") as _sf236:
+    _sf236.write(b"\0" * 2048)
+_tp236d = _CD232(source_video=_sv236, duration=5.0, cues=[_Cue232(0, 1, "甲")])
+_w236._queue_active = True
+_w236._queue_autosave(_tp236d)
+_exp236 = os.path.splitext(_sv236)[0] + ".ssp"
+check("自动保存到视频旁", os.path.isfile(_exp236))
+check("doc.path 回写", _tp236d.path == _exp236)
+check("保存后清脏标", not _w236._dirty)
+_back236b = _CD232.from_dict(_json232.load(open(_exp236, encoding="utf-8")))
+check("落盘工程可读回", _back236b.cues[0].text == "甲")
+os.remove(_exp236)
+os.remove(_sv236)
+# 源码级：dropEvent 多文件走队列、队列模式跳模型问框、失败续跑
+_mw236src = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
+                 encoding="utf-8").read()
+check("dropEvent 多文件入队", "enqueue_batch(media_paths)" in _mw236src
+      and "len(media_paths) >= 2" in _mw236src)
+check("队列模式跳模型问框", "model_missing(_mdl) and not queue_mode"
+      in _mw236src)
+check("失败续跑不清队", _mw236src.count("_queue_advance()") >= 2
+      and "队列继续处理下一个" in _mw236src)
+_w236.close()
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

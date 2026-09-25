@@ -79,6 +79,8 @@ class MainWindow(FluentWindow):
         self._prog_timer = QTimer(self)   # 转写进度节流定时器
         self._autosave_worker = None   # 自动保存线程（单飞，见 _auto_save）
         self._dirty_gen = 0            # dirty 代数：自动保存完成时复核用
+        self._queue: list = []         # 批量队列：待顺序转写的媒体绝对路径
+        self._queue_active = False     # 队列开关：_queue_advance 只在开时续跑
         self._prog_timer.setSingleShot(True)
         self._prog_timer.timeout.connect(self._flush_progress)
 
@@ -220,14 +222,21 @@ class MainWindow(FluentWindow):
         e.ignore()
 
     def dropEvent(self, e: QDropEvent) -> None:  # noqa: N802
+        media_paths: list = []
         for u in e.mimeData().urls():
             p = u.toLocalFile()
             if media.is_media(p):
-                self.open_media(p)
-                return
-            if os.path.splitext(p)[1].lower() in self._DROP_EXTS:
+                media_paths.append(p)
+            elif os.path.splitext(p)[1].lower() in self._DROP_EXTS:
                 self._load_any(p)
                 return
+        if len(media_paths) >= 2:
+            # 多文件拖入 = 批量队列：逐个 转写 → 存 .ssp → 下一个。
+            # 当前有转写在跑也不打断：队列会在当前任务结束后自动接上。
+            self.enqueue_batch(media_paths)
+            return
+        if media_paths:
+            self.open_media(media_paths[0])
 
     # ------------------------------------------------------------ 打开
     def open_media_dialog(self) -> None:
@@ -490,15 +499,22 @@ class MainWindow(FluentWindow):
         self.setWindowTitle(f"{'● ' if self._dirty else ''}{name} — Subtitle Studio")
 
     # ------------------------------------------------------------ 转写
-    def start_transcribe(self) -> None:
+    def start_transcribe(self, queue_mode: bool = False) -> None:
         if self._worker is not None:
             return          # 已在转写中：由「取消」按钮负责停止
         # 注意：CueDocument 有 __len__，空字幕 doc 的布尔值是 False，判空用 is None
         if self.doc is None or not self.doc.source_video:
+            if queue_mode:
+                # 队列模式没有视频可弹对话框：跳过此项（_queue_next 兜底续跑）
+                QTimer.singleShot(300, self._queue_next)
+                return
             self.open_media_dialog()
             if self.doc is None or not self.doc.source_video:
                 return
         if not self.doc.source_video or not os.path.isfile(self.doc.source_video):
+            if queue_mode:
+                QTimer.singleShot(300, self._queue_next)
+                return
             self._warn("视频文件丢失", "请先重新导入视频。")
             return
 
@@ -518,10 +534,12 @@ class MainWindow(FluentWindow):
 
         # 模型缺失预检：首次转写要下约 1.5GB，黑盒等待是旅程最大痛点。
         # 开跑前明说，用户可选继续或先去设置换本地模型。
+        # 队列模式跳过该问框：队列已经开跑，反复弹窗打断批量；下载进度
+        # 本身可见，模型缺失的失败也会在单个任务上报错并续跑下一个。
         try:
             from ..core.transcriber import model_missing, model_download_size_mb
             _mdl = (self.cfg.whisper_model or "").strip() or "large-v3-turbo"
-            if model_missing(_mdl):
+            if model_missing(_mdl) and not queue_mode:
                 mb = model_download_size_mb(_mdl)
                 box = _CloseAskBox(
                     "首次使用需下载模型",
@@ -556,7 +574,17 @@ class MainWindow(FluentWindow):
 
     def cancel_transcribe(self) -> None:
         """hero 面板上的「取消」：终止当前转写，回到待转写状态。"""
+        # 用户主动取消 = 连批量队列一起停（避免"点了取消还在后台一个个跑"）。
+        # 放在 worker 判空之前：队列开着但当前项恰在换挡间隙（无 worker）
+        # 时点取消也必须停队，否则定时器还会拉起下一项。
+        if self._queue_running():
+            self._queue = []
+            self._queue_active = False
+            self._queue_stop_note = True
         if self._worker is None:
+            if getattr(self, "_queue_stop_note", False):
+                self._queue_stop_note = False
+                self.editor.status.setText("批量队列已停止，可重新开始。")
             return
         w = self._worker
         w.cancel()
@@ -575,6 +603,9 @@ class MainWindow(FluentWindow):
             self.doc is not None and self.doc.source_video) else "视频"
         self.editor._set_flow("ready", f"已导入：{name}")
         self.editor.status.setText("已取消转写，可重新开始。")
+        if getattr(self, "_queue_stop_note", False):
+            self._queue_stop_note = False
+            self.editor.status.setText("批量队列已停止，可重新开始。")
 
     def _on_progress(self, gen: int, msg: str, pct: float) -> None:
         if self._stale(gen):
@@ -644,6 +675,32 @@ class MainWindow(FluentWindow):
                            "防止播放时闪断。" if m.get("gaps_closed") else "")
                         + "建议接着做 AI 纠错。", parent=self,
                         position=InfoBarPosition.TOP, duration=6000)
+        # 批量队列：本条完成 → 自动把 .ssp 存到视频旁边 → 接着下一条。
+        # 自动保存绝不弹框（队列模式下 getSaveFileName 会卡住整个队列）。
+        if self._queue_running():
+            self._queue_autosave(doc)
+        self._queue_advance()
+
+    def _queue_autosave(self, doc: CueDocument) -> None:
+        """批量队列的落盘策略：优先工程已有路径；否则存到视频旁边
+        <视频名>.ssp。只吞 OSError，写失败不打断队列。"""
+        try:
+            path = doc.path
+            if not path and doc.source_video:
+                path = os.path.splitext(doc.source_video)[0] + ".ssp"
+            if not path:
+                return
+            if not path.lower().endswith(".ssp"):
+                path += ".ssp"
+            self._save_gen = getattr(self, "_save_gen", 0) + 1
+            _atomic_write_text(path, doc.to_json())
+            doc.path = path
+            self._dirty = False
+            self.cfg.add_recent(path)
+            self.editor.status.setText(
+                f"批量队列：已保存 {os.path.basename(path)}。")
+        except OSError:
+            pass
 
     def _on_transcribe_failed(self, gen: int, msg: str) -> None:
         if self._stale(gen):
@@ -670,8 +727,19 @@ class MainWindow(FluentWindow):
             self.editor._set_flow("empty")
         if cancelled:
             self.editor.status.setText("已取消转写，可重新开始。")
+            # 队列模式下的取消 = 停止整个批量（不自动续跑下一条）
+            if self._queue_running():
+                self._queue = []
+                self._queue_active = False
+                self.editor.status.setText("批量队列已停止，可重新开始。")
             return
         self.editor.status.setText("转写失败。")
+        if self._queue_running():
+            # 单个任务失败不拖垮整个队列：记下错误，自动续跑下一个
+            self.editor.status.setText(
+                f"转写失败（{os.path.basename(getattr(self.doc, 'source_video', '') or '')}），"
+                "队列继续处理下一个。")
+        self._queue_advance()
         InfoBar.error("转写失败", msg[:600], parent=self,
                       position=InfoBarPosition.TOP, duration=9000)
 
@@ -689,6 +757,67 @@ class MainWindow(FluentWindow):
         self.progress.setVisible(False)
         self.progress.setRange(0, 0)
         self.progressLabel.setVisible(False)
+
+    # ------------------------------------------------------------ 批量队列
+    def enqueue_batch(self, paths: list) -> None:
+        """多文件顺序转写队列：逐个 导入 → 转写 → 存 .ssp → 下一个。
+
+        当前转写在跑时不打断：队列排后面，当前任务收尾时自动接上。
+        已在队列里的文件去重；队列上限 200 防止误拖整个文件夹失控。
+        """
+        q = getattr(self, "_queue", [])
+        seen = {os.path.abspath(p) for p in q}
+        seen |= {os.path.abspath(self.doc.source_video) if
+                 (self.doc is not None and self.doc.source_video) else ""}
+        added = 0
+        for p in paths:
+            ap = os.path.abspath(p)
+            if ap in seen or len(q) >= 200:
+                continue
+            q.append(ap)
+            seen.add(ap)
+            added += 1
+        self._queue = q
+        if added:
+            InfoBar.success("已加入批量队列",
+                            f"{added} 个文件排队（共 {len(q)} 个待处理），"
+                            "逐个转写并保存 .ssp。可点「取消」随时停止。",
+                            parent=self, position=InfoBarPosition.TOP,
+                            duration=5000)
+            if self._worker is None and not self._queue_running():
+                QTimer.singleShot(600, self._queue_next)
+
+    def _queue_running(self) -> bool:
+        return getattr(self, "_queue_active", False)
+
+    def _queue_next(self) -> None:
+        """取下一个队列项开跑。队列空了回到普通 ready 态。"""
+        q = getattr(self, "_queue", [])
+        # 跳过运行中已被删掉/消失的文件
+        while q and not os.path.isfile(q[0]):
+            q.pop(0)
+        if not q:
+            self._queue_active = False
+            return
+        self._queue_active = True
+        path = q.pop(0)
+        self._queue = q
+        self.open_media(path)          # 走同一套未保存确认/导入链
+        if self.doc is not None and self.doc.source_video and \
+                os.path.abspath(self.doc.source_video) == path and \
+                self._worker is None:
+            # open_media 被未保存框挡住（用户点了取消）或导入失败：
+            # 队列不能卡死，跳过它继续
+            QTimer.singleShot(400, self._queue_next)
+            return
+        if self._worker is not None:
+            self.start_transcribe(queue_mode=True)
+
+    def _queue_advance(self) -> None:
+        """单个任务收尾（成功/失败/取消）后由 _on_transcribed/_failed 调。"""
+        if not self._queue_running():
+            return
+        QTimer.singleShot(800, self._queue_next)
 
     # ------------------------------------------------------------ 杂项
     def _on_doc_changed(self) -> None:
