@@ -5697,6 +5697,41 @@ check("avg_logprob 回退保留", abs(_bad250[1].confidence - (-0.3)) < 1e-9,
       repr(_bad250[1].confidence))
 check("数值置信度归一 float", isinstance(_bad250[1].confidence, float))
 
+section("251. 智能断句硬切路径修复 + model 核心边界（第 246 封顶轮）")
+from sstudio.core.model import (normalize_cues as _nc251, _smart_split as _ss251,  # noqa: E402
+                                Cue as _Cu251, CueDocument as _CD251)
+# 真缺陷：硬切路径（无标点超长串）原先没有省略号/破折号保护，
+# '……' 被劈成两头的孤立单点（第 47 轮只修了「平均再切一刀」路径）。
+_d251 = _CD251(cues=[_Cu251(0, 8, "犹豫……很长" * 10)])
+_d251.split_long(max_chars=7, max_dur=8.0)
+_txt251 = [c.text for c in _d251.cues]
+check("硬切不劈省略号", all(not (t.startswith("…") and not t.startswith("……"))
+                            and not (t.endswith("…") and not t.endswith("……"))
+                            for t in _txt251), repr(_txt251[:3]))
+check("硬切文本无损", "".join(_txt251) == "犹豫……很长" * 10)
+check("硬切段数合理", len(_txt251) == 10, str(len(_txt251)))
+_d251b = _CD251(cues=[_Cu251(0, 8, "甲——乙" * 12)])
+_d251b.split_long(max_chars=7, max_dur=8.0)
+check("硬切不劈破折号", all(not (c.text.endswith("—") and not c.text.endswith("——"))
+                            for c in _d251b.cues))
+# 全标点极端串不挂起（_hard_cut 与 need 路径双钉）
+_ss251(_Cu251(0, 1, "…………" * 3), 1, 0.5)
+check("全标点极端串不挂起", True)
+# 常规语义复核
+_d251c = _CD251(cues=[_Cu251(0, 0.05, "极短"), _Cu251(0.06, 2.0, "正常")])
+_nc251(_d251c)
+check("normalize 最短时长优先", _d251c.cues[0].end - _d251c.cues[0].start >= 0.2 - 1e-9)
+_m251 = _CD251(cues=[_Cu251(0, 1, "A"), _Cu251(2, 3, "mid"), _Cu251(4, 5, "B")]).merge([0, 2])
+check("merge 隔行不吞中间行", _m251 is not None and "A" in _m251.text and "B" in _m251.text)
+_sw251 = _CD251(cues=[_Cu251(0, 10, "一二三四五六七八九十甲乙丙丁",
+                             words=[{"start": 1.0, "word": "甲"}, {"start": 8.0, "word": "乙"}])])
+_p251 = _sw251.split(0, 5.0)
+check("split words 归属", _p251[0].words[0]["word"] == "甲"
+      and _p251[1].words[0]["word"] == "乙")
+_dd251 = _CD251(cues=[_Cu251(0, 1, "重复"), _Cu251(1, 2, " 重复 ")])
+check("dedupe 空白差异重复", _dd251.dedupe_repeats() == 1
+      and len(_dd251.cues) == 1 and _dd251.cues[0].end == 2.0)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

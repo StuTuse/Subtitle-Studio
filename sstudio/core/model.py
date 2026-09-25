@@ -374,6 +374,27 @@ class CueDocument:
                      if isinstance(c, dict)]
 
 
+def _hard_cut(s: str, max_chars: int) -> List[str]:
+    """无标点超长串的硬切：与『平均再切一刀』路径同一条省略号/破折号保护
+    规则——切点落在 …/— 整串标点中间时，把切点移到整串标点左端之外，
+    宁可这段超一点也不把一个省略号劈成两头的孤立单点。极端串（整段全是
+    标点）退化为在第 1 个字符后切，不会挂起。"""
+    out: List[str] = []
+    rest = s
+    while len(rest) > max_chars:
+        cut = max_chars
+        if cut < len(rest) and rest[cut - 1] in "…—" and rest[cut] in "…—":
+            j = cut
+            while j > 1 and rest[j - 1] in "…—":
+                j -= 1
+            cut = j
+        out.append(rest[:cut])
+        rest = rest[cut:]
+    if rest:
+        out.append(rest)
+    return out
+
+
 def _smart_split(cue: Cue, max_chars: int, max_dur: float) -> List[Cue]:
     """优先按标点/换行切，其次按字数切；时间按字数比例分配。"""
     text = cue.display_text
@@ -390,9 +411,9 @@ def _smart_split(cue: Cue, max_chars: int, max_dur: float) -> List[Cue]:
             else:
                 if buf:
                     segments.append(buf)
-                while len(p) > max_chars:  # 无标点的超长串，硬切
-                    segments.append(p[:max_chars])
-                    p = p[max_chars:]
+                if len(p) > max_chars:      # 无标点的超长串，硬切
+                    segments.extend(_hard_cut(p, max_chars))
+                    p = ""
                 buf = p
         if buf:
             segments.append(buf)
