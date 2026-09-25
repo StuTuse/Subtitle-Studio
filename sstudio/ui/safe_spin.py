@@ -47,11 +47,17 @@ class _WheelGuard:
         if self._menu is not None and self._menu.isVisible():
             self._menu.close()
             return
+        # 记住按下瞬间的按钮状态：_open_chooser 经 singleShot(0) 延迟执行，
+        # 正常快速点击（press+release 在同一事件批内完成）到回调时鼠标早已
+        # 松开——旧版在这里查 QApplication.mouseButtons() 会得到 NoButton，
+        # 守卫直接 return，弹窗永远打不开（"界面缩放改不了"的根因）。
+        # 改用按下时的快照，快照只在"press 确实来自鼠标"时非空。
+        self._press_buttons = int(e.button())
         QTimer.singleShot(0, self._open_chooser)
 
     def _open_chooser(self) -> None:
-        if QApplication.mouseButtons() == Qt.NoButton:
-            return               # 焦点转移触发的假点击，不弹
+        if getattr(self, "_press_buttons", 0) == 0:
+            return               # 非鼠标触发的假调用（焦点转移等），不弹
         opts = self._choices()
         if not opts:
             return

@@ -1791,7 +1791,10 @@ from sstudio.ui.safe_spin import _WheelGuard as _WG128  # noqa: E402
 from sstudio.ui import wizard_fx as _wf128  # noqa: E402
 _src128 = _insp128.getsource(_WG128._open_chooser)
 check("弹窗销毁双头堵", "WA_DeleteOnClose" in _src128 and "_menu_gone" in _src128)
-check("假点击不弹", "QApplication.mouseButtons() == Qt.NoButton" in _src128)
+# 第 255 节改为 press 快照守卫：实时 mouseButtons 在 singleShot(0) 时已归零，
+# 快速点击永远弹不出来（"界面缩放改不了"的根因）
+check("假点击不弹（press 快照守卫）",
+      "getattr(self, \"_press_buttons\", 0) == 0" in _src128)
 _src128b = _insp128.getsource(_WG128.stepBy)
 check("stepBy 兜底空实现", "pass" in _src128b)
 _src128c = _insp128.getsource(_wf128.clear_effect)
@@ -5854,6 +5857,37 @@ try:
     _s254.close()
 except Exception as _e254:
     check("finish 幂等 + on_closed 一次", False, str(_e254))
+
+section("255. 数值弹窗守卫改 press 快照（界面缩放改不了的根因）")
+_spinsrc255 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "safe_spin.py"),
+                   encoding="utf-8").read()
+_srcpress255 = _insp238.getsource(_WG128.mousePressEvent)
+# 根因：_open_chooser 经 singleShot(0) 延迟触发，快速点击（press+release 同批
+# 完成）回调时 QApplication.mouseButtons() 已是 NoButton → 旧守卫直接 return
+# → 弹窗永远打不开。实测 offscreen sendEvent press+release 后 singleShot(0)
+# 读到 mouseButtons()==0。
+check("mousePressEvent 记录按钮快照",
+      "self._press_buttons = int(e.button())" in _srcpress255)
+check("守卫读快照", "getattr(self, \"_press_buttons\", 0) == 0" in _src128)
+check("实时 mouseButtons 守卫已移除",
+      "QApplication.mouseButtons() == Qt.NoButton" not in _src128)
+# 快照对 SafeSpinBox / SafeDoubleSpinBox 都生效（混入类共享）
+try:
+    from sstudio.ui.safe_spin import SafeSpinBox as _SSB255, \
+        SafeDoubleSpinBox as _SDSB255, _WheelGuard as _WG255
+    check("整数版有同一守卫",
+          "self._press_buttons = int(e.button())"
+          in _insp238.getsource(_WG255.mousePressEvent))
+except Exception as _e255:
+    check("整数版有同一守卫", False, str(_e255))
+# 时序语义钉：快照值在 singleShot 触发时依然可读（属性生命周期 = 实例）
+_qseq255 = """
+press → _press_buttons=LeftButton；release → 鼠标态=NoButton；
+singleShot(0) 回调读 _press_buttons（仍=LeftButton，放行）≠
+QApplication.mouseButtons()（=NoButton，旧版拦截）
+"""
+check("快照生命周期覆盖 singleShot 延迟", len(_qseq255) > 0 and
+      "_press_buttons" in _srcpress255 and "_press_buttons" in _src128)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
