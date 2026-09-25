@@ -1768,7 +1768,7 @@ check("同名预设覆盖不堆积", "if e.get(\"name\") != name] + [entry]" in 
 _src126d = _insp126.getsource(_SP126._test_done)
 check("错误消息转义截 200 防顶坏布局", "_esc((msg or \"\")[:200])" in _src126d)
 _src126e = _insp126.getsource(_SP126._fill_models)
-check("自定义路径模型插最前", "insertItem(0, f\"{shown}  [自定义路径]\", userData=cur)" in _src126e)
+check("自定义路径模型插最前", "insertItem(0, S(f\"{shown}  [自定义路径]\", f\"{shown}  [custom path]\"), userData=cur)" in _src126e)
 
 section("108. 字幕表渲染与交互语义（第 127 轮钉子）")
 import inspect as _insp127  # noqa: E402
@@ -1850,8 +1850,8 @@ check("探测路径转义", "_esc(rt.cublas_dir)" in _src132 and "_esc(rt.note)"
 _src132b = _insp132.getsource(_spmod132.SettingsInterface._build_asr)
 check("translate 前缀在语言下拉", "translate:zh" in _src132b)
 _src132c = _insp132.getsource(_spmod132.SettingsInterface._build_misc)
-check("缩放 0=跟随系统 specialValue", "setSpecialValueText(\"跟随系统\")" in _src132c)
-check("空隙衔接开关双文案", "setOnText(\"衔接\")" in _src132c and "setOffText(\"留缝\")" in _src132c)
+check("缩放 0=跟随系统 specialValue", "setSpecialValueText(S(\"跟随系统\", \"System\"))" in _src132c)
+check("空隙衔接开关双文案", "setOnText(S(\"衔接\", \"Join\"))" in _src132c and "setOffText(S(\"留缝\", \"Keep gap\"))" in _src132c)
 
 section("114. 编辑页动作分发与撤销语义（第 133 轮钉子）")
 import inspect as _insp133  # noqa: E402
