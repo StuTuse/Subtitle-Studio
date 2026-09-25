@@ -305,3 +305,65 @@ def default_wav_path(video_path: str) -> str:
     except OSError:
         pass
     return dest
+
+
+WAVE_SR = 8000          # 波形分析采样率：8kHz 足够画能量包络
+WAVE_POINTS_PER_SEC = 50   # 每秒峰值点数：1 小时视频 ≈ 18 万点（float 列表 ~1.4MB）
+
+
+def extract_waveform(path: str, points_per_sec: int = WAVE_POINTS_PER_SEC,
+                     cancel: Optional[Callable[[], bool]] = None
+                     ) -> tuple:
+    """从媒体文件提取归一化波形峰值（给时间轴画能量条）。
+
+    返回 (peaks, duration)：peaks 是 0..1 的 float 列表，均匀覆盖全片；
+    失败/取消返回 ([], 0.0)。纯 Python 解码（PyAV resample 到 8kHz 单声道），
+    一小时视频约 20~40s，工作线程调用不卡 UI。
+    """
+    import av as _av
+    try:
+        info = probe(path)
+        total = info.duration or 0.0
+        if total <= 0:
+            return [], 0.0
+        c = _av.open(path)
+        try:
+            stream = next(iter(c.streams.audio), None)
+            if stream is None:
+                return [], 0.0
+            resampler = _av.AudioResampler(format="s16", layout="mono",
+                                           rate=WAVE_SR)
+            n_points = max(1, int(total * points_per_sec))
+            # 每点桶内最大绝对值 = 该时刻的能量峰值
+            bucket = [0.0] * n_points
+            scale = 1.0 / 32768.0
+            for frame in c.decode(stream):
+                if cancel and cancel():
+                    return [], 0.0
+                for rf in resampler.resample(frame):
+                    arr = rf.to_ndarray()
+                    if arr.ndim > 1:
+                        arr = arr[0]
+                    # 分帧写桶：pts 换算出该帧起止位置
+                    start = 0.0
+                    if frame.pts is not None and frame.time_base:
+                        start = float(frame.pts * frame.time_base)
+                    fi = int(start * WAVE_SR)
+                    step = n_points / (WAVE_SR * (total or 1.0))
+                    for i, v in enumerate(arr):
+                        a = abs(int(v)) * scale
+                        pi = int((fi + i) * step)
+                        if 0 <= pi < n_points and a > bucket[pi]:
+                            bucket[pi] = a
+            # 轻度归一化：95 分位封顶（防个别爆点把全片压扁）
+            if not bucket:
+                return [], 0.0
+            srt = sorted(bucket)
+            ref = srt[int(len(srt) * 0.95)] or 1.0
+            cap = min(1.0, max(ref, 0.05))
+            peaks = [min(1.0, v / cap) for v in bucket]
+            return peaks, total
+        finally:
+            c.close()
+    except Exception:
+        return [], 0.0

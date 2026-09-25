@@ -4982,6 +4982,61 @@ check("独立进程 Mica/底色全绿", _r244.returncode == 0,
       (_r244.stdout + _r244.stderr).splitlines()[-1][:120]
       if (_r244.stdout + _r244.stderr).strip() else "")
 
+section("230. 时间线音频波形（第 245 轮 backlog ① 钉子）")
+# ① extract_waveform：合成 wav（0-1s 静音 + 1-2s 440Hz 正弦）语义全钉
+import wave as _wv245, math as _m245, struct as _st245  # noqa: E402
+_wavp245 = os.path.join(_tp175.gettempdir(), "sw245sweep.wav")
+_sr245 = 8000
+with _wv245.open(_wavp245, "wb") as _wf245:
+    _wf245.setnchannels(1); _wf245.setsampwidth(2); _wf245.setframerate(_sr245)
+    _fr245 = bytearray()
+    for _i245 in range(_sr245 * 2):
+        _v245 = int(20000 * _m245.sin(2 * _m245.pi * 440 * _i245 / _sr245)) \
+            if _i245 >= _sr245 else 0
+        _fr245 += _st245.pack("<h", _v245)
+    _wf245.writeframes(bytes(_fr245))
+from sstudio.core.media import extract_waveform as _ewf245, \
+    WAVE_POINTS_PER_SEC as _wpps245  # noqa: E402
+_peaks245, _dur245 = _ewf245(_wavp245)
+check("波形时长 2s", abs(_dur245 - 2.0) < 0.2)
+check("波形点数=50/s", 80 <= len(_peaks245) <= 120,
+      f"len={len(_peaks245)}")
+check("静音段能量≈0", max(_peaks245[:int(len(_peaks245) * 0.4)]) < 0.15)
+check("发声段能量>0.5", max(_peaks245[int(len(_peaks245) * 0.6):]) > 0.5)
+check("归一化 0..1", all(0.0 <= _v <= 1.0 for _v in _peaks245))
+_p245b, _d245b = _ewf245(r"D:\no-such-245.mp4")
+check("失败返回空", _p245b == [] and _d245b == 0.0)
+os.remove(_wavp245)
+# ② Timeline API：喂入/清除/渲染/换文档保留
+from sstudio.ui.timeline import Timeline as _TL245  # noqa: E402
+_tl245 = _TL245()
+_tl245.resize(600, 74)
+_tl245.show()
+_app159.processEvents()
+check("默认无波形", not _tl245.has_waveform())
+_tl245.set_waveform(_peaks245, _dur245)
+_app159.processEvents()
+check("set_waveform 生效", _tl245.has_waveform()
+      and len(_tl245._wave) == len(_peaks245))
+_tl245.set_waveform([], 0)
+_app159.processEvents()
+check("空列表清除", not _tl245.has_waveform())
+_tl245.set_waveform(_peaks245, _dur245)
+_tl245.doc = _harness.sample_doc()
+_tl245.duration = 8.0
+_tl245.content_changed()
+_app159.processEvents()
+_pm245 = _tl245._build_static(600, 74, True)
+check("带波形渲染不抛", _pm245 is not None and not _pm245.isNull())
+_tl245.set_document(_harness.sample_doc())
+check("换文档波形保留", _tl245.has_waveform())
+# ③ 编辑器接线：load_waveform 防重入 + set_document 自动触发（源码级）
+_src245 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
+               encoding="utf-8").read()
+check("编辑器 load_waveform 防重入", "_wave_job_path" in _src245
+      and "ThreadedCall(_wave_peaks" in _src245)
+check("set_document 自动触发", "self.load_waveform(doc.source_video)" in _src245)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

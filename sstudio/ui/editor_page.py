@@ -27,6 +27,15 @@ from .theme import err_span, human_time, is_dark
 from .timeline import Timeline
 
 
+def _wave_peaks(path: str):
+    """工作线程入口：解码音频返回 (peaks, duration)。失败返回 ([], 0.0)。"""
+    try:
+        from ..core.media import extract_waveform
+        return extract_waveform(path)
+    except Exception:
+        return [], 0.0
+
+
 class EditorInterface(QWidget):
     doc_changed = pyqtSignal()
     say = pyqtSignal(str, int)
@@ -584,6 +593,7 @@ class EditorInterface(QWidget):
         if doc is not None and doc.source_video and os.path.isfile(doc.source_video):
             self.player.load(doc.source_video)
             self.player.set_volume(self.cfg.player_volume)
+            self.load_waveform(doc.source_video)   # 后台解码能量条喂时间轴
         self._refresh_enabled()
         self._filter(self.search.text())
         self.update_status()
@@ -612,6 +622,45 @@ class EditorInterface(QWidget):
         top_min = self.split.widget(0).minimumSizeHint().height()
         t = max(min(int(h * 0.38), 320), top_min, 200)
         self.split.setSizes([t, max(h - t, 400)])
+
+    # ------------------------------------------------------------ 音频波形
+    def load_waveform(self, video_path: str) -> None:
+        """后台解码音频能量并喂给时间轴（波形帮助对着声音定位字幕边界）。
+
+        视频不存在/解码失败都静默放弃——波形是增强层，绝不干扰主线。
+        同一视频已在算就直接跳过（防止导入+转写完成两次触发并发解码）。
+        """
+        if not video_path or not os.path.isfile(video_path):
+            return
+        if getattr(self, "_wave_job_path", "") == video_path and \
+                getattr(self, "_wave_job", None) is not None:
+            return
+        old = getattr(self, "_wave_job", None)
+        if old is not None:
+            try:
+                old.cancel()
+            except Exception:
+                pass
+            try:
+                from .workers import reap
+                reap(old)
+            except Exception:
+                pass
+            self._wave_job = None
+        from .workers import ThreadedCall, reap
+        self._wave_job_path = video_path
+        self._wave_job = ThreadedCall(_wave_peaks, video_path)
+        self._wave_job.sig_done.connect(self._on_wave_ready)
+        reap(self._wave_job)
+        self._wave_job.start()
+
+    def _on_wave_ready(self, res) -> None:
+        from .workers import reap
+        reap(self._wave_job)
+        self._wave_job = None
+        peaks, span = res if isinstance(res, tuple) else ([], 0.0)
+        if peaks:
+            self.timeline.set_waveform(peaks, span)
 
     def current(self) -> Optional[CueDocument]:
         return self.doc

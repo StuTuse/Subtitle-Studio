@@ -1,12 +1,16 @@
-"""时间轴：把字幕画成横向色块，支持点击定位、拖动播放头、框选删除。"""
+"""时间轴：把字幕画成横向色块，支持点击定位、拖动播放头、框选删除。
+
+v1.17.252 起支持音频波形（set_waveform 喂入归一化能量采样）：
+波形画在轨道底层、字幕色块之下，帮助对着声音起伏定位字幕边界。
+"""
 
 from __future__ import annotations
 
 import bisect
-from typing import Optional
+from typing import List, Optional
 
 from PyQt5.QtCore import QPoint, QRect, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QPolygon
+from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QPolygon, QPainterPath
 from PyQt5.QtWidgets import QSizePolicy, QWidget
 
 from ..core.model import CueDocument, sec_to_ts
@@ -37,6 +41,9 @@ class Timeline(QWidget):
         self._cache: Optional[QPixmap] = None
         self._cache_key = None
         self._content_token = 0       # 字幕内容变更计数（含时间），缓存据此失效
+        # 音频波形：归一化 0..1 峰值采样（每秒 ~50 个点），None=尚无数据
+        self._wave: Optional[List[float]] = None
+        self._wave_span: float = 0.0  # 波形覆盖的秒数（与 duration 对齐用）
 
     # ------------------------------------------------------------ API
     def set_document(self, doc: Optional[CueDocument]) -> None:
@@ -44,6 +51,19 @@ class Timeline(QWidget):
         if doc:
             self.duration = max(1.0, doc.duration or doc.end_time or 1.0)
         self.content_changed()
+
+    def set_waveform(self, peaks: Optional[List[float]], span: float = 0.0) -> None:
+        """喂入音频波形：peaks 是 0..1 归一化峰值（均匀采样），span 是覆盖秒数。
+
+        peaks 为空/None 表示清除。span<=0 时按 duration 对齐。调用后立即
+        失效缓存重画——波形只在转写完成/换视频时各喂一次，不存在高频路径。
+        """
+        self._wave = list(peaks) if peaks else None
+        self._wave_span = float(span) if span and span > 0 else 0.0
+        self.content_changed()
+
+    def has_waveform(self) -> bool:
+        return self._wave is not None
 
     def content_changed(self) -> None:
         """字幕内容/时间变了：递增 token。paintEvent 比对 key 时才真正
@@ -88,6 +108,35 @@ class Timeline(QWidget):
         bar_top, bar_h = 22, h - 34
         p.setBrush(track)
         p.drawRoundedRect(0, bar_top, w, bar_h, 4, 4)
+
+        # 波形层：画在轨道上、字幕色块之下。中心线对称镜像，占轨道高的一半，
+        # 上半留给色块视觉分离。无字幕时也画（空态导完视频即可看声音）。
+        if self._wave:
+            wave_dur = self._wave_span or dur
+            n = len(self._wave)
+            mid = bar_top + bar_h // 2
+            amp = bar_h * 0.22
+            wave_col = QColor("#5a7d9c") if dark else QColor("#9cc0dc")
+            path = QPainterPath()
+            path.moveTo(0, mid)
+            for x in range(0, w + 1, 2):
+                t = x / max(1, w) * wave_dur
+                idx = int(t / max(0.001, wave_dur) * n)
+                if idx >= n:
+                    idx = n - 1
+                v = self._wave[idx] if 0 <= idx < n else 0.0
+                path.lineTo(x, mid - amp * v)
+            for x in range(w, -1, -2):
+                t = x / max(1, w) * wave_dur
+                idx = int(t / max(0.001, wave_dur) * n)
+                if idx >= n:
+                    idx = n - 1
+                v = self._wave[idx] if 0 <= idx < n else 0.0
+                path.lineTo(x, mid + amp * v)
+            path.closeSubpath()
+            p.setPen(Qt.NoPen)
+            p.setBrush(wave_col)
+            p.drawPath(path)
 
         if not self.doc or not self.doc.cues:
             p.setPen(QPen(QColor("#a8a8a8") if dark else QColor("#8a8a8a")))
