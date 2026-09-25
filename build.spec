@@ -98,6 +98,14 @@ a = Analysis(
         "PyQt5.QtBluetooth", "PyQt5.QtNfc", "PyQt5.QtSerialPort",
         "PyQt5.QtTest", "PyQt5.QtWebSockets",
         "tkinter", "pydoc_data",   # unittest 不排：省不了 2 MB，却有依赖方 import 它
+        # hf_xet（~9MB）：huggingface_hub 的可选 Xet 传输插件。产品默认
+        # modelscope/hf-mirror 源，运行时恒设 HF_HUB_DISABLE_XET=1；hub 对
+        # 它 import 失败会自动回退普通 HTTP 分片下载。打包体积归因分析
+        # （第 245 轮）确认可排：-9MB 安装包。
+        "hf_xet",
+        # opengl32sw（20MB）是 Qt 的软件 OpenGL 后备渲染器，仅在无 GPU
+        # 驱动的裸虚拟机里才用得到。桌面用户都有显卡驱动，排除（binaries
+        # 阶段按文件名剔，Analysis excludes 管不到 Qt5/bin 的 DLL）。
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -157,9 +165,24 @@ exe = EXE(
     icon="assets/app.ico",            # 由 make_icon.py 生成（与 splash 同源造型）
 )
 
+
+def _prune_qt5_sw(binaries):
+    """体积归因（第 245 轮）：Qt5/bin 里 opengl32sw.dll（20MB 软件渲染器）
+    只在无显卡驱动的裸虚拟机里有用；桌面用户都有驱动。按文件名剔掉。
+    d3dcompiler_47.dll 保留：ANGLE/DirectX 后端要用，剔了会黑屏。"""
+    out = []
+    for item in binaries:
+        src = item[0] if isinstance(item, tuple) else str(item)
+        base = os.path.basename(src).lower()
+        if base in ("opengl32sw.dll",):
+            continue
+        out.append(item)
+    return out
+
+
 coll = COLLECT(
     exe,
-    a.binaries,
+    _prune_qt5_sw(a.binaries),
     a.zipfiles,
     a.datas,
     strip=False,

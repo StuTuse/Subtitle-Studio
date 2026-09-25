@@ -5290,6 +5290,28 @@ check("失败续跑不清队", _mw236src.count("_queue_advance()") >= 2
       and "队列继续处理下一个" in _mw236src)
 _w236.close()
 
+section("237. 安装包体积归因落地（第 245 轮 backlog ⑧ 钉子）")
+# 归因结论（342MB dist / 331MB _internal，top12 占 93%）：
+#   PyQt5 82MB（Qt5/bin 70MB，其中 opengl32sw 20MB 软件渲染器、
+#   d3dcompiler 4MB）、av.libs 62MB（ffmpeg DLL×25，PyAV 必需）、
+#   ctranslate2 59MB（核心 DLL 56.5MB，转写必需）、onnxruntime 33.4MB
+#   （faster-whisper VAD silero 依赖，cfg.vad 默认开）、numpy 26MB、
+#   PIL 10.7MB、cryptography 9.3MB、hf_xet 9MB（可选 Xet 传输插件）。
+# 可行动项两项已落地：hf_xet 进 excludes（走镜像恒 HF_HUB_DISABLE_XET=1，
+# hub import 失败自动回退 HTTP）；opengl32sw.dll 在 COLLECT 前按文件名剔。
+# 不可动项：av.libs/ctranslate2/onnxruntime 是转写主链路依赖。
+_spec237 = open(os.path.join(_harness.ROOT, "build.spec"),
+                encoding="utf-8").read()
+check("hf_xet 进 excludes", '"hf_xet"' in _spec237.split("excludes=")[1]
+      .split("],")[0])
+check("opengl32sw 剔除函数在位", "_prune_qt5_sw" in _spec237
+      and 'base in ("opengl32sw.dll",)' in _spec237)
+check("COLLECT 用 prune 后的 binaries", "_prune_qt5_sw(a.binaries)"
+      in _spec237)
+check("d3dcompiler 保留注释", "d3dcompiler_47.dll 保留" in _spec237)
+compile(_spec237, "build.spec", "exec")
+check("build.spec 语法可编译", True)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
