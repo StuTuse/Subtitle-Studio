@@ -5617,6 +5617,45 @@ check("en 过滤器扩展名齐", _mf247.count("*.") == len(
     _med247mod.VIDEO_EXTS | _med247mod.AUDIO_EXTS), f"{_mf247.count('*.')}")
 _sl247("zh")
 check("zh 过滤器原样（字节钉）", _med247mod.media_filters().startswith("媒体文件 ("))
+
+from sstudio.ui.timeline import Timeline as _TL248  # noqa: E402
+from sstudio.ui.player import wrap_subtitle as _ws248, PlayerWidget as _PW248  # noqa: E402
+from sstudio.core.model import Cue as _Cue248, CueDocument as _CD248  # noqa: E402
+
+section("248. 时间轴/播放器深审钉子（第 246 轮：命中/框选/缓存/循环边界）")
+_tl248 = _TL248()
+_tl248.resize(600, 74)
+# 嵌套命中：长 0-100 + 短 50-60，点 55s 命中短的（回看终止条件正确性）
+_doc248 = _CD248(cues=[_Cue248(start=0, end=100, text="长"),
+                       _Cue248(start=50, end=60, text="短")], duration=100.0)
+_tl248.set_document(_doc248)
+_tl248.duration = 100.0
+check("嵌套短字幕命中", _tl248._hit(int(600 * 55 / 100)) == 1)
+check("真空白不命中", _tl248._hit(int(600 * 20 / 100)) is None
+      or _tl248._hit(int(600 * 20 / 100)) == 0)   # 长条覆盖时 0 也是合法命中
+# 空态文案双语
+_tl248.set_document(_CD248(duration=60.0))
+_src248 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "timeline.py"),
+               encoding="utf-8").read()
+check("时间轴空态文案双语", 'S("载入视频并完成转写后，这里会显示字幕时间轴"' in _src248
+      and "finish transcribing" in _src248)
+_pl248 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "player.py"),
+              encoding="utf-8").read()
+check("解码失败角标双语", 'S("⚠ 无法解码此视频' in _pl248
+      and "Cannot decode this video" in _pl248)
+check("播放器错误前缀双语", 'S("播放器：", "Player: ")' in _pl248)
+check("seek 无媒体不广播", "return -1.0                   # 没有媒体：不下发、不广播" in _pl248)
+# wrap_subtitle 28 字硬折与空串
+_w248 = _ws248("短\n" + "长" * 60)
+check("wrap 28 字硬折", all(len(l) <= 28 for l in _w248.split("\n") if l))
+check("wrap 空串", _ws248("") == "")
+# A/B 交叉自动清理
+_pw248 = _PW248()
+_pw248.set_loop_a(30.0)
+_pw248.set_loop_b(10.0)
+check("A/B 交叉清理", _pw248.loop() == (None, 10.0))
+_pw248.shutdown()
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

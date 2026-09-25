@@ -13,6 +13,7 @@ from PyQt5.QtCore import QPoint, QRect, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QPolygon, QPainterPath
 from PyQt5.QtWidgets import QSizePolicy, QWidget
 
+from ..core.i18n import S
 from ..core.model import CueDocument, sec_to_ts
 from .theme import is_dark
 
@@ -143,8 +144,10 @@ class Timeline(QWidget):
             f = QFont()
             f.setPointSize(9)
             p.setFont(f)
-            p.drawText(QRect(0, 0, w, h),
-                       Qt.AlignCenter, "载入视频并完成转写后，这里会显示字幕时间轴")
+            p.drawText(QRect(0, 0, w, h), Qt.AlignCenter,
+                       S("载入视频并完成转写后，这里会显示字幕时间轴",
+                         "The subtitle timeline appears here after you load a "
+                         "video and finish transcribing"))
             p.end()
             return pm
 

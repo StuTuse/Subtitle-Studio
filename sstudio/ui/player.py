@@ -14,6 +14,8 @@ from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import QSizePolicy, QVBoxLayout, QWidget, QLabel
 
+from ..core.i18n import S
+
 SPEEDS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
 # 成片检查标准与 export_page 一致：单行超 28 字会进导出警告。
@@ -275,10 +277,16 @@ class PlayerWidget(QWidget):
         if status == QMediaPlayer.InvalidMedia:
             # 常驻角标而非 6 秒小字：用户对着黑屏播放器会以为程序坏了——
             # 提示必须在屏幕上一直可见，直到换可解码的视频
-            self.set_badge("⚠ 无法解码此视频\n可能是 H.265/10bit 或缺少解码器\n"
-                           "字幕与时间轴仍可正常编辑")
-            self.error.emit("该视频无法在此解码（可能是 H.265/10bit 或缺少解码器）。"
-                            "字幕与时间轴仍可正常编辑，仅预览受限。")
+            self.set_badge(S("⚠ 无法解码此视频\n可能是 H.265/10bit 或缺少解码器\n"
+                             "字幕与时间轴仍可正常编辑",
+                             "⚠ Cannot decode this video\n"
+                             "Possibly H.265/10bit or a missing codec\n"
+                             "Subtitles and timeline still work"))
+            self.error.emit(S("该视频无法在此解码（可能是 H.265/10bit 或缺少解码器）。"
+                              "字幕与时间轴仍可正常编辑，仅预览受限。",
+                              "This video cannot be decoded here (possibly H.265/10bit "
+                              "or a missing codec). Subtitles and the timeline still "
+                              "work; preview only is limited."))
 
     def set_badge(self, text: str) -> None:
         """常驻角标（如解码失败提示）。空串隐藏。"""
@@ -304,4 +312,4 @@ class PlayerWidget(QWidget):
     def _on_err(self, _err: int) -> None:
         s = self.player.errorString() or ""
         if s:
-            self.error.emit(f"播放器：{s}")
+            self.error.emit(S("播放器：", "Player: ") + s)
