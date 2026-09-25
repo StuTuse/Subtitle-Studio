@@ -249,6 +249,7 @@ class Config:
     gap_max: float = 0.35                    # 小于该秒数且不是句末停顿的空隙才衔接
     player_volume: int = 80
     setup_done: bool = False                 # 欢迎向导完成标记（首启配置流程）
+    lang: str = "zh"                         # 界面语言：zh | en（en 下未翻译的串仍显示中文）
     custom_presets: List[Dict[str, str]] = field(default_factory=list)
     # 自定义供应商预设（用户在设置页保存的）。条目键与 BUILTIN_PRESETS 相同：
     # name / base_url / model / api_key(可选) / no_reasoning(可选)。
@@ -291,6 +292,9 @@ class Config:
         # 老配置里的该值回落到默认引擎，避免设置页下拉框落空。
         if cfg.asr_engine not in ("faster-whisper", "whisper.cpp", "openai_api"):
             cfg.asr_engine = "faster-whisper"
+        # 界面语言防呆：手改 config.json 写入非法值时回落中文
+        if cfg.lang not in ("zh", "en"):
+            cfg.lang = "zh"
         # 迁移：更早的版本每点一次「开始纠错」就往术语表尾部追加一段
         # 【本轮补充】，永久越滚越大。读到旧配置时把这些尾巴清掉。
         if isinstance(cfg.glossary, str) and "【本轮补充】" in cfg.glossary:

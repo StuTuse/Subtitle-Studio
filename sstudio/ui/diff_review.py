@@ -20,6 +20,7 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (QDialog, QHBoxLayout, QLabel, QListWidget,
                              QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget)
 
+from ..core.i18n import S
 from .theme import CARD_MARGINS
 
 
@@ -32,21 +33,28 @@ class DiffReviewDialog(QDialog):
 
     def __init__(self, entries: List[dict], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("逐条复查纠错结果")
+        self.setWindowTitle(S("逐条复查纠错结果", "Review fixes one by one"))
         self.resize(860, 640)
         self.setModal(True)
         self._entries = entries
         self._actions: Dict[str, str] = {}
         self._cur = -1
+        self._MARKS = {"accept": S("✓ 采纳", "✓ Accept"),
+                       "reject": S("✕ 拒绝", "✕ Reject"),
+                       "skip": S("— 跳过", "— Skip")}
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(*CARD_MARGINS)
         n = len(entries)
-        self._head = StrongBodyLabel(f"共 {n} 条改动：逐条核对后采纳或拒绝", self)
+        self._head = StrongBodyLabel(
+            S(f"共 {n} 条改动：逐条核对后采纳或拒绝",
+              f"{n} changes: review each, accept or reject"), self)
         lay.addWidget(self._head)
         self._hint = CaptionLabel(
-            "采纳 = 保留修正文本；拒绝 = 恢复原始识别文本。"
-            "不确定的可以先跳过（保持修正），稍后在编辑页用状态色核对。", self)
+            S("采纳 = 保留修正文本；拒绝 = 恢复原始识别文本。"
+              "不确定的可以先跳过（保持修正），稍后在编辑页用状态色核对。",
+              "Accept = keep the fixed text; Reject = restore the original. "
+              "Unsure? Skip (keep the fix) and check state colors in the editor later."), self)
         self._hint.setWordWrap(True)
         self._hint.setMinimumWidth(0)
         self._hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
@@ -67,9 +75,9 @@ class DiffReviewDialog(QDialog):
         dv = QVBoxLayout(detail)
         dv.setContentsMargins(8, 8, 8, 8)
         dv.setSpacing(4)
-        o_lab = QLabel("原文：", detail)
+        o_lab = QLabel(S("原文：", "Original:"), detail)
         o_lab.setStyleSheet("color:#c75050;font-weight:600;")
-        n_lab = QLabel("修正：", detail)
+        n_lab = QLabel(S("修正：", "Fixed:"), detail)
         n_lab.setStyleSheet("color:#2f9e5f;font-weight:600;")
         dv.addWidget(o_lab)
         dv.addWidget(self._orig_view)
@@ -78,10 +86,10 @@ class DiffReviewDialog(QDialog):
         lay.addWidget(detail)
 
         bar = QHBoxLayout()
-        self.btn_prev = PushButton(FIF.LEFT_ARROW, "上一条", self)
-        self.btn_accept = PrimaryPushButton(FIF.ACCEPT, "采纳（保留修正）", self)
-        self.btn_reject = PushButton(FIF.CLOSE, "拒绝（恢复原文）", self)
-        self.btn_next = PushButton("下一条", self)
+        self.btn_prev = PushButton(FIF.LEFT_ARROW, S("上一条", "Previous"), self)
+        self.btn_accept = PrimaryPushButton(FIF.ACCEPT, S("采纳（保留修正）", "Accept (keep fix)"), self)
+        self.btn_reject = PushButton(FIF.CLOSE, S("拒绝（恢复原文）", "Reject (restore)"), self)
+        self.btn_next = PushButton(S("下一条", "Next"), self)
         self.btn_accept.clicked.connect(lambda: self._decide("accept"))
         self.btn_reject.clicked.connect(lambda: self._decide("reject"))
         self.btn_prev.clicked.connect(self._prev)
@@ -91,13 +99,13 @@ class DiffReviewDialog(QDialog):
         bar.addWidget(self.btn_reject)
         bar.addWidget(self.btn_next)
         bar.addStretch(1)
-        b_all_yes = PushButton("全部采纳", self)
-        b_all_no = PushButton("全部拒绝", self)
-        b_all_yes.clicked.connect(lambda: self._decide_all("accept"))
-        b_all_no.clicked.connect(lambda: self._decide_all("reject"))
-        bar.addWidget(b_all_yes)
-        bar.addWidget(b_all_no)
-        b_done = PrimaryPushButton("完成", self)
+        self.btn_all_yes = PushButton(S("全部采纳", "Accept all"), self)
+        self.btn_all_no = PushButton(S("全部拒绝", "Reject all"), self)
+        self.btn_all_yes.clicked.connect(lambda: self._decide_all("accept"))
+        self.btn_all_no.clicked.connect(lambda: self._decide_all("reject"))
+        bar.addWidget(self.btn_all_yes)
+        bar.addWidget(self.btn_all_no)
+        b_done = PrimaryPushButton(S("完成", "Done"), self)
         b_done.clicked.connect(self.accept)
         bar.addWidget(b_done)
         lay.addLayout(bar)
@@ -126,7 +134,7 @@ class DiffReviewDialog(QDialog):
         self.list.clear()
         for i, e in enumerate(self._entries):
             act = self._actions.get(e["id"])
-            mark = {"accept": "✓ 采纳", "reject": "✕ 拒绝", "skip": "— 跳过"}.get(act, "")
+            mark = self._MARKS.get(act, "")
             head = f"[{e['row'] + 1}] {e['original']}"
             tail = f"→ {e['fixed']}"
             label = head + "\n   " + tail + (("    " + mark) if mark else "")
@@ -145,7 +153,7 @@ class DiffReviewDialog(QDialog):
             it = self.list.item(i)
             if it is None:
                 continue
-            mark = {"accept": "✓ 采纳", "reject": "✕ 拒绝", "skip": "— 跳过"}.get(act, "")
+            mark = self._MARKS.get(act, "")
             text = it.text()
             base = text.split("    ")[0]
             it.setText(base + (("    " + mark) if mark else ""))
@@ -163,8 +171,8 @@ class DiffReviewDialog(QDialog):
             self._new_view.setText("")
             return
         e = self._entries[row]
-        self._orig_view.setText(e["original"] or "（空）")
-        self._new_view.setText(e["fixed"] or "（空）")
+        self._orig_view.setText(e["original"] or S("（空）", "(empty)"))
+        self._new_view.setText(e["fixed"] or S("（空）", "(empty)"))
 
     def _decide(self, action: str) -> None:
         if not (0 <= self._cur < len(self._entries)):
@@ -188,4 +196,6 @@ class DiffReviewDialog(QDialog):
             self.list.setCurrentRow(self._cur + 1)
         else:
             # 最后一条决策完不自动关：用户可能想回头改主意，手动点「完成」
-            self._head.setText(f"共 {len(self._entries)} 条改动：已全部浏览，点「完成」应用")
+            self._head.setText(S(
+                f"共 {len(self._entries)} 条改动：已全部浏览，点「完成」应用",
+                f"{len(self._entries)} changes: all reviewed, press Done to apply"))

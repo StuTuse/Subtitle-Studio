@@ -111,6 +111,14 @@ def main(argv=None) -> int:
     from sstudio.core.config import Config
     cfg = Config.load()
 
+    # 界面语言：config.lang → i18n.S()。必须在任何界面构建前写入——字符串
+    # 在控件构造期取定，事后改只影响之后新建的界面。
+    try:
+        from sstudio.core.i18n import set_language
+        set_language(getattr(cfg, "lang", "zh"))
+    except Exception:
+        pass
+
     # 界面缩放：见 _scale_factor_for。默认 ui_scale=1.0 → 高缩放屏上也按
     # 物理像素 1:1 渲染：清晰、紧凑，不再"放大发糊"。0 = 跟随系统缩放。
     # 必须在 QApplication 创建前写环境变量，Qt 才会读到。

@@ -417,6 +417,13 @@ class SettingsInterface(QWidget):
             "跟随系统 = 交给 Windows 的显示缩放决定（你的屏幕是 150%，"
             "界面会明显变大）。")
         form.addRow("界面缩放", self.ui_scale)
+        self.ui_lang = ComboBox(card)
+        self.ui_lang.addItem("中文", userData="zh")
+        self.ui_lang.addItem("English", userData="en")
+        self.ui_lang.setToolTip(
+            "界面语言，重启软件后生效。\n\n"
+            "English：英文翻译正在分批接入，尚未覆盖的文案仍显示中文。")
+        form.addRow("界面语言", self.ui_lang)
         self.autosave = SwitchButton(card)
         self.autosave.setChecked(True)
         form.addRow("自动保存工程", self.autosave)
@@ -507,6 +514,8 @@ class SettingsInterface(QWidget):
             cfg.theme, "auto（跟随系统）"))
         self.ui_scale.setValue(float(cfg.ui_scale))
         self._ui_scale_loaded = float(cfg.ui_scale)
+        _li = self.ui_lang.findData(getattr(cfg, "lang", "zh") or "zh")
+        self.ui_lang.setCurrentIndex(max(0, _li))
         self.autosave.setChecked(cfg.auto_save)
         self.keepaudio.setChecked(bool(cfg.keep_audio))
         self.gap_auto.setChecked(bool(getattr(cfg, "auto_close_gaps", True)))
@@ -550,6 +559,8 @@ class SettingsInterface(QWidget):
         scale_changed = abs(float(self.ui_scale.value()) - float(getattr(
             self, "_ui_scale_loaded", self.ui_scale.value()))) > 1e-6
         cfg.ui_scale = float(self.ui_scale.value())
+        lang_changed = (self.ui_lang.currentData() or "zh") != getattr(cfg, "lang", "zh")
+        cfg.lang = self.ui_lang.currentData() or "zh"
         cfg.auto_save = self.autosave.isChecked()
         cfg.keep_audio = self.keepaudio.isChecked()
         cfg.auto_close_gaps = self.gap_auto.isChecked()
@@ -568,6 +579,11 @@ class SettingsInterface(QWidget):
         tip = "设置已写入本地配置文件。"
         if scale_changed:
             tip += " 界面缩放已更新，重启软件后生效。"
+        if lang_changed:
+            from ..core.i18n import set_language
+            set_language(cfg.lang)
+            tip += (" 界面语言已切换（英文翻译分批接入中，未覆盖文案仍显示中文），"
+                    "重启软件后完全生效。")
         if cfg.concurrency > 2:
             tip += (f" 并发={cfg.concurrency}：若服务商限流（报 429 / 并发已达上限），"
                     "请调回 1–2。")

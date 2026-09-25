@@ -2979,7 +2979,7 @@ for _root180, _dirs180, _names180 in os.walk("sstudio"):
         if _n180.endswith(".py"):
             _files180.append(os.path.basename(_n180)[:-3])
 _src180 = open("tests/bugfix_sweep.py", encoding="utf-8").read()
-check("源文件 32 个全有钉子覆盖", len(_files180) == 32
+check("源文件 33 个全有钉子覆盖", len(_files180) == 33
       and all(_re180.search(_re180.escape(_n), _src180) for _n in _files180))
 _secs180 = _re180.findall(r'section\("(\d+)\.', _src180)
 check("sweep 节数持续增长", len(_secs180) >= 160)
@@ -5311,6 +5311,60 @@ check("COLLECT 用 prune 后的 binaries", "_prune_qt5_sw(a.binaries)"
 check("d3dcompiler 保留注释", "d3dcompiler_47.dll 保留" in _spec237)
 compile(_spec237, "build.spec", "exec")
 check("build.spec 语法可编译", True)
+
+section("238. i18n 内联双语机制（第 245 轮 backlog ⑥ 钉子）")
+# 规模评估：全应用约 1241 条中文串散落 20 个文件，Qt .ts 工作流一次性改写
+# 量翻倍且引入构建链依赖。落地内联双语 S(中文, English)：默认 zh 与历史
+# 字面量逐字节一致（全部既有钉子不受影响），en 译文缺失兜底回 zh。
+from sstudio.core import i18n as _i18n238  # noqa: E402
+check("默认语言 zh", _i18n238.current_language() == "zh"
+      and _i18n238.S("复制", "Copy") == "复制")
+_i18n238.set_language("en")
+check("en 返回译文", _i18n238.S("复制", "Copy") == "Copy"
+      and _i18n238.is_en() is True)
+check("en 译文缺失兜底 zh", _i18n238.S("只有中文", "") == "只有中文")
+_i18n238.set_language("en-US")
+check("非法值回落 zh", _i18n238.current_language() == "zh")
+_i18n238.set_language("en")
+try:
+    _i18n238.set_language("fr")
+except Exception:
+    pass
+check("未知语言回落 zh", _i18n238.current_language() == "zh")
+# 环境变量直定（自动化入口）
+_i18n238.set_language("zh")
+check("SS 别名同实现", _i18n238.SS("甲", "A") == "甲")
+# 试点组件：preview / diff_review 源码已双语化
+_p238 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "preview.py"),
+             encoding="utf-8").read()
+_d238 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "diff_review.py"),
+             encoding="utf-8").read()
+check("preview 双语接入", "from ..core.i18n import S" in _p238
+      and 'S("复制到剪贴板", "Copy to clipboard")' in _p238)
+check("diff_review 双语接入", "from ..core.i18n import S" in _d238
+      and 'S("全部采纳", "Accept all")' in _d238)
+# 运行时：en 模式建 diff 对话框按钮取英文
+_i18n238.set_language("en")
+_drv238 = _DRV234([], None)
+check("en 下按钮取英文", _drv238.btn_accept.text() == "Accept (keep fix)"
+      and _drv238.btn_all_yes.text() == "Accept all")
+_drv238.close()
+_i18n238.set_language("zh")
+_drv238b = _DRV234([], None)
+check("zh 下按钮保持中文（历史钉不变）", _drv238b.btn_accept.text() == "采纳（保留修正）")
+_drv238b.close()
+# config.lang 字段与防呆
+from sstudio.core.config import Config as _Cfg238  # noqa: E402
+check("config.lang 出厂 zh", _Cfg238().lang == "zh")
+check("config.lang 非法回落", _Cfg238.from_dict({"lang": "jp"}).lang == "zh")
+check("config.lang en 往返", _Cfg238.from_dict({"lang": "en"}).lang == "en")
+# 设置页语言下拉在位
+_sp238 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
+              encoding="utf-8").read()
+check("设置页语言下拉", "self.ui_lang" in _sp238 and 'addItem("English"'
+      in _sp238 and "cfg.lang = self.ui_lang.currentData()" in _sp238)
+check("启动早期写语言", "set_language" in open(os.path.join(
+    _harness.ROOT, "sstudio", "__main__.py"), encoding="utf-8").read())
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
