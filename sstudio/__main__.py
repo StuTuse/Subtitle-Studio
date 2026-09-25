@@ -182,6 +182,46 @@ def main(argv=None) -> int:
     app.processEvents()      # 第二圈：让 resize/排版事件真正落一帧，防"半成品第一帧"
     splash.finish()
 
+    # 崩溃恢复：上次会话有未保存的工程快照 → 主动问一次要不要恢复。
+    # 延后一拍弹（InfoBar/对话框要等主窗真出来）；「不恢复」只忽略这一次，
+    # 快照保留到保留期结束——用户后悔还有第二次机会。
+    def _offer_recovery():
+        try:
+            from sstudio.core import recovery as _rec
+            snaps = _rec.list_snapshots()
+            if not snaps:
+                return
+            s = snaps[0]
+            from PyQt5.QtWidgets import QMessageBox
+            src = os.path.basename(s.get("source") or "") or s["title"]
+            box = QMessageBox(win)
+            box.setWindowTitle("恢复未保存的工程")
+            box.setIcon(QMessageBox.Question)
+            box.setText(f"检测到上次会话未保存的工程：\n{src}\n\n要恢复它吗？")
+            box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            box.button(QMessageBox.Yes).setText("恢复")
+            box.button(QMessageBox.No).setText("暂不")
+            if box.exec_() == QMessageBox.Yes:
+                doc = _rec.load_snapshot(s["file"])
+                if doc is None:
+                    QMessageBox.warning(win, "恢复失败", "快照文件已损坏，无法读取。")
+                    return
+                doc.path = s.get("path") or ""
+                if doc.source_video and not os.path.isfile(doc.source_video):
+                    fixed = os.path.join(os.path.dirname(s["file"]),
+                                         os.path.basename(doc.source_video))
+                    if os.path.isfile(fixed):
+                        doc.source_video = fixed
+                win.doc = doc
+                win.editor.set_document(doc)
+                win._dirty = True
+                win.mark_dirty()
+                win.switch_to("editor")
+                win._update_title()
+        except Exception:
+            pass
+    QTimer.singleShot(400, _offer_recovery)
+
     # 首次使用：欢迎向导（选外观 → 连模型 → 环境体检），完成写 setup_done=1。
     # 之后启动直接进主界面；体检可从设置页随时重开。
     # 返回 False = 必需组件缺失且用户点了"退出程序"，此时不能再进主界面。

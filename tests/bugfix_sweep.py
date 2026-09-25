@@ -2979,7 +2979,7 @@ for _root180, _dirs180, _names180 in os.walk("sstudio"):
         if _n180.endswith(".py"):
             _files180.append(os.path.basename(_n180)[:-3])
 _src180 = open("tests/bugfix_sweep.py", encoding="utf-8").read()
-check("源文件 30 个全有钉子覆盖", len(_files180) == 30
+check("源文件 31 个全有钉子覆盖", len(_files180) == 31
       and all(_re180.search(_re180.escape(_n), _src180) for _n in _files180))
 _secs180 = _re180.findall(r'section\("(\d+)\.', _src180)
 check("sweep 节数持续增长", len(_secs180) >= 160)
@@ -5067,6 +5067,56 @@ import sstudio.core.transcriber as _trc231  # noqa: E402
 import sstudio.ui.workers as _wk231  # noqa: E402
 check("运行时无 discover_ggml_models", not hasattr(_trc231, "discover_ggml_models"))
 check("运行时无 ChatWorker", not hasattr(_wk231, "ChatWorker"))
+
+section("232. 崩溃恢复快照（第 245 轮 backlog ④ 钉子）")
+from sstudio.core import recovery as _rec232  # noqa: E402
+from sstudio.core.model import CueDocument as _CD232, Cue as _Cue232  # noqa: E402
+import json as _json232  # noqa: E402
+ck232 = check
+_p232dir = _rec232.recovery_dir()
+ck232("recovery 目录存在", os.path.isdir(_p232dir))
+_doc232 = _CD232(source_video="D:/v/a.mp4", duration=10.0,
+                 cues=[_Cue232(0, 1, "甲"), _Cue232(1, 2, "乙")])
+_f232 = _rec232.write_snapshot(_doc232, 1)
+ck232("首次写入成功", _f232 is not None and os.path.isfile(_f232))
+ck232("写入是合法 JSON 工程",
+      _CD232.from_dict(_json232.load(open(_f232, encoding="utf-8")))
+      .cues[0].text == "甲")
+ck232("token 未变不重写", _rec232.write_snapshot(_doc232, 1) is None)
+ck232("token 变了重写", _rec232.write_snapshot(_doc232, 2) is not None)
+_doc232b = _CD232(source_video="D:/v/a.mp4", duration=10.0)
+_doc232b.cues = _doc232.cues
+ck232("稳定文件名", _rec232._stem_for(_doc232) == _rec232._stem_for(_doc232b))
+_doc232c = _CD232(source_video="", duration=0.0, cues=[_Cue232(0, 1, "孤")])
+_f232c = _rec232.write_snapshot(_doc232c, 1)
+ck232("未保存工程可快照", _f232c is not None and "unsaved" in _f232c)
+ck232("空 cues 不写", _rec232.write_snapshot(_CD232(), 1) is None)
+ck232("None 不写", _rec232.write_snapshot(None, 1) is None)
+_snaps232 = _rec232.list_snapshots()
+ck232("列表按 mtime 降序", all(_snaps232[i]["mtime"] >= _snaps232[i + 1]["mtime"]
+                              for i in range(len(_snaps232) - 1)))
+_back232 = _rec232.load_snapshot(_snaps232[-1]["file"])
+ck232("快照读回", _back232 is not None and _back232.cues[0].text == "甲")
+_rec232.discard_snapshot(_doc232)
+ck232("discard 按指纹清",
+      not any(s["file"] == _f232 for s in _rec232.list_snapshots()))
+_bad232 = os.path.join(_rec232.recovery_dir(), "bad_x232.ssprev")
+with open(_bad232, "w", encoding="utf-8") as _bf232:
+    _bf232.write("{not json")
+ck232("损坏快照 load→None", _rec232.load_snapshot(_bad232) is None)
+os.remove(_bad232)
+# 主窗/启动接线（源码级钉）
+_mw232 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
+              encoding="utf-8").read()
+ck232("mark_dirty 调度快照", "_schedule_snapshot" in _mw232
+      and "write_snapshot" in _mw232)
+ck232("保存后 discard", "recovery.discard_snapshot(self.doc)" in _mw232)
+ck232("不保存退出也 discard",
+      _mw232.count("recovery.discard_snapshot") >= 3)
+_srcmain232 = open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
+                   encoding="utf-8").read()
+ck232("启动检测提示", "_offer_recovery" in _srcmain232
+      and "恢复未保存的工程" in _srcmain232 and "list_snapshots" in _srcmain232)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

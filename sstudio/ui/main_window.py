@@ -330,6 +330,11 @@ class MainWindow(FluentWindow):
         except OSError as e:
             self._warn("保存失败", str(e))
             return False
+        try:
+            from ..core import recovery
+            recovery.discard_snapshot(self.doc)   # 手动保存成功：恢复快照完成使命
+        except Exception:
+            pass
         self.doc.path = path
         self.cfg.add_recent(path)
         self._dirty = False
@@ -371,6 +376,11 @@ class MainWindow(FluentWindow):
         self.doc = doc
         self.editor.set_document(doc)
         self._dirty = False
+        try:
+            from ..core import recovery
+            recovery.discard_snapshot(doc)   # 已正常打开盘上工程：对应快照过期
+        except Exception:
+            pass
         self.cfg.add_recent(path)
         self.cfg.last_dir = os.path.dirname(path)
         self.cfg.save()
@@ -388,6 +398,33 @@ class MainWindow(FluentWindow):
         self._update_title()
         if self.cfg.auto_save and self.doc and self.doc.path and len(self.doc.cues):
             QTimer.singleShot(2500, self._auto_save)
+        # 崩溃恢复快照：自动保存只覆盖已有 .ssp 的工程，且限速 45s；
+        # 从未保存过的新工程崩溃后无处可寻——这里按 8s 节流补一层
+        self._schedule_snapshot()
+
+    def _schedule_snapshot(self) -> None:
+        try:
+            from ..core import recovery
+            now = time.monotonic()
+            if now - getattr(self, "_snap_ts", 0.0) < recovery.SNAPSHOT_INTERVAL:
+                if getattr(self, "_snap_timer", None) is None:
+                    self._snap_timer = QTimer(self)
+                    self._snap_timer.setSingleShot(True)
+                    self._snap_timer.timeout.connect(self._write_snapshot)
+                if not self._snap_timer.isActive():
+                    self._snap_timer.start(2000)     # 尾随 2s：保证最后一拍也落盘
+                return
+            self._snap_ts = now
+            recovery.write_snapshot(self.doc, self._dirty_gen)
+        except Exception:
+            pass
+
+    def _write_snapshot(self) -> None:
+        try:
+            from ..core import recovery
+            recovery.write_snapshot(self.doc, self._dirty_gen)
+        except Exception:
+            pass
 
     def _auto_save(self) -> None:
         if not (self._dirty and self.doc and self.doc.path):
@@ -846,7 +883,14 @@ class MainWindow(FluentWindow):
             self.close()
 
     def _close_discard_quit(self) -> None:
-        """「不保存退出」。"""
+        """「不保存退出」。用户明确不要这些内容：连恢复快照一起清掉，
+        否则下次启动又弹一次「恢复未保存工程」，等于不尊重刚才的选择。"""
+        try:
+            from ..core import recovery
+            if self.doc is not None:
+                recovery.discard_snapshot(self.doc)
+        except Exception:
+            pass
         self._close_box = None
         self._closing = True
         self.close()
