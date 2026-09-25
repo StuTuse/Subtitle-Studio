@@ -5753,11 +5753,12 @@ check("page_out 不再用 InCubic", "a2.setEasingCurve(EASE_IN)" not in _fx252sr
 check("拍子常量新值", _fx252._PAGE_MS == 380 and _fx252._PAGE_OUT_MS == 260,
       f"{_fx252._PAGE_MS}/{_fx252._PAGE_OUT_MS}")
 check("推入慢于退出（重叠节奏前提保持）", _fx252._PAGE_MS > _fx252._PAGE_OUT_MS)
-# 启动链：splash 必须盖住底色动画（200ms singleShot 延迟 finish），
-# Mica 关闭必须先于 apply_theme（底色动画在窗口可见前结束）
+# 启动链：254 节终案取代 279 版"延迟 finish"——主窗 reveal 挂在 splash
+# on_closed 回调上；Mica 关闭必须先于 apply_theme（底色动画在窗口可见前结束）
 _main252 = open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
                 encoding="utf-8").read()
-check("splash 延迟 finish 盖住底色动画", "QTimer.singleShot(200, splash.finish)" in _main252)
+check("splash finish 带 on_closed（终案时序）",
+      "splash.finish(on_closed=_reveal_main)" in _main252)
 check("show 前预排事件两圈", _main252.count("app.processEvents()") >= 4)
 _mw252 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
               encoding="utf-8").read()
@@ -5810,6 +5811,49 @@ try:
     _w253.close()
 except Exception as _e253:
     check("运行时静止化语义", False, str(_e253))
+
+section("254. 启动闪烁终案：主窗 reveal 移到 splash 完全关闭之后（第三轮）")
+_main254 = open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
+                encoding="utf-8").read()
+# 终案时序：主窗**不在** splash 底下 show —— splash 淡出关闭时 Windows 重算
+# z 序/焦点（Tool 窗关闭才交还焦点），主窗整窗重绘一次 = "打开动画结束后
+# 整个窗口消失再出现一下"。改为 splash.on_closed 回调里首次 show。
+check("主窗不再在 splash 前 show", "win.show()\n    from PyQt5.QtGui"
+      not in _main254 and "QTimer.singleShot(200, splash.finish)" not in _main254)
+check("reveal 由 on_closed 触发", "splash.finish(on_closed=_reveal_main)"
+      in _main254 and "def _reveal_main" in _main254)
+check("reveal 里才首次 win.show", _main254.index("def _reveal_main")
+      < _main254.index("        win.show()\n        app.processEvents()")
+      < _main254.index("def _maybe_welcome"))
+check("向导延后到主窗 reveal 后", "singleShot(400, lambda: _maybe_welcome(cfg, win))"
+      in _main254)
+check("向导退出路径改 quit 定时器", "QTimer.singleShot(0, app.quit)" in _main254)
+_spl254 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "splash.py"),
+               encoding="utf-8").read()
+check("finish 支持 on_closed", "def finish(self, animated: bool = True, "
+      "on_closed=None)" in _spl254)
+check("on_closed 防重入闸", "_on_closed_fired" in _spl254
+      and "_fire_once" in _spl254)
+check("兜底 610ms 也在闸后", "singleShot(610, _fire_once)" in _spl254)
+# 运行时语义钉：finish 幂等 + on_closed 恰好一次 + 回调后 splash 已关
+try:
+    from sstudio import __version__ as _ver254
+    from sstudio.ui.splash import Splash as _Spl254
+    _calls254 = []
+    _s254 = _Spl254(_ver254)
+    _s254.show_splash()
+    _s254.finish(animated=True, on_closed=lambda: _calls254.append(1))
+    _s254.finish(animated=True, on_closed=lambda: _calls254.append(2))
+    _t254 = QTimer(_app159)
+    _t254.setSingleShot(True)
+    _t254.timeout.connect(_app159.quit)
+    _t254.start(900)
+    _app159.exec_()
+    check("finish 幂等", len(_calls254) == 1, f"calls={_calls254}")
+    check("回调后 splash 已关闭", not _s254.isVisible())
+    _s254.close()
+except Exception as _e254:
+    check("finish 幂等 + on_closed 一次", False, str(_e254))
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

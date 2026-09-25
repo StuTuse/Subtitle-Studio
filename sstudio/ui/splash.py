@@ -132,15 +132,23 @@ class Splash(QWidget):
         self.update()
         QApplication.processEvents()
 
-    def finish(self, animated: bool = True) -> None:
-        """主窗口已显示：淡出后真正关闭。
+    def finish(self, animated: bool = True, on_closed=None) -> None:
+        """淡出后真正关闭；``on_closed`` 在窗口完全关闭的下一拍回调。
 
         淡出走 setWindowOpacity 动画——不用 QGraphicsOpacityEffect/无父动画对象，
         避开 MessageBox 那种动画被 GC 的坑。``animated=False`` 直接关（测试用）。
+
+        on_closed 的用途（v1.17.281 启动闪烁根治）：主窗口的首次 show 从
+        "splash 还在时 show"改成"splash 完全关闭之后 show"。此前主窗在
+        splash 底下先 show，splash 淡出/关闭时 Windows 重算 z 序与焦点，
+        全窗重绘一次——用户看到的正是"打开动画结束后整个窗口消失再出现
+        一下"。让主窗在 splash 关闭的同一拍再 show，入场只有一次合成。
         """
         self._anim_timer.stop()
         if not animated:
             self.close()
+            if on_closed:
+                on_closed()
             return
         try:
             self._fade = QPropertyAnimation(self, b"fadeOut", self)
@@ -149,10 +157,26 @@ class Splash(QWidget):
             self._fade.setEndValue(0.0)
             self._fade.setEasingCurve(QEasingCurve.OutCubic)
             self._fade.finished.connect(self.close)
+            if on_closed:
+                # 防重入闸：动画完成链与 610ms 兜底只有先到者触发回调
+                self._on_closed_fired = False
+
+                def _fire_once():
+                    if self._on_closed_fired:
+                        return
+                    self._on_closed_fired = True
+                    on_closed()
+
+                # close 不等于窗口立即从合成器移除：延一拍更稳
+                self._fade.finished.connect(
+                    lambda: QTimer.singleShot(0, _fire_once))
+                QTimer.singleShot(610, _fire_once)      # 兜底路径同样 show 主窗
             self._fade.start()
             QTimer.singleShot(600, self._force_close)   # 动画没跑起来的兜底
         except Exception:
             self.close()
+            if on_closed:
+                on_closed()
 
     def _force_close(self) -> None:
         if self.isVisible():

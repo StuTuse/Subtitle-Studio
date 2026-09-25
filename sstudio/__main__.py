@@ -192,13 +192,14 @@ def main(argv=None) -> int:
     splash.show_stage(S("正在初始化工作区…", "Initializing workspace…"))
     win = MainWindow(cfg)
 
-    # ---- 启动闪烁根治 ----
-    # MainWindow 构造时 setMicaEffectEnabled(False) 会触发底色动画（120ms
-    # QPropertyAnimation），apply_theme 的 setTheme 会全量刷新样式表——这些都
-    # 发生在窗口 show() 之前，但首次 show 的 1~2 帧里动画/重排还在收尾，
-    # DWM 合成跟不上就跳变 = 用户看到"窗口闪一下"。对策：show 之前先 process
-    # 事件把构造期遗留的样式/排版事件吃干净，show 后再等底色动画彻底结束才让
-    # splash 开始淡出（splash 盖住整个动画期，跳变发生在 splash 背后）。
+    # ---- 启动闪烁根治（第三轮，最终方案）----
+    # 前两轮（关 Mica 提前 / 底色动画静止化 / 关 blurBehind 残留）都对，
+    # 但用户实测仍闪，描述精确化后定位到真正时序：主窗在 splash 底下先
+    # show，splash 淡出关闭时 Windows 重算 z 序与焦点归属（Tool 窗不持有
+    # 焦点，关闭瞬间才把焦点交还主窗），主窗整窗重绘一次 = "打开动画结束
+    # 之后整个窗口消失再出现一下"。终案：**主窗不在 splash 底下 show**，
+    # 等 splash 完全关闭的下一拍才首次 show——入场只有一次合成，没有叠层
+    # 切换。show 之前仍先 process 两圈把构造期遗留的样式/排版事件吃干净。
     app.processEvents()
     app.processEvents()
 
@@ -214,14 +215,49 @@ def main(argv=None) -> int:
             pass
     single.on_activate = _wake
 
-    win.show()
     from PyQt5.QtGui import QGuiApplication as _QGA2
-    for _p in _QGA2.topLevelWindows():        # 强制主窗口真正画出第一帧
-        _p.requestUpdate()
-    app.processEvents()
-    app.processEvents()      # 第二圈：让 resize/排版事件真正落一帧，防"半成品第一帧"
-    # 底色动画 120ms + 合成余量：splash 多盖 200ms 再淡出，闪烁全被挡在背后
-    QTimer.singleShot(200, splash.finish)
+
+    def _reveal_main():
+        """splash 完全关闭后的下一拍：主窗首次 show（唯一一次入场合成）。"""
+        for _p in _QGA2.topLevelWindows():    # 强制主窗真正画出第一帧
+            _p.requestUpdate()
+        win.show()
+        app.processEvents()
+        app.processEvents()   # 让 resize/排版真正落一帧，防"半成品第一帧"
+
+    # splash 淡出（260ms）+ 关闭 + 下一拍 → _reveal_main。
+    # 兜底：即使淡出动画没跑起来，finish 内部 610ms 处也会回调一次。
+    splash.finish(on_closed=_reveal_main)
+
+    def _maybe_welcome(cfg_, win_):
+        """欢迎向导（主窗 reveal 之后的下一拍才弹，见下方 singleShot 注释）。
+
+        从原 main() 内联逻辑抽成函数以便延后执行。向导自身崩了不能连累
+        主程序：退回旧的纯体检窗口，仍留线索。
+        """
+        try:
+            from sstudio.ui.welcome_wizard import maybe_show_welcome
+            if not maybe_show_welcome(cfg_, parent=win_):
+                win_.hide()
+                QTimer.singleShot(0, app.quit)
+                return
+        except Exception:
+            try:
+                import traceback
+                from sstudio.core.config import data_dir
+                with open(os.path.join(data_dir(), "crash.log"), "a",
+                          encoding="utf-8") as f:
+                    f.write("\n# " + S("欢迎向导异常", "Welcome wizard exception") + "\n")
+                    traceback.print_exc(file=f)
+            except Exception:
+                pass
+            try:
+                from sstudio.ui.first_run_dialog import maybe_show_first_run
+                if not maybe_show_first_run(cfg_, parent=win_):
+                    win_.hide()
+                    QTimer.singleShot(0, app.quit)
+            except Exception:
+                pass
 
     # 崩溃恢复：上次会话有未保存的工程快照 → 主动问一次要不要恢复。
     # 延后一拍弹（InfoBar/对话框要等主窗真出来）；「不恢复」只忽略这一次，
@@ -271,29 +307,13 @@ def main(argv=None) -> int:
     # 首次使用：欢迎向导（选外观 → 连模型 → 环境体检），完成写 setup_done=1。
     # 之后启动直接进主界面；体检可从设置页随时重开。
     # 返回 False = 必需组件缺失且用户点了"退出程序"，此时不能再进主界面。
-    try:
-        from sstudio.ui.welcome_wizard import maybe_show_welcome
-        if not maybe_show_welcome(cfg, parent=win):
-            win.hide()
-            return 0
-    except Exception:
-        # 向导自身崩了不能连累主程序，退回旧的纯体检窗口，仍留线索
-        try:
-            import traceback
-            from sstudio.core.config import data_dir
-            with open(os.path.join(data_dir(), "crash.log"), "a",
-                      encoding="utf-8") as f:
-                f.write("\n# " + S("欢迎向导异常", "Welcome wizard exception") + "\n")
-                traceback.print_exc(file=f)
-        except Exception:
-            pass
-        try:
-            from sstudio.ui.first_run_dialog import maybe_show_first_run
-            if not maybe_show_first_run(cfg, parent=win):
-                win.hide()
-                return 0
-        except Exception:
-            pass
+    # 注意：主窗 reveal 由 splash 的 on_closed 回调触发（splash 淡出 260ms
+    # +一拍），而向导在 main() 里同步 exec_ —— 它构造时主窗可能尚未 show。
+    # 向导 parent 到隐藏主窗没问题（QDialog 模态独立显示），但向导**关闭
+    # 之后**主窗才第一次出现会显得"点完成没反应"。所以向导也要等主窗
+    # reveal 后再弹：统一挂到下一拍定时器，reveal 时间点 ≈ splash 关闭，
+    # 400ms 定时器晚于它，时序安全。
+    QTimer.singleShot(400, lambda: _maybe_welcome(cfg, win))
 
     target = args.file or (extra[0] if extra else "")
     if target:
