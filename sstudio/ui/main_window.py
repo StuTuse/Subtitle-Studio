@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import QDialog, QFileDialog, QLabel
 
 from ..core import media
 from ..core.config import Config
+from ..core.i18n import S
 from ..core.model import CueDocument
 from ..version import __version__
 from .editor_page import EditorInterface
@@ -123,10 +124,10 @@ class MainWindow(FluentWindow):
         self.export = ExportInterface(self.cfg, self)
         self.settings = SettingsInterface(self.cfg, self)
 
-        self.addSubInterface(self.editor, FIF.EDIT, "字幕编辑")
-        self.addSubInterface(self.fix, FIF.BROOM, "AI 纠错")
-        self.addSubInterface(self.export, FIF.SAVE, "导出成品")
-        self.addSubInterface(self.settings, FIF.SETTING, "设置",
+        self.addSubInterface(self.editor, FIF.EDIT, S("字幕编辑", "Editor"))
+        self.addSubInterface(self.fix, FIF.BROOM, S("AI 纠错", "AI Fix"))
+        self.addSubInterface(self.export, FIF.SAVE, S("导出成品", "Export"))
+        self.addSubInterface(self.settings, FIF.SETTING, S("设置", "Settings"),
                              position=NavigationItemPosition.BOTTOM)
 
         # ------------------------------------------------------------ 进度条
@@ -193,7 +194,9 @@ class MainWindow(FluentWindow):
 
     def goto_fix(self) -> None:
         if not self.doc or not self.doc.cues:
-            self._warn("先完成转写", "还没有字幕内容。请在「字幕编辑」页导入视频并点「转写」。")
+            self._warn(S("先完成转写", "Transcribe first"),
+                       S("还没有字幕内容。请在「字幕编辑」页导入视频并点「转写」。",
+                         "No subtitles yet. Import a video in the Editor page and press Transcribe."))
             return
         self.switch_to("fix")
 
@@ -241,32 +244,40 @@ class MainWindow(FluentWindow):
     # ------------------------------------------------------------ 打开
     def open_media_dialog(self) -> None:
         start = self.cfg.last_dir or ""
-        fp, _ = QFileDialog.getOpenFileName(self, "选择视频/音频", start,
-                                            media.media_filters() + ";;所有文件 (*)")
+        fp, _ = QFileDialog.getOpenFileName(self, S("选择视频/音频", "Choose video/audio"),
+                                            start,
+                                            media.media_filters() + ";;" + S("所有文件 (*)", "All files (*)"))
         if fp:
             self.open_media(fp)
 
     def open_media(self, path: str) -> None:
         if self._worker is not None:
-            self._warn("正在转写", "请先点「取消」结束当前转写，再导入新视频。")
+            self._warn(S("正在转写", "Transcribing"),
+                       S("请先点「取消」结束当前转写，再导入新视频。",
+                         "Press Cancel to stop the current transcription before importing."))
             return
         path = os.path.abspath(path)
         if not os.path.isfile(path):
-            self._warn("文件不存在", path)
+            self._warn(S("文件不存在", "File not found"), path)
             return
         if self.doc and self.doc.cues and self._dirty:
             # 用无动画的 _CloseAskBox：裸 MessageBox 的淡出动画对象无父级，
             # 被 GC 后 done() 永不执行——表现是"点保存/不保存都没反应"
-            box = _CloseAskBox("当前工程未保存", "打开新视频会替换当前字幕。要先保存吗？\n"
-                                              "（选择「取消」则直接打开）", self)
-            box.yesButton.setText("保存并打开")
-            box.cancelButton.setText("直接打开")
+            box = _CloseAskBox(S("当前工程未保存", "Unsaved project"),
+                               S("打开新视频会替换当前字幕。要先保存吗？\n"
+                                 "（选择「取消」则直接打开）",
+                                 "Opening a new video replaces the current subtitles. Save first?\n"
+                                 "(Cancel opens directly)"), self)
+            box.yesButton.setText(S("保存并打开", "Save and open"))
+            box.cancelButton.setText(S("直接打开", "Open directly"))
             r = box.exec_()
             if r:
                 self.save_project()
         info = media.probe(path)
         if info.duration <= 0:
-            self._warn("无法读取", "这个文件可能不是有效的媒体文件，或缺少解码器。")
+            self._warn(S("无法读取", "Cannot read"),
+                       S("这个文件可能不是有效的媒体文件，或缺少解码器。",
+                         "This may not be a valid media file, or a decoder is missing."))
             return
         self.doc = CueDocument(source_video=path, duration=info.duration)
         self.editor.set_document(self.doc)
@@ -275,12 +286,17 @@ class MainWindow(FluentWindow):
         self.cfg.add_recent(path)
         self.cfg.save()
         self.editor.status.setText(
-            f"已载入 {os.path.basename(path)}（{_fmt(info.duration)}，"
-            f"{'含视频 ' + str(info.width) + 'x' + str(info.height) if info.has_video else '纯音频'}）"
-            " — 点「开始转写」，自动提音频并识别。")
-        InfoBar.success("导入成功",
-                        f"{os.path.basename(path)}（{_fmt(info.duration)}）已就绪，"
-                        "点「开始转写」即可。", parent=self,
+            S(f"已载入 {os.path.basename(path)}（{_fmt(info.duration)}，"
+              f"{'含视频 ' + str(info.width) + 'x' + str(info.height) if info.has_video else '纯音频'}）"
+              " — 点「开始转写」，自动提音频并识别。",
+              f"Loaded {os.path.basename(path)} ({_fmt(info.duration)}, "
+              f"{'video ' + str(info.width) + 'x' + str(info.height) if info.has_video else 'audio only'})"
+              " — press Transcribe to extract audio and recognize."))
+        InfoBar.success(S("导入成功", "Imported"),
+                        S(f"{os.path.basename(path)}（{_fmt(info.duration)}）已就绪，"
+                          "点「开始转写」即可。",
+                          f"{os.path.basename(path)} ({_fmt(info.duration)}) is ready — press Transcribe."),
+                        parent=self,
                         position=InfoBarPosition.TOP, duration=3500)
         self.mark_dirty()
 
@@ -295,7 +311,9 @@ class MainWindow(FluentWindow):
                 text = f.read()
             cues, fmt = formats.import_text(text, path)
             if not cues:
-                self._warn("解析失败", "这个文件里没找到可识别的字幕行。")
+                self._warn(S("解析失败", "Parse failed"),
+                           S("这个文件里没找到可识别的字幕行。",
+                             "No recognizable subtitle lines found in this file."))
                 return
             if self.doc is None:
                 self.doc = CueDocument()
@@ -310,23 +328,26 @@ class MainWindow(FluentWindow):
             self.doc.meta["imported_from"] = os.path.abspath(path)
             self.doc.meta["imported_format"] = fmt
             self.editor.set_document(self.doc, reset_history=False)
-            self.editor._say(f"已按 {fmt} 导入 {len(cues)} 条。", 4000)
+            self.editor._say(S(f"已按 {fmt} 导入 {len(cues)} 条。",
+                                f"Imported {len(cues)} cues as {fmt}."), 4000)
             self.mark_dirty()
         except Exception as e:
-            self._warn("打开失败", str(e))
+            self._warn(S("打开失败", "Open failed"), str(e))
 
     # ------------------------------------------------------------ 工程
     def save_project(self, force_dialog: bool = False) -> bool:
         if self.doc is None:    # 空字幕但有视频也允许存工程，判空用 is None
-            self._warn("没有内容", "当前没有可保存的工程。")
+            self._warn(S("没有内容", "Nothing to save"),
+                       S("当前没有可保存的工程。", "There is no project to save."))
             return False
         path = self.doc.path
         if force_dialog or not path:
             default = ""
             if self.doc.source_video:
                 default = os.path.splitext(self.doc.source_video)[0] + ".ssp"
-            path, _ = QFileDialog.getSaveFileName(self, "保存工程", default,
-                                                  "字幕工程 (*.ssp)")
+            path, _ = QFileDialog.getSaveFileName(self, S("保存工程", "Save project"),
+                                                  default,
+                                                  S("字幕工程", "Subtitle project") + " (*.ssp)")
             if not path:
                 return False
             if not path.lower().endswith(".ssp"):
@@ -337,7 +358,7 @@ class MainWindow(FluentWindow):
         try:
             _atomic_write_text(path, self.doc.to_json())
         except OSError as e:
-            self._warn("保存失败", str(e))
+            self._warn(S("保存失败", "Save failed"), str(e))
             return False
         try:
             from ..core import recovery
@@ -349,7 +370,7 @@ class MainWindow(FluentWindow):
         self._dirty = False
         self.cfg.save()
         self._update_title()
-        InfoBar.success("已保存", os.path.basename(path), parent=self,
+        InfoBar.success(S("已保存", "Saved"), os.path.basename(path), parent=self,
                         position=InfoBarPosition.TOP, duration=2000)
         return True
 
@@ -358,13 +379,18 @@ class MainWindow(FluentWindow):
         # self.doc，旧实现没有 dirty 检查——正在编辑的内容被静默清空且
         # set_document 默认抹掉撤销栈，Ctrl+Z 都救不回来。
         if self._worker is not None:
-            self._warn("正在转写", "请先等当前转写结束或取消，再打开工程。")
+            self._warn(S("正在转写", "Transcribing"),
+                       S("请先等当前转写结束或取消，再打开工程。",
+                         "Wait for (or cancel) the current transcription before opening a project."))
             return
         if self.doc and self.doc.cues and self._dirty:
-            box = _CloseAskBox("当前工程未保存", "打开新工程会替换当前字幕。要先保存吗？\n"
-                                               "（选择「取消」则直接打开）", self)
-            box.yesButton.setText("保存并打开")
-            box.cancelButton.setText("直接打开")
+            box = _CloseAskBox(S("当前工程未保存", "Unsaved project"),
+                               S("打开新工程会替换当前字幕。要先保存吗？\n"
+                                 "（选择「取消」则直接打开）",
+                                 "Opening another project replaces the current subtitles. Save first?\n"
+                                 "(Cancel opens directly)"), self)
+            box.yesButton.setText(S("保存并打开", "Save and open"))
+            box.cancelButton.setText(S("直接打开", "Open directly"))
             r = box.exec_()
             if r:
                 if not self.save_project():
@@ -374,7 +400,7 @@ class MainWindow(FluentWindow):
                 data = json.load(f)
             doc = CueDocument.from_dict(data)
         except Exception as e:
-            self._warn("打开失败", f"{type(e).__name__}: {e}")
+            self._warn(S("打开失败", "Open failed"), f"{type(e).__name__}: {e}")
             return
         doc.path = os.path.abspath(path)
         if doc.source_video and not os.path.isfile(doc.source_video):
@@ -395,8 +421,9 @@ class MainWindow(FluentWindow):
         self.cfg.save()
         self.switch_to("editor")
         self._update_title()
-        InfoBar.success("已打开工程", f"{len(doc.cues)} 条字幕", parent=self,
-                        position=InfoBarPosition.TOP, duration=2500)
+        InfoBar.success(S("已打开工程", "Project opened"),
+                        S(f"{len(doc.cues)} 条字幕", f"{len(doc.cues)} cues"),
+                        parent=self, position=InfoBarPosition.TOP, duration=2500)
 
     def mark_dirty(self) -> None:
         self._dirty = True
@@ -495,7 +522,7 @@ class MainWindow(FluentWindow):
         d = self.doc
         name = os.path.basename(d.path) if (d is not None and d.path) else \
             (os.path.basename(d.source_video) if (d is not None and d.source_video)
-             else "未命名")
+             else S("未命名", "Untitled"))
         self.setWindowTitle(f"{'● ' if self._dirty else ''}{name} — Subtitle Studio")
 
     # ------------------------------------------------------------ 转写
@@ -515,19 +542,24 @@ class MainWindow(FluentWindow):
             if queue_mode:
                 QTimer.singleShot(300, self._queue_next)
                 return
-            self._warn("视频文件丢失", "请先重新导入视频。")
+            self._warn(S("视频文件丢失", "Video file missing"),
+                       S("请先重新导入视频。", "Please import the video again."))
             return
 
         from ..core.transcriber import FasterWhisperEngine
         if self.cfg.asr_engine == "faster-whisper" and not FasterWhisperEngine.available():
             # 同 open_media：裸 MessageBox 的动画被 GC 会"点了没反应"
-            box = _CloseAskBox("缺少 faster-whisper",
-                             "还没安装 faster-whisper。\n\n"
-                             "在终端运行：  pip install faster-whisper\n\n"
-                             "（本机已有 CTranslate2 模型，无需重新下载）\n\n"
-                             "是否现在打开「设置」改用其它引擎？", self)
-            box.yesButton.setText("打开设置")
-            box.cancelButton.setText("我知道了")
+            box = _CloseAskBox(S("缺少 faster-whisper", "faster-whisper missing"),
+                             S("还没安装 faster-whisper。\n\n"
+                               "在终端运行：  pip install faster-whisper\n\n"
+                               "（本机已有 CTranslate2 模型，无需重新下载）\n\n"
+                               "是否现在打开「设置」改用其它引擎？",
+                               "faster-whisper is not installed.\n\n"
+                               "Run in a terminal:  pip install faster-whisper\n\n"
+                               "(Existing CTranslate2 models on this machine are reused)\n\n"
+                               "Open Settings to switch engines?"), self)
+            box.yesButton.setText(S("打开设置", "Open Settings"))
+            box.cancelButton.setText(S("我知道了", "Got it"))
             if box.exec_():
                 self.switch_to("settings")
             return
@@ -542,12 +574,16 @@ class MainWindow(FluentWindow):
             if model_missing(_mdl) and not queue_mode:
                 mb = model_download_size_mb(_mdl)
                 box = _CloseAskBox(
-                    "首次使用需下载模型",
-                    f"本地还没有「{_mdl}」模型（约 {mb / 1024:.1f} GB）。\n\n"
-                    "首次转写会先自动下载（国内源实测约 2~5 分钟，完成后永久复用；"
-                    "进度条会显示下载进度）。\n\n是否继续？", self)
-                box.yesButton.setText("继续，先下载")
-                box.cancelButton.setText("先不转写")
+                    S("首次使用需下载模型", "First use: model download needed"),
+                    S(f"本地还没有「{_mdl}」模型（约 {mb / 1024:.1f} GB）。\n\n"
+                      "首次转写会先自动下载（国内源实测约 2~5 分钟，完成后永久复用；"
+                      "进度条会显示下载进度）。\n\n是否继续？",
+                      f"Model 「{_mdl}」 (about {mb / 1024:.1f} GB) is not on this machine.\n\n"
+                      "The first transcription downloads it automatically (about 2–5 min "
+                      "on a China mirror, reused forever afterwards; progress is shown).\n\n"
+                      "Continue?"), self)
+                box.yesButton.setText(S("继续，先下载", "Continue, download first"))
+                box.cancelButton.setText(S("先不转写", "Not now"))
                 if not box.exec_():
                     return
         except Exception:
@@ -556,8 +592,8 @@ class MainWindow(FluentWindow):
         self._gen = getattr(self, "_gen", 0) + 1      # 代际：旧 worker 的迟到信号一律丢弃
         gen = self._gen
         self.switch_to("editor")
-        self.editor._set_flow("busy", "① 正在提取音频…")
-        self._begin_progress("正在提取音频…")
+        self.editor._set_flow("busy", S("① 正在提取音频…", "① Extracting audio…"))
+        self._begin_progress(S("正在提取音频…", "Extracting audio…"))
         w = TranscribeWorker(self.doc.source_video, self.cfg,
                              keep_audio=bool(getattr(self.cfg, "keep_audio", False)))
         self._worker = w
@@ -584,7 +620,9 @@ class MainWindow(FluentWindow):
         if self._worker is None:
             if getattr(self, "_queue_stop_note", False):
                 self._queue_stop_note = False
-                self.editor.status.setText("批量队列已停止，可重新开始。")
+                self.editor.status.setText(
+                    S("批量队列已停止，可重新开始。",
+                      "Batch queue stopped. You can restart anytime."))
             return
         w = self._worker
         w.cancel()
@@ -605,7 +643,8 @@ class MainWindow(FluentWindow):
         self.editor.status.setText("已取消转写，可重新开始。")
         if getattr(self, "_queue_stop_note", False):
             self._queue_stop_note = False
-            self.editor.status.setText("批量队列已停止，可重新开始。")
+            self.editor.status.setText(S("批量队列已停止，可重新开始。",
+                                         "Batch queue stopped. You can restart anytime."))
 
     def _on_progress(self, gen: int, msg: str, pct: float) -> None:
         if self._stale(gen):
@@ -660,21 +699,31 @@ class MainWindow(FluentWindow):
         self.progressLabel.setText("")
         m = doc.meta
         self.editor.status.setText(
-            f"转写完成：{len(doc.cues)} 条 · 用时 {m.get('elapsed', 0)}s · "
-            f"速度 {m.get('speed', 0)}x · 语言 {m.get('language', '?')} · "
-            "可去「AI 纠错」修错别字。")
+            S(f"转写完成：{len(doc.cues)} 条 · 用时 {m.get('elapsed', 0)}s · "
+              f"速度 {m.get('speed', 0)}x · 语言 {m.get('language', '?')} · "
+              "可去「AI 纠错」修错别字。",
+              f"Transcribed: {len(doc.cues)} cues · {m.get('elapsed', 0)}s · "
+              f"{m.get('speed', 0)}x · language {m.get('language', '?')} · "
+              "run AI Fix to polish typos."))
         self.mark_dirty()
         if not doc.cues:
             # 转写"成功"但一条都没识别出来：多半是纯静音/无语音，或语言
             # 参数选错。报"成功（0 条）"会让用户以为坏了却无从下手。
-            self._warn("没有识别出任何字幕",
-                       "音频里可能没有可识别的语音（纯静音/音乐），"
-                       "或「设置 → 语言」与实际语音不符。可换语言后重试。")
-        InfoBar.success("转写完成", f"{len(doc.cues)} 条字幕（{m.get('engine', '')}）。"
-                        + (f"已自动衔接 {m.get('gaps_closed', 0)} 处字幕空隙，"
-                           "防止播放时闪断。" if m.get("gaps_closed") else "")
-                        + "建议接着做 AI 纠错。", parent=self,
-                        position=InfoBarPosition.TOP, duration=6000)
+            self._warn(S("没有识别出任何字幕", "No subtitles recognized"),
+                       S("音频里可能没有可识别的语音（纯静音/音乐），"
+                         "或「设置 → 语言」与实际语音不符。可换语言后重试。",
+                         "The audio may contain no recognizable speech (silence/music), "
+                         "or Settings → Language mismatches. Try another language."))
+        InfoBar.success(S("转写完成", "Transcription done"),
+                        S(f"{len(doc.cues)} 条字幕（{m.get('engine', '')}）。"
+                          + (f"已自动衔接 {m.get('gaps_closed', 0)} 处字幕空隙，"
+                             "防止播放时闪断。" if m.get("gaps_closed") else "")
+                          + "建议接着做 AI 纠错。",
+                          f"{len(doc.cues)} cues ({m.get('engine', '')}). "
+                          + (f"Auto-closed {m.get('gaps_closed', 0)} subtitle gaps to "
+                             "prevent flicker." if m.get("gaps_closed") else "")
+                          + " Next: AI Fix."),
+                        parent=self, position=InfoBarPosition.TOP, duration=6000)
         # 批量队列：本条完成 → 自动把 .ssp 存到视频旁边 → 接着下一条。
         # 自动保存绝不弹框（队列模式下 getSaveFileName 会卡住整个队列）。
         if self._queue_running():
@@ -698,7 +747,8 @@ class MainWindow(FluentWindow):
             self._dirty = False
             self.cfg.add_recent(path)
             self.editor.status.setText(
-                f"批量队列：已保存 {os.path.basename(path)}。")
+                S(f"批量队列：已保存 {os.path.basename(path)}。",
+                  f"Batch queue: saved {os.path.basename(path)}."))
         except OSError:
             pass
 
@@ -726,21 +776,25 @@ class MainWindow(FluentWindow):
         else:
             self.editor._set_flow("empty")
         if cancelled:
-            self.editor.status.setText("已取消转写，可重新开始。")
+            self.editor.status.setText(S("已取消转写，可重新开始。",
+                                         "Cancelled. You can start again anytime."))
             # 队列模式下的取消 = 停止整个批量（不自动续跑下一条）
             if self._queue_running():
                 self._queue = []
                 self._queue_active = False
-                self.editor.status.setText("批量队列已停止，可重新开始。")
+                self.editor.status.setText(S("批量队列已停止，可重新开始。",
+                                             "Batch queue stopped. You can restart anytime."))
             return
-        self.editor.status.setText("转写失败。")
+        self.editor.status.setText(S("转写失败。", "Transcription failed."))
         if self._queue_running():
             # 单个任务失败不拖垮整个队列：记下错误，自动续跑下一个
             self.editor.status.setText(
-                f"转写失败（{os.path.basename(getattr(self.doc, 'source_video', '') or '')}），"
-                "队列继续处理下一个。")
+                S(f"转写失败（{os.path.basename(getattr(self.doc, 'source_video', '') or '')}），"
+                  "队列继续处理下一个。",
+                  f"Failed ({os.path.basename(getattr(self.doc, 'source_video', '') or '')}); "
+                  "queue continues with the next item."))
         self._queue_advance()
-        InfoBar.error("转写失败", msg[:600], parent=self,
+        InfoBar.error(S("转写失败", "Transcription failed"), msg[:600], parent=self,
                       position=InfoBarPosition.TOP, duration=9000)
 
     def _begin_progress(self, msg: str) -> None:
@@ -779,9 +833,11 @@ class MainWindow(FluentWindow):
             added += 1
         self._queue = q
         if added:
-            InfoBar.success("已加入批量队列",
-                            f"{added} 个文件排队（共 {len(q)} 个待处理），"
-                            "逐个转写并保存 .ssp。可点「取消」随时停止。",
+            InfoBar.success(S("已加入批量队列", "Added to batch queue"),
+                            S(f"{added} 个文件排队（共 {len(q)} 个待处理），"
+                              "逐个转写并保存 .ssp。可点「取消」随时停止。",
+                              f"{added} file(s) queued ({len(q)} pending). "
+                              "Each is transcribed and saved as .ssp. Press Cancel to stop."),
                             parent=self, position=InfoBarPosition.TOP,
                             duration=5000)
             if self._worker is None and not self._queue_running():
@@ -904,9 +960,10 @@ class MainWindow(FluentWindow):
             e.ignore()
             if self._close_box is not None:
                 return                       # 已经问过了，等用户点
-            box = _CloseAskBox("退出前保存？", "当前字幕尚未保存。", self)
-            box.yesButton.setText("保存并退出")
-            box.cancelButton.setText("不保存退出")
+            box = _CloseAskBox(S("退出前保存？", "Save before quitting?"),
+                               S("当前字幕尚未保存。", "Subtitles are not saved yet."), self)
+            box.yesButton.setText(S("保存并退出", "Save and quit"))
+            box.cancelButton.setText(S("不保存退出", "Quit without saving"))
             self._close_box = box
             box.yesSignal.connect(self._close_save_quit)
             box.cancelSignal.connect(self._close_discard_quit)
