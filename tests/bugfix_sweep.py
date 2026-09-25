@@ -5589,6 +5589,34 @@ check("撤销栈 60 上限", "del self._undo[:-60]" in _ed246)
 check("打字流 800ms 合并", "now - self._undo_ts < 0.8" in _ed246)
 check("取消流文案双语", 'S(f"已导入：{name}", f"Imported: {name}")' in _mw246)
 
+from sstudio.core import media as _med247mod  # noqa: E402
+from sstudio.core.i18n import set_language as _sl247  # noqa: E402
+
+section("247. CLI/队列深审钉子（第 246 轮：退出码语义/队列边界/媒体过滤器双语）")
+_cli247 = open(os.path.join(_harness.ROOT, "sstudio", "cli_pipeline.py"),
+               encoding="utf-8").read()
+check("CLI 退出码约定注释", "0=成功；1=转写/导出失败（由 run_pipeline 的 except 统一）" in _cli247)
+check("CLI --out 前置校验", "不支持的输出扩展名" in _cli247 and "os.path.isdir(out)" in _cli247)
+check("CLI 原子落盘", "os.replace(tmp, out)" in _cli247)
+check("CLI wav finally 清理", "finally:" in _cli247 and "os.remove(wav)" in _cli247)
+check("CLI 编码与 GUI 对齐", 'getattr(cfg, "export_encoding", "utf-8-sig") if key == "srt"' in _cli247)
+_mw247 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
+              encoding="utf-8").read()
+check("队列上限 200", "len(q) >= 200" in _mw247)
+check("队列去重 abspath", "seen.add(ap)" in _mw247)
+check("队列消失文件跳过", "while q and not os.path.isfile(q[0]):" in _mw247)
+check("队列档住跳过不卡死", "QTimer.singleShot(400, self._queue_next)" in _mw247)
+_med247 = open(os.path.join(_harness.ROOT, "sstudio", "core", "media.py"),
+               encoding="utf-8").read()
+check("媒体过滤器标签双语", 'S("媒体文件", "Media files")' in _med247)
+# 运行时：en 下过滤器标签是英文、扩展名清单不变
+_sl247("en")
+_mf247 = _med247mod.media_filters()
+check("en 过滤器 Media files", _mf247.startswith("Media files ("), _mf247[:40])
+check("en 过滤器扩展名齐", _mf247.count("*.") == len(
+    _med247mod.VIDEO_EXTS | _med247mod.AUDIO_EXTS), f"{_mf247.count('*.')}")
+_sl247("zh")
+check("zh 过滤器原样（字节钉）", _med247mod.media_filters().startswith("媒体文件 ("))
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

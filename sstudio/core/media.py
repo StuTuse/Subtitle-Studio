@@ -45,7 +45,10 @@ def is_media(path: str) -> bool:
 
 
 def media_filters() -> str:
-    return "媒体文件 (%s)" % " ".join("*" + e for e in sorted(VIDEO_EXTS | AUDIO_EXTS))
+    # 文件对话框的过滤器标签；en 下给英文标签（扩展名清单是数据，共用）。
+    from .i18n import S
+    return S("媒体文件", "Media files") + " (%s)" % " ".join(
+        "*" + e for e in sorted(VIDEO_EXTS | AUDIO_EXTS))
 
 
 # ------------------------------------------------------------------ ffmpeg
