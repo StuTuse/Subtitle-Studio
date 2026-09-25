@@ -639,9 +639,10 @@ class MainWindow(FluentWindow):
             pass
         self._end_progress()
         name = os.path.basename(self.doc.source_video) if (
-            self.doc is not None and self.doc.source_video) else "视频"
-        self.editor._set_flow("ready", f"已导入：{name}")
-        self.editor.status.setText("已取消转写，可重新开始。")
+            self.doc is not None and self.doc.source_video) else S("视频", "video")
+        self.editor._set_flow("ready", S(f"已导入：{name}", f"Imported: {name}"))
+        self.editor.status.setText(S("已取消转写，可重新开始。",
+                                     "Cancelled. You can start again anytime."))
         if getattr(self, "_queue_stop_note", False):
             self._queue_stop_note = False
             self.editor.status.setText(S("批量队列已停止，可重新开始。",
@@ -773,7 +774,8 @@ class MainWindow(FluentWindow):
         self.progressLabel.setText("")
         if self.doc is not None and self.doc.source_video:
             self.editor._set_flow("ready",
-                                  f"已导入：{os.path.basename(self.doc.source_video)}")
+                                  S(f"已导入：{os.path.basename(self.doc.source_video)}",
+                                    f"Imported: {os.path.basename(self.doc.source_video)}"))
         else:
             self.editor._set_flow("empty")
         if cancelled:

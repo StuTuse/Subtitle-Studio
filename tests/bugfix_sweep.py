@@ -5567,6 +5567,28 @@ _ed245 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
 check("行标题双语", 'S(f"第 {row + 1} 条' in _ed245
       and 'f"Cue {row + 1} ·' in _ed245)
 
+section("246. 持久层深审钉子（第 246 轮：恢复快照/自动保存/撤销栈关键实现）")
+_rec246 = open(os.path.join(_harness.ROOT, "sstudio", "core", "recovery.py"),
+               encoding="utf-8").read()
+check("快照 8s 节流常量", "SNAPSHOT_INTERVAL = 8.0" in _rec246)
+check("快照 7 天保留期", "KEEP_DAYS = 7" in _rec246)
+check("快照 tmp+replace 原子落盘", "os.replace(tmp, path)" in _rec246)
+check("快照 token 去重", "token" in _rec246 and "_stem_for" in _rec246)
+check("快照目录兜底 tempdir", "tempfile.gettempdir()" in _rec246)
+_mw246 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
+              encoding="utf-8").read()
+check("自动保存 45s 限速", "45.0 - (now - last)" in _mw246)
+check("自动保存代数复核", "_save_gen" in _mw246 and "_dirty_gen" in _mw246
+      and "gen == self._dirty_gen" in _mw246)
+check("尾随快照定时器 2s", "_snap_timer.start(2000)" in _mw246)
+check("取消转写释放模型", "transcriber.release_models()" in _mw246
+      and _mw246.count("transcriber.release_models()") >= 2)
+_ed246 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
+              encoding="utf-8").read()
+check("撤销栈 60 上限", "del self._undo[:-60]" in _ed246)
+check("打字流 800ms 合并", "now - self._undo_ts < 0.8" in _ed246)
+check("取消流文案双语", 'S(f"已导入：{name}", f"Imported: {name}")' in _mw246)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
