@@ -5510,6 +5510,27 @@ check("__main__ 语言先于 argparse", "from sstudio.core.i18n import set_langu
       open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
            encoding="utf-8").read())
 
+section("243. en 残留清扫（第 246 轮：编辑页遗漏 8 控件 + 接入点默认名展示层转译）")
+_ed243 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
+              encoding="utf-8").read()
+check("编辑页导入视频双语", 'S("导入视频", "Import video")' in _ed243)
+check("编辑页未选中双语", 'S("未选中", "Nothing selected")' in _ed243)
+check("编辑页保存并下一条双语", 'S("保存并下一条", "Save & next")' in _ed243)
+_fx243 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "fix_page.py"),
+              encoding="utf-8").read()
+check("纠错页术语占位双语", "DaVinci=>DaVinci Resolve\\nPremiere=>Premiere Pro" in _fx243)
+check("纠错页默认档展示转译", 'S("默认", "Default") if p.name == "默认"' in _fx243)
+_sp243 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
+              encoding="utf-8").read()
+check("设置页 _prof_disp 转译器", 'def _prof_disp(self, name: str) -> str:' in _sp243
+      and 'S("默认", "Default") if name == "默认" else name' in _sp243)
+check("设置页 profile 行全走转译", _sp243.count("_prof_disp(") >= 7)
+check("语言提示去掉未完成声明", "尚未覆盖的文案仍显示中文" not in _sp243)
+_llm243 = open(os.path.join(_harness.ROOT, "sstudio", "core", "llm.py"),
+               encoding="utf-8").read()
+check("提示词协议文本定性为数据（不包 S）", "提示词本体是发给模型的协议文本" in _llm243
+      and _llm243.count("DEFAULT_SYSTEM = ") == 1)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

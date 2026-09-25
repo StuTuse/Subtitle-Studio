@@ -238,7 +238,9 @@ class SettingsInterface(QWidget):
         # 与纠错页同名编辑器统一"至少 120"（那边 setMinimumHeight(120)）：
         # 一边 max 110 一边 min 120，同一份数据两处高矮伸缩都不一致
         self.glossary.setMinimumHeight(120)
-        self.glossary.setPlaceholderText("OpenChatCut\n达芬奇=>DaVinci Resolve\n剪映=>CapCut")
+        self.glossary.setPlaceholderText(S(
+            "OpenChatCut\n达芬奇=>DaVinci Resolve\n剪映=>CapCut",
+            "DaVinci=>DaVinci Resolve\nPremiere=>Premiere Pro\nJianYing=>CapCut"))
         v.addWidget(self.glossary)
 
         srow = QHBoxLayout()
@@ -460,10 +462,8 @@ class SettingsInterface(QWidget):
         self.ui_lang.addItem("中文", userData="zh")
         self.ui_lang.addItem("English", userData="en")
         self.ui_lang.setToolTip(
-            S("界面语言，重启软件后生效。\n\n"
-              "English：英文翻译正在分批接入，尚未覆盖的文案仍显示中文。",
-              "UI language; takes effect after restart.\n\n"
-              "English: translation is still rolling out; uncovered strings stay Chinese."))
+            S("界面语言，重启软件后生效。",
+              "UI language; takes effect after restart."))
         form.addRow(S("界面语言", "UI language"), self.ui_lang)
         self.autosave = SwitchButton(card)
         self.autosave.setChecked(True)
@@ -539,12 +539,17 @@ class SettingsInterface(QWidget):
         dlg.exec_()
 
     # ------------------------------------------------------------ 载入/保存
+    def _prof_disp(self, name: str) -> str:
+        """接入点名的展示层转译：默认档「默认」→ en "Default"（存储层不变）。"""
+        return S("默认", "Default") if name == "默认" else name
+
     def _load(self) -> None:
         cfg = self.cfg
         self._loading = True
         self.prof_list.clear()
         for p in cfg.profiles:
-            self.prof_list.addItem(QListWidgetItem(f"{p.name}  ·  {p.model}"))
+            self.prof_list.addItem(QListWidgetItem(
+                f"{self._prof_disp(p.name)}  ·  {p.model}"))
         idx = max(0, next((i for i, p in enumerate(cfg.profiles)
                            if p.name == cfg.active_profile), 0))
         self.prof_list.setCurrentRow(idx)
@@ -692,10 +697,14 @@ class SettingsInterface(QWidget):
 
     # ------------------------------------------------------- profile 操作
     def _show_profile(self, p: LLMProfile) -> None:
-        """把 profile 灌进表单（期间屏蔽写回，避免把空值覆盖进配置）。"""
+        """把 profile 灌进表单（期间屏蔽写回，避免把空值覆盖进配置）。
+
+        p_name 显示转译名（默认档 en→"Default"）；用户一旦编辑即按字面值
+        存回——数据层永远是「默认」，与 active_profile 匹配不受影响。
+        """
         self._loading = True
         try:
-            self.p_name.setText(p.name)
+            self.p_name.setText(self._prof_disp(p.name))
             self.p_base.setText(p.base_url)
             self.p_key.setText(p.api_key)
             self.p_model.setText(p.model)
@@ -729,7 +738,7 @@ class SettingsInterface(QWidget):
         p.no_reasoning = self.p_noreason.isChecked()
         item = self.prof_list.item(row)
         if item is not None:
-            item.setText(f"{p.name}  ·  {p.model}")
+            item.setText(f"{self._prof_disp(p.name)}  ·  {p.model}")
 
     def _rename_prof(self) -> None:
         row = self.prof_list.currentRow()
@@ -745,7 +754,8 @@ class SettingsInterface(QWidget):
         if self.cfg.active_profile == old:
             self.cfg.active_profile = new
         self.p_name.setText(new)
-        self.prof_list.item(row).setText(f"{new}  ·  {self.cfg.profiles[row].model}")
+        self.prof_list.item(row).setText(
+            f"{self._prof_disp(new)}  ·  {self.cfg.profiles[row].model}")
 
     def _add_prof(self) -> None:
         self._collect_profile()
@@ -753,7 +763,7 @@ class SettingsInterface(QWidget):
         p = LLMProfile(name=S(f"接入点{n}", f"Profile {n}"), base_url="https://api.openai.com/v1",
                        model="gpt-4o-mini")
         self.cfg.profiles.append(p)
-        self.prof_list.addItem(QListWidgetItem(f"{p.name}  ·  {p.model}"))
+        self.prof_list.addItem(QListWidgetItem(f"{self._prof_disp(p.name)}  ·  {p.model}"))
         self.prof_list.setCurrentRow(len(self.cfg.profiles) - 1)
 
     def _del_prof(self) -> None:
@@ -900,7 +910,8 @@ class SettingsInterface(QWidget):
         p.no_reasoning = bool(pre.get("no_reasoning")) or p.no_reasoning
         p.kind = "ollama" if "127.0.0.1" in pre["base_url"] else "openai"
         self._show_profile(p)
-        self.prof_list.item(row).setText(f"{p.name}  ·  {p.model}")
+        self.prof_list.item(row).setText(
+            f"{self._prof_disp(p.name)}  ·  {p.model}")
         self.preset.setCurrentIndex(-1)
 
     def _test(self) -> None:

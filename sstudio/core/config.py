@@ -217,6 +217,10 @@ class Config:
     openai_transcribe_model: str = "whisper-1"
 
     # ---- 修正（LLM）
+    # 接入点默认名「默认」是**数据**（写进 config.json 并参与 active_profile
+    # 匹配），不是界面文案：改名会造成老配置 active_profile="默认" 与新档
+    # 名对不上、激活指针静默脱靶。界面侧展示时用 S() 转译（fix_page/
+    # settings 的 profile 行），存储层保持原样。
     profiles: List[LLMProfile] = field(default_factory=lambda: [LLMProfile()])
     active_profile: str = "默认"
     prompt_template: str = ""                # 空 = 用内置默认模板

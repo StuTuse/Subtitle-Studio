@@ -114,7 +114,9 @@ class FixInterface(QWidget):
         c3.addLayout(r3)
         self.glossary = TextEdit(card3)
         self.glossary.setMinimumHeight(120)
-        self.glossary.setPlaceholderText("OpenChatCut\n达芬奇=>DaVinci Resolve\n剪映=>CapCut")
+        self.glossary.setPlaceholderText(S(
+            "OpenChatCut\n达芬奇=>DaVinci Resolve\n剪映=>CapCut",
+            "DaVinci=>DaVinci Resolve\nPremiere=>Premiere Pro\nJianYing=>CapCut"))
         c3.addWidget(self.glossary)
         lv.addWidget(card3)
         lv.addStretch(1)
@@ -234,7 +236,9 @@ class FixInterface(QWidget):
     # ------------------------------------------------------------ 同步
     def sync_from_cfg(self) -> None:
         p = self.cfg.profile()
-        self.profile_label.setText(f"{p.name} · {p.model} · {p.base_url}")
+        # 接入点名是 config.json 里的数据（默认档叫「默认」），展示层转译
+        name = (S("默认", "Default") if p.name == "默认" else p.name)
+        self.profile_label.setText(f"{name} · {p.model} · {p.base_url}")
         self.batch.setValue(self.cfg.batch_size)
         self.conc.setValue(self.cfg.concurrency)
         self.strict.setChecked(self.cfg.strict_mode)

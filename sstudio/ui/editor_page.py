@@ -74,7 +74,7 @@ class EditorInterface(QWidget):
             return a
 
         self.bar.addActions([
-            act(FIF.VIDEO, "导入视频", lambda: self.main.open_media_dialog()),
+            act(FIF.VIDEO, S("导入视频", "Import video"), lambda: self.main.open_media_dialog()),
             act(FIF.PLAY, S("开始转写", "Transcribe"), lambda: self.main.start_transcribe()),
             act(FIF.BROOM, S("AI 纠错", "AI Fix"), lambda: self.main.goto_fix()),
             act(FIF.SAVE, S("导出", "Export"), lambda: self.main.switch_to("export")),
@@ -233,7 +233,7 @@ class EditorInterface(QWidget):
         eb = QVBoxLayout(edit_box)
         eb.setContentsMargins(4, 0, 0, 0)
         eb.setSpacing(5)
-        self.cur_row = CaptionLabel("未选中", edit_box)
+        self.cur_row = CaptionLabel(S("未选中", "Nothing selected"), edit_box)
         self.cur_row.setWordWrap(True)
         eb.addWidget(self.cur_row)
         # 小进度条：当前选中的是第几条 / 一共多少条，改字幕时一眼看到进度
@@ -245,18 +245,24 @@ class EditorInterface(QWidget):
         self.pos_bar.setValue(0)
         self.pos_bar.setTextVisible(False)
         self.pos_bar.setFixedHeight(8)
-        self.pos_bar.setToolTip("当前字幕在全部字幕中的位置")
+        self.pos_bar.setToolTip(S("当前字幕在全部字幕中的位置",
+                                  "Selected cue's position within all cues"))
         prrow.addWidget(self.pos_bar, 1)
         self.pos_label = CaptionLabel("0 / 0", edit_box)
         self.pos_label.setMinimumWidth(58)
         prrow.addWidget(self.pos_label)
         eb.addLayout(prrow)
-        eb.addWidget(BodyLabel("修改内容（Enter 保存并跳下一条）", edit_box))
+        eb.addWidget(BodyLabel(S("修改内容（Enter 保存并跳下一条）",
+                                 "Edit text (Enter saves and jumps to next)"), edit_box))
         self.edit_area = QPlainTextEdit(edit_box)
         self.edit_area.setPlaceholderText(
-            "选中一条字幕后，这里会显示它的文本。\n"
-            "直接改错别字，Enter 保存并跳到下一条；\n"
-            "Shift+Enter 才是换行。（双击表格里的文字也能就地编辑）")
+            S("选中一条字幕后，这里会显示它的文本。\n"
+              "直接改错别字，Enter 保存并跳到下一条；\n"
+              "Shift+Enter 才是换行。（双击表格里的文字也能就地编辑）",
+              "Select a cue and its text shows up here.\n"
+              "Fix typos directly; Enter saves and jumps to the next cue;\n"
+              "Shift+Enter makes a line break. (Double-click text in the table "
+              "for in-place editing)"))
         from .theme import edit_font
         self.edit_area.setFont(edit_font())   # CJK 小字全 hinting，暗浅底都更实
         self.edit_area.setTabChangesFocus(True)
@@ -266,11 +272,12 @@ class EditorInterface(QWidget):
 
         er = QHBoxLayout()
         er.setSpacing(6)
-        self.btn_save_edit = PrimaryPushButton(FIF.SAVE, "保存并下一条", edit_box)
+        self.btn_save_edit = PrimaryPushButton(FIF.SAVE, S("保存并下一条", "Save & next"), edit_box)
         self.btn_save_edit.clicked.connect(self._apply_inline)
         er.addWidget(self.btn_save_edit)
-        b_del = PushButton(FIF.DELETE, "删除", edit_box)
-        b_del.setToolTip("删除选中条目（Del 键同样可用）")
+        b_del = PushButton(FIF.DELETE, S("删除", "Delete"), edit_box)
+        b_del.setToolTip(S("删除选中条目（Del 键同样可用）",
+                           "Delete the selected cue (Del works too)"))
         b_del.clicked.connect(lambda: self._act("delete"))
         er.addWidget(b_del)
         er.addStretch(1)
