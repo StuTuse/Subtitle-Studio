@@ -722,6 +722,27 @@ class WelcomeWizard(QDialog):
                 except RuntimeError:
                     pass
 
+    def _quiesce_animations(self) -> None:
+        """关窗收尾：停掉在跑的页面动效并摘掉残留的 QGraphicsEffect。
+
+        wizard_fx 的动画组是 DeleteWhenStopped：解释器拆机阶段动画还在
+        队列里时，finished 回调（clear_effect / setVisible）会摸到已被
+        PyQt 全局析构抢先删掉的 C++ 对象 → 0xC0000005。关窗瞬间主动
+        停止 + 摘 effect，退出路径上就不存在活着的动画了。
+        """
+        try:
+            from PyQt5.QtCore import QAbstractAnimation
+            for ani in self.findChildren(QAbstractAnimation):
+                ani.stop()
+        except Exception:
+            pass
+        for pg in self.pages:
+            wizard_fx.clear_effect(pg)
+
+    def closeEvent(self, e) -> None:  # noqa: N802
+        self._quiesce_animations()
+        super().closeEvent(e)
+
     def _finish(self) -> None:
         """完成：直接落盘关闭（不做扩张/级联仪式动画）。"""
         if self._anim_lock:
@@ -735,11 +756,13 @@ class WelcomeWizard(QDialog):
             app_pg.apply(self.cfg)
         self.cfg.setup_done = True
         self.cfg.save()
+        self._quiesce_animations()
         self.accept()
 
     def reject(self) -> None:  # noqa: N802
         """Esc / 点 X 中途关向导：同 _finish，先取消装包线程再关。"""
         self._shutdown_worker()
+        self._quiesce_animations()
         super().reject()
 
 

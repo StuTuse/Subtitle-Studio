@@ -4953,6 +4953,35 @@ check("空串隐藏角标", not _pw243.badge.isVisible())
 check("换视频清角标", 'set_badge("")' in _insp238.getsource(_PW243.load))
 _pw243.shutdown()
 
+section("229. 启动叠影修复：Mica 关闭 + 不透明底色 + 向导拆机硬化（第 244 轮钉子）")
+# ① 主窗 Mica 必须关闭：qfluentwidgets 1.8.4 在 Win11 默认 setMicaEffectEnabled(True)
+#   （DWM 背板 + 框架延伸拉满客户区 + 窗口底色 alpha=0），叠 StackedWidget
+#   半透明样式和自定义调色板后 DWM 合成异常 → 用户看到「渲染了好几层」。
+#   注意不能在本进程再建第二个 MainWindow：前 228 节已建过 MainWindow +
+#   PlayerWidget（DirectShow 后端），重复构建会触发 0xC0000005（实测必崩）。
+#   语义钉走独立子进程（下方 subprocess），源码钉在本节。
+_src244 = _insp238.getsource(_MW242.MainWindow.__init__)
+check("init 里显式关 Mica", "setMicaEffectEnabled(False)" in _src244
+      and "addShadowEffect" in _src244)
+check("关 Mica 在 apply_theme 之后", _src244.index("apply_theme(self.cfg)")
+      < _src244.index("setMicaEffectEnabled(False)"))
+# ② 向导拆机硬化：关窗路径必须停动画 + 摘 effect（0xC0000005 防护）
+_src244b = _insp238.getsource(__import__("sstudio.ui.welcome_wizard",
+                                         fromlist=["WelcomeWizard"]).WelcomeWizard)
+check("向导关窗 quiesce", "_quiesce_animations" in _src244b
+      and "ani.stop()" in _src244b and "clear_effect" in _src244b)
+check("finish/reject/closeEvent 都走 quiesce",
+      _src244b.count("_quiesce_animations()") >= 3)
+# ③ 语义钉：独立子进程真实构建 MainWindow，验证 Mica 关闭与不透明底色
+import subprocess as _sub244  # noqa: E402
+_probe244 = os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                         "_mica_probe.py")
+_r244 = _sub244.run([sys.executable, "-X", "utf8", _probe244],
+                    capture_output=True, text=True, encoding="utf-8", timeout=120)
+check("独立进程 Mica/底色全绿", _r244.returncode == 0,
+      (_r244.stdout + _r244.stderr).splitlines()[-1][:120]
+      if (_r244.stdout + _r244.stderr).strip() else "")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
