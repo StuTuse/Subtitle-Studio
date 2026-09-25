@@ -158,6 +158,26 @@ class MainWindow(FluentWindow):
         self.stackedWidget.currentChanged.connect(self._on_page)
 
         self._restore_geometry()
+
+        # ------------------------------------------------------------ 启动闪烁根治
+        # 窗口显示前的"静止化"三连，把所有会拖到 show() 之后才收敛的状态
+        # 全部提前钉死，首帧即为最终帧，DWM 不再有任何跳变可闪：
+        # ① 底色动画：apply_theme 的 setTheme 会经 themeChanged 触发 120ms
+        #    backgroundColorAni（实测 show 时仍在 Running）——停掉并直接把
+        #    bgColorObject 置终值，首帧画的就是实色。
+        # ② DWM 模糊背板残留：qframelesswindow 的 AcrylicWindow 在 Win11 上
+        #    构造时 updateFrameless 会 DwmEnableBlurBehindWindow(True) +
+        #    setAcrylicEffect；我们关 Mica 只清 accent policy，blurBehind
+        #    独立 API 仍开着——开窗后 DWM 还在对客户区做模糊重合成 = 闪。
+        #    显式 disable 掉。
+        # ③ 主题样式：apply_theme 已在构造期（splash 盖着时）全量刷新完毕，
+        #    show 后不再有 QSS 抖动源。
+        self.backgroundColorAni.stop()
+        self.setBackgroundColor(self._normalBackgroundColor())
+        try:
+            self.windowEffect.disableBlurBehindWindow(self.winId())
+        except Exception:
+            pass
         # 命令行文件由 __main__ 统一 singleShot 打开（带 isfile 校验）；
         # 这里不再扫 sys.argv——曾导致同一文件被两个定时器各开一次
         # （双 probe、双 InfoBar），且 "--out 路径" 这类旗标值会被误当目标。

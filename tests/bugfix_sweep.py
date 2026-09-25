@@ -5772,6 +5772,45 @@ _mono252 = all(_e252.valueForProgress(a) <= _e252.valueForProgress(b) + 1e-9
                for a, b in zip((0.0, 0.2, 0.4, 0.6, 0.8), (0.2, 0.4, 0.6, 0.8, 1.0)))
 check("InOutCubic 全程单调", _mono252)
 
+section("253. 启动闪烁根治三连（v1.17.279 后仍闪：底色动画 + blurBehind 残留）")
+_mw253 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
+              encoding="utf-8").read()
+# ① 底色动画静止化：stop + bgColorObject 置终值（show 后不再有 120ms 渐变）
+check("构造末尾停底色动画", _mw253.count("self.backgroundColorAni.stop()") == 1)
+check("底色直接置终值", "self.setBackgroundColor(self._normalBackgroundColor())"
+      in _mw253 and "backgroundColorAni.stop()" in _mw253)
+# 静止化必须在 _restore_geometry 之后（init 末尾）——几何稳定后再钉死绘制状态
+check("静止化在 restore_geometry 之后",
+      _mw253.index("_restore_geometry()") < _mw253.index("backgroundColorAni.stop()"))
+# ② DWM blurBehind 残留：AcrylicWindow.updateFrameless 在 Win11 上
+#    DwmEnableBlurBehindWindow(True)，关 Mica 不清它 → 显式 disable
+check("显式关 blurBehind", "disableBlurBehindWindow(self.winId())" in _mw253)
+check("blurBehind 关调用有兜底", _mw253.index("disableBlurBehindWindow")
+      < _mw253.index("except Exception:", _mw253.index("disableBlurBehindWindow")))
+# ③ qframelesswindow 确有该 API（防升级后改名漂移）
+try:
+    from qframelesswindow.windows.window_effect import (
+        WindowsWindowEffect as _WWE253)
+    check("windowEffect 有 disableBlurBehindWindow",
+          hasattr(_WWE253, "disableBlurBehindWindow"))
+except Exception as _e253:
+    check("windowEffect 有 disableBlurBehindWindow", False, str(_e253))
+# 运行时语义钉：构造完 → 动画 Stopped、底色 alpha=255、show 后依然如此
+try:
+    from sstudio.core.config import Config as _Cfg253
+    from sstudio.ui.main_window import MainWindow as _MW253
+    _w253 = _MW253(_Cfg253())
+    check("构造完动画已停", _w253.backgroundColorAni.state() == 0)
+    check("构造完底色实色", _w253.backgroundColor.alpha() == 255)
+    _w253.show()
+    _app159.processEvents()
+    _app159.processEvents()
+    check("show 后动画仍停", _w253.backgroundColorAni.state() == 0)
+    check("show 后底色仍实色", _w253.backgroundColor.alpha() == 255)
+    _w253.close()
+except Exception as _e253:
+    check("运行时静止化语义", False, str(_e253))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
