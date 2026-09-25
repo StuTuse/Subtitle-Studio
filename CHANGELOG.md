@@ -1,5 +1,9 @@
 # 更新日志
 
+## [1.17.270] - 2026-09-25
+
+v1.17.270：死代码清理二期——新增全库 AST 引用扫描（探针）：移除 version._nearest_tag、transcriber._ensure_hf_endpoint、theme.crisp、theme.apply_card_margins、wizard_fx._animate 五个无调用点符号，sstudio 全库未引用符号归零
+
 ## [1.17.269] - 2026-09-25
 
 v1.17.269：en 模式残留清扫——编辑页 8 处遗漏控件、术语表占位、接入点默认名展示转译（en→Default，存储层「默认」数据不变，active_profile 匹配不受影响）；en 模式主窗四页全部控件 CJK 扫描清零（仅剩数据类：提示词协议文本/语言选择器中文项）
