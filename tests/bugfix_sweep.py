@@ -5531,6 +5531,24 @@ _llm243 = open(os.path.join(_harness.ROOT, "sstudio", "core", "llm.py"),
 check("提示词协议文本定性为数据（不包 S）", "提示词本体是发给模型的协议文本" in _llm243
       and _llm243.count("DEFAULT_SYSTEM = ") == 1)
 
+section("244. 性能基线与残留双补（第 246 轮：大文档渲染剖析 + stat_label/flow 双语）")
+# 性能剖析结论（offscreen 实测，_probe 级别）：5000 条 set_document 全量
+# QTableWidgetItem 构建 ≈164ms、选行/切页/筛选均 <5ms——
+# QTableWidget 全量模式在 5000 条内可接受，暂不迁 model/view（迁移风险 >
+# 收益，等 1 万条场景出现再议）。此处钉实现关键点防回退：
+_ct244 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "cue_table.py"),
+              encoding="utf-8").read()
+check("表格样式缓存仍在（热路径无临时对象）", "_style_cache: dict = {}" in _ct244
+      and "cls._style_cache[ck] = v" in _ct244)
+check("行高钳制上下限", "max(34, min(150," in _ct244)
+_ed244 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
+              encoding="utf-8").read()
+check("搜索防抖 180ms", "setInterval(180)" in _ed244)
+check("stat_label 双语", 'S(f"显示 {shown} / {total} 条", f"Showing {shown} / {total}")'
+      in _ed244 and 'S(f"共 {total} 条", f"{total} cues")' in _ed244)
+check("flow ready 已导入双语", 'S(f"已导入：{os.path.basename(doc.source_video)}"' in _ed244
+      and 'f"Imported: {os.path.basename(doc.source_video)}"' in _ed244)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

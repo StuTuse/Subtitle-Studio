@@ -637,7 +637,8 @@ class EditorInterface(QWidget):
         if doc is not None and doc.cues:
             self._set_flow("done")
         elif doc is not None and doc.source_video:
-            self._set_flow("ready", f"已导入：{os.path.basename(doc.source_video)}")
+            self._set_flow("ready", S(f"已导入：{os.path.basename(doc.source_video)}",
+                                      f"Imported: {os.path.basename(doc.source_video)}"))
         else:
             self._set_flow("empty")
         self.split.setVisible(self._flow == "done")
@@ -1127,7 +1128,9 @@ class EditorInterface(QWidget):
             self.table.setRowHidden(r, not ok)
             shown += 1 if ok else 0
         total = self.table.rowCount()
-        self.stat_label.setText(f"显示 {shown} / {total} 条" if (text or only_bad) else f"共 {total} 条")
+        self.stat_label.setText(
+            S(f"显示 {shown} / {total} 条", f"Showing {shown} / {total}")
+            if (text or only_bad) else S(f"共 {total} 条", f"{total} cues"))
         # "#12" 是跳转指令（placeholder 就这么承诺的）：直接定位并滚过去，
         # 不把其它行过滤掉后停在原地；跳完清空，恢复完整列表。
         m = _re.fullmatch(r"#(\d{1,7})", text) if text else None
