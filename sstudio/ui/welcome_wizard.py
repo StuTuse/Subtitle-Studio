@@ -47,6 +47,7 @@ except Exception:  # pragma: no cover —— 无 qfluentwidgets 的最小兜底
 from .. import __version__
 from ..core import doctor
 from ..core.config import BUILTIN_PRESETS, Config, LLMProfile
+from ..core.i18n import S
 from .first_run_dialog import FirstRunDialog
 from .splash import app_icon
 from .theme import dim_span, is_dark, status_hex
@@ -91,13 +92,17 @@ class _WelcomePage(_Page):
         t = TitleLabel(f"欢迎使用 Subtitle Studio", self)
         t.setAlignment(Qt.AlignHCenter)
         self.v.addWidget(t)
-        v = BodyLabel(f"版本 {__version__} · 视频字幕工坊", self)
+        v = BodyLabel(S(f"版本 {__version__} · 视频字幕工坊",
+                        f"Version {__version__} · subtitle workshop"), self)
         v.setAlignment(Qt.AlignHCenter)
         self.v.addWidget(v)
         self.v.addSpacing(14)
-        for line in ("本地 Whisper 转写 · 大模型纠错 · 多格式导出",
-                     "接下来只需两步：选外观、连模型（可选）。",
-                     "全程离线可用，不上传任何素材。"):
+        for line in (S("本地 Whisper 转写 · 大模型纠错 · 多格式导出",
+                       "Local Whisper transcription · LLM fixing · multi-format export"),
+                     S("接下来只需两步：选外观、连模型（可选）。",
+                       "Just two steps: pick a look, connect a model (optional)."),
+                     S("全程离线可用，不上传任何素材。",
+                       "Fully offline capable; no footage is ever uploaded.")):
             lab = CaptionLabel(line, self)
             lab.setAlignment(Qt.AlignHCenter)
             self.v.addWidget(lab)
@@ -114,9 +119,12 @@ class _AppearancePage(_Page):
         row = QHBoxLayout()
         row.setSpacing(14)
         for key, name, desc in (
-                ("auto", "跟随系统", "Windows 深色模式开了就用深色"),
-                ("light", "浅色", "白底黑字，白天护眼"),
-                ("dark", "深色", "黑底白字，夜间剪辑常用")):
+                ("auto", S("跟随系统", "Follow system"), S("Windows 深色模式开了就用深色",
+                                                          "Dark when Windows dark mode is on")),
+                ("light", S("浅色", "Light"), S("白底黑字，白天护眼",
+                                                "White background; easy on daytime eyes")),
+                ("dark", S("深色", "Dark"), S("黑底白字，夜间剪辑常用",
+                                              "Dark background; common for night editing"))):
             card = CardWidget(self)
             card.setFixedHeight(150)
             cv = QVBoxLayout(card)
@@ -168,8 +176,10 @@ class _AppearancePage(_Page):
 class _ModelPage(_Page):
     def __init__(self, w: "WelcomeWizard"):
         super().__init__(w)
-        self.title("连一个大模型（用于 AI 纠错）",
-                   "字幕纠错会调用它修错别字。可以先跳过——之后在「设置」里随时配。")
+        self.title(S("连一个大模型（用于 AI 纠错）", "Connect an LLM (for AI fix)"),
+                   S("字幕纠错会调用它修错别字。可以先跳过——之后在「设置」里随时配。",
+                     "AI fixing calls it to correct typos. You can skip — configure "
+                     "anytime later in Settings."))
 
         self.preset = ComboBox(self)
         self._fill_presets()
@@ -181,21 +191,23 @@ class _ModelPage(_Page):
         self.p_base = LineEdit(self)
         self.p_base.setPlaceholderText("https://api.deepseek.com/v1")
         self.p_key = PasswordLineEdit(self)
-        self.p_key.setPlaceholderText("sk-…（本地服务随便填，如 ollama）")
+        self.p_key.setPlaceholderText(S("sk-…（本地服务随便填，如 ollama）",
+                                        "sk-… (anything for local services, e.g. ollama)"))
         self.p_model = LineEdit(self)
         self.p_model.setPlaceholderText("deepseek-chat")
         self.p_test = CaptionLabel("", self)
-        form.addRow("接口地址", self.p_base)
+        form.addRow(S("接口地址", "Base URL"), self.p_base)
         form.addRow("API Key", self.p_key)
-        form.addRow("模型名", self.p_model)
+        form.addRow(S("模型名", "Model"), self.p_model)
         form.addRow("", self.p_test)
         self.v.addLayout(form)
 
         btns = QHBoxLayout()
-        self.btn_test = PushButton("测试连接", self)
+        self.btn_test = PushButton(S("测试连接", "Test connection"), self)
         self.btn_test.clicked.connect(self._test)
         btns.addWidget(self.btn_test)
-        self.btn_skip = PushButton("暂时跳过（离线转写也能用）", self)
+        self.btn_skip = PushButton(S("暂时跳过（离线转写也能用）",
+                                     "Skip for now (offline transcription works)"), self)
         self.btn_skip.clicked.connect(self._skip)
         btns.addWidget(self.btn_skip)
         btns.addStretch(1)
@@ -206,7 +218,7 @@ class _ModelPage(_Page):
 
     def _fill_presets(self) -> None:
         """预设下拉 = 内置 + 用户自定义（config.custom_presets，出厂带示例预设）。"""
-        self.preset.addItem("选择服务商预设…", None, None)
+        self.preset.addItem(S("选择服务商预设…", "Pick a provider preset…"), None, None)
         for p in self._presets():
             self.preset.addItem(p["name"], None, p)   # (text, icon, userData)
 
@@ -229,7 +241,8 @@ class _ModelPage(_Page):
         self._skipped = True
         self.p_base.clear()
         self.p_key.clear()
-        self.p_test.setText(dim_span("已跳过。到「设置」里随时可配。"))
+        self.p_test.setText(dim_span(S("已跳过。到「设置」里随时可配。",
+                                       "Skipped. Configure anytime in Settings.")))
         # 同一轮向导里先填好并点过「下一步」（apply 已写进 cfg.profiles[0]），
         # 再后退回来点跳过：用户最终意图是「不要配」，cfg 里不能留脏值
         # （base/key/model 会在向导结束时一起落盘）。
@@ -244,7 +257,8 @@ class _ModelPage(_Page):
         base = self.p_base.text().strip()
         if not base:
             self.p_test.setText(f"<span style='color:{status_hex('err')}'>"
-                                "先填接口地址，或点「暂时跳过」。</span>")
+                                + S("先填接口地址，或点「暂时跳过」。",
+                                    "Fill the base URL first, or press Skip.") + "</span>")
             return
         prof = LLMProfile(name="welcome", base_url=base,
                           api_key=self.p_key.text().strip(),
@@ -252,7 +266,7 @@ class _ModelPage(_Page):
         from .workers import TestLLMWorker, reap
         reap(getattr(self, "_worker", None))
         self._worker = None
-        self.p_test.setText("正在测试连接…")
+        self.p_test.setText(S("正在测试连接…", "Testing connection…"))
         self.btn_test.setEnabled(False)
         w = TestLLMWorker(self, prof)
         w.sig_done.connect(lambda r: self._tested(r))
@@ -272,8 +286,9 @@ class _ModelPage(_Page):
         msg = _esc(msg or "")
         if ok:
             self.p_test.setText(
-                f"<span style='color:{status_hex('ok')}'>✓ 连接成功（{dt:.2f}s）</span>"
-                f" 模型回复：{msg[:60]}")
+                f"<span style='color:{status_hex('ok')}'>"
+                + S(f"✓ 连接成功（{dt:.2f}s）", f"✓ Connected ({dt:.2f}s)") + "</span>"
+                + S(f" 模型回复：{msg[:60]}", f" Model says: {msg[:60]}"))
         else:
             self.p_test.setText(f"<span style='color:{status_hex('err')}'>"
                                 f"✕ {msg[:120]}</span>")
@@ -309,7 +324,10 @@ class _CheckPage(_Page):
 
     def __init__(self, w: "WelcomeWizard"):
         super().__init__(w)
-        self.title("环境体检", "检查转写引擎、视频解码、GPU 加速是否就绪。缺什么可一键补装。")
+        self.title(S("环境体检", "Environment check"),
+                   S("检查转写引擎、视频解码、GPU 加速是否就绪。缺什么可一键补装。",
+                     "Checks the transcription engine, video decoding and GPU "
+                     "acceleration. Missing pieces install with one click."))
         self.host = QVBoxLayout()
         self.host.setSpacing(6)
         self.v.addLayout(self.host)
@@ -331,14 +349,14 @@ class _CheckPage(_Page):
         self.v.addWidget(self.log_box, 1)
 
         row = QHBoxLayout()
-        self.btn_log = QPushButton("详细日志", self)
+        self.btn_log = QPushButton(S("详细日志", "Details"), self)
         self.btn_log.clicked.connect(self._toggle_log)
         row.addWidget(self.btn_log)
         row.addStretch(1)
-        self.btn_fix = PrimaryPushButton("一键修复", self)
+        self.btn_fix = PrimaryPushButton(S("一键修复", "Fix all"), self)
         self.btn_fix.clicked.connect(self._fix_all)
         row.addWidget(self.btn_fix)
-        self.btn_rescan = PushButton("重新检查", self)
+        self.btn_rescan = PushButton(S("重新检查", "Re-check"), self)
         self.btn_rescan.clicked.connect(self.refresh)
         row.addWidget(self.btn_rescan)
         self.v.addLayout(row)
@@ -365,7 +383,7 @@ class _CheckPage(_Page):
             self.host.addWidget(self._row(it))
         need = [i for i in self._items if not i.ok and i.fixable]
         self.btn_fix.setVisible(bool(need))
-        self.btn_fix.setText(f"一键修复（{len(need)}）" if need else "")
+        self.btn_fix.setText(S(f"一键修复（{len(need)}）", f"Fix all ({len(need)})") if need else "")
 
     def _row(self, it: doctor.CheckItem) -> QWidget:
         card = CardWidget(self)
@@ -380,8 +398,9 @@ class _CheckPage(_Page):
         h.addWidget(mark)
         mid = QVBoxLayout()
         mid.setSpacing(1)
-        mid.addWidget(BodyLabel(f"{it.title}（"
-                                f"{'必需' if it.level == 'required' else '建议' if it.level == 'recommend' else '可选'}）", card))
+        mid.addWidget(BodyLabel(S(
+            f"{it.title}（{'必需' if it.level == 'required' else '建议' if it.level == 'recommend' else '可选'}）",
+            f"{it.title} ({'required' if it.level == 'required' else 'recommended' if it.level == 'recommend' else 'optional'})"), card))
         det = it.detail or ""
         from html import escape as _esc
         sub = CaptionLabel(it.why + (f"　{dim_span(_esc(det))}" if det else ""), card)
@@ -393,12 +412,12 @@ class _CheckPage(_Page):
         mid.addWidget(sub)
         h.addLayout(mid, 1)
         if it.fixable and not it.ok:
-            btn = PrimaryPushButton(it.fix_note or "安装", card)
+            btn = PrimaryPushButton(it.fix_note or S("安装", "Install"), card)
             btn.clicked.connect(lambda _=False, i=it: self._fix_one(i))
             h.addWidget(btn)
             self._row_btns[it.id] = btn
         elif it.fix_note and not it.ok:
-            tip = CaptionLabel("手动安装", card)
+            tip = CaptionLabel(S("手动安装", "Manual install"), card)
             tip.setToolTip(it.fix_note)
             h.addWidget(tip)
         return card
@@ -481,13 +500,14 @@ class _CheckPage(_Page):
             b.setEnabled(True)
         if ok:
             self.fix_bar.setValue(100)
-            self.fix_label.setText("修复完成，正在重新检查…")
+            self.fix_label.setText(S("修复完成，正在重新检查…", "Fixed. Re-checking…"))
             QTimer.singleShot(600, self.refresh)
             QTimer.singleShot(2400, lambda: (self.fix_bar.setVisible(False),
                                              self.fix_label.setVisible(False)))
         else:
             self.fix_label.setText(msg)
-            InfoBar.error(title="安装失败", content=msg.splitlines()[0][:120],
+            InfoBar.error(title=S("安装失败", "Install failed"),
+                          content=msg.splitlines()[0][:120],
                           orient=Qt.Horizontal, isClosable=True, duration=8000,
                           parent=self)
             self._toggle_log(force=True)
@@ -495,9 +515,10 @@ class _CheckPage(_Page):
     def _toggle_log(self, force: bool = False) -> None:
         vis = True if force else not self.log_box.isVisible()
         self.log_box.setVisible(vis)
-        self.btn_log.setText("收起日志" if vis else "详细日志")
+        self.btn_log.setText(S("收起日志", "Hide log") if vis else S("详细日志", "Details"))
         if vis:
-            self.log_box.setPlainText("\n".join(self._log_lines) or "（暂无日志）")
+            self.log_box.setPlainText("\n".join(self._log_lines)
+                                      or S("（暂无日志）", "(no log yet)"))
 
 
 # ==================================================================== 5 完成
@@ -505,7 +526,7 @@ class _DonePage(_Page):
     def __init__(self, w: "WelcomeWizard"):
         super().__init__(w)
         self.v.addStretch(1)
-        t = TitleLabel("一切就绪！", self)
+        t = TitleLabel(S("一切就绪！", "All set!"), self)
         t.setAlignment(Qt.AlignHCenter)
         self.v.addWidget(t)
         self.summary = BodyLabel("", self)
@@ -513,8 +534,11 @@ class _DonePage(_Page):
         self.summary.setWordWrap(True)
         self.v.addWidget(self.summary)
         self.v.addSpacing(10)
-        tip = CaptionLabel("点「完成」进入主界面：导入一个视频就能开始做字幕。"
-                           "遇到问题可到「设置」里改参数或重开体检。", self)
+        tip = CaptionLabel(S("点「完成」进入主界面：导入一个视频就能开始做字幕。"
+                             "遇到问题可到「设置」里改参数或重开体检。",
+                             "Press Finish to open the main window: import a video and "
+                             "start making subtitles. Settings has all the knobs and a "
+                             "re-run of the environment check."), self)
         tip.setAlignment(Qt.AlignHCenter)
         tip.setWordWrap(True)
         self.v.addWidget(tip)
@@ -522,16 +546,21 @@ class _DonePage(_Page):
 
     def refresh_summary(self, cfg: Config, items: List[doctor.CheckItem]) -> None:
         ok_n = sum(1 for i in items if i.ok)
-        theme_name = {"auto": "跟随系统", "light": "浅色", "dark": "深色"}.get(
-            cfg.theme, cfg.theme)
+        theme_name = {"auto": S("跟随系统", "System"), "light": S("浅色", "Light"),
+                      "dark": S("深色", "Dark")}.get(cfg.theme, cfg.theme)
         has_key = bool(cfg.profile().api_key)
-        model_txt = f"{cfg.profile().model}" if has_key else "未配置（可离线转写）"
+        model_txt = (f"{cfg.profile().model}" if has_key
+                     else S("未配置（可离线转写）", "not configured (offline transcription works)"))
         # 每栏独占一行：比例字体里连续空格不产生对齐效果，长模型名还会折行
         self.summary.setText(
-            f"外观：{theme_name}\n"
-            f"纠错模型：{model_txt}\n"
-            f"环境：{ok_n}/{len(items)} 项通过\n"
-            f"配置保存在 SSData\\config.json")
+            S(f"外观：{theme_name}\n"
+              f"纠错模型：{model_txt}\n"
+              f"环境：{ok_n}/{len(items)} 项通过\n"
+              f"配置保存在 SSData\\config.json",
+              f"Look: {theme_name}\n"
+              f"Fix model: {model_txt}\n"
+              f"Environment: {ok_n}/{len(items)} passed\n"
+              f"Config lives in SSData\\config.json"))
 
 
 # ==================================================================== 主向导
@@ -541,7 +570,7 @@ class WelcomeWizard(QDialog):
     def __init__(self, cfg: Config, parent=None):
         super().__init__(parent)
         self.cfg = cfg
-        self.setWindowTitle("欢迎使用 Subtitle Studio")
+        self.setWindowTitle(S("欢迎使用 Subtitle Studio", "Welcome to Subtitle Studio"))
         self.setWindowIcon(app_icon())
         self.resize(720, 560)
         self.setMinimumSize(620, 500)
@@ -585,16 +614,16 @@ class WelcomeWizard(QDialog):
         # 底部导航
         nav = QHBoxLayout()
         nav.setContentsMargins(36, 8, 36, 16)
-        self.btn_back = PushButton("上一步", self)
+        self.btn_back = PushButton(S("上一步", "Back"), self)
         self.btn_back.clicked.connect(self._go_back)
         self.btn_back.setVisible(False)       # 第一页不显示，_show_page 会再调
         nav.addWidget(self.btn_back)
         nav.addStretch(1)
-        self.btn_next = PrimaryPushButton("下一步", self)
+        self.btn_next = PrimaryPushButton(S("下一步", "Next"), self)
         self.btn_next.setMinimumWidth(140)
         self.btn_next.clicked.connect(self._go_next)
         nav.addWidget(self.btn_next)
-        self.btn_finish = PrimaryPushButton("完成", self)
+        self.btn_finish = PrimaryPushButton(S("完成", "Finish"), self)
         self.btn_finish.setMinimumWidth(140)
         self.btn_finish.clicked.connect(self._finish)
         self.btn_finish.setVisible(False)
@@ -618,8 +647,8 @@ class WelcomeWizard(QDialog):
         self.btn_next.setVisible(not is_last)
         self.btn_finish.setVisible(is_last)
         if not is_last:
-            self.btn_next.setText("下一步" if idx < len(self.pages) - 2
-                                  else "去体检")
+            self.btn_next.setText(S("下一步", "Next") if idx < len(self.pages) - 2
+                                  else S("去体检", "Run the check"))
         cur.on_enter()
         self.update_nav()
         if is_last and hasattr(self.pages[-1], "refresh_summary"):
