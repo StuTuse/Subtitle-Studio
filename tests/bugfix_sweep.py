@@ -4897,6 +4897,62 @@ check("取消调 release", "release_models()" in _src242e)
 _src242f = _insp238.getsource(_MW242.MainWindow._on_transcribe_failed)
 check("失败也调 release", "release_models()" in _src242f)
 
+section("228. 转写黑盒拆解 + overlay 预览 + Key 跳转/术语合并 + H.265 角标（第 243 轮钉子）")
+# ① 转写黑盒拆解
+check("model_download_size_mb", _tr242.model_download_size_mb("large-v3-turbo") == 1600
+      and _tr242.model_download_size_mb("never-exists-xyz") == 1600)
+check("model_missing 语义", _tr242.model_missing("never-exists-xyz-243") is True)
+_src243 = _insp238.getsource(_tr242._download_from_modelscope)
+check("下载发真实比例", "done_bytes / total_bytes" in _src243
+      and _src243.split("for chunk in r.iter_bytes")[1].count("-1)") == 0)
+from sstudio.ui import workers as _wk243  # noqa: E402
+_src243b = _insp238.getsource(_wk243.TranscribeWorker.run)
+check("worker 下载独立区间", "DOWNLOAD_SPAN" in _src243b and "_dl_re" in _src243b)
+check("三段连续", _wk243.TranscribeWorker.EXTRACT_SPAN[1]
+      == _wk243.TranscribeWorker.DOWNLOAD_SPAN[0]
+      and _wk243.TranscribeWorker.DOWNLOAD_SPAN[1]
+      == _wk243.TranscribeWorker.TRANSCRIBE_SPAN[0])
+_src243c = _insp238.getsource(_MW242.MainWindow.start_transcribe)
+check("开跑前模型缺失预告", "model_missing" in _src243c
+      and "model_download_size_mb" in _src243c and "mb / 1024" in _src243c)
+_src243d = _insp238.getsource(type(_doc240.CheckItem("", "", "", "required")).fixable.fget) \
+    if False else _insp238.getsource(_llm241.__dict__.get("Config") and
+                                     __import__("sstudio.core.doctor",
+                                                fromlist=["CheckItem"]).CheckItem.fixable.fget)
+check("frozen 撤 pip 按钮", "frozen" in _src243d and 'self.id != "cuda12"' in _src243d)
+# ② overlay 预览
+from sstudio.ui.player import PlayerWidget as _PW243, wrap_subtitle as _ws243  # noqa: E402
+check("28 字折行", _ws243("甲" * 60).count("\n") == 2)
+check("手动换行保留", _ws243("第一行\n第二行") == "第一行\n第二行")
+_pw243 = _PW243()
+_pw243.resize(640, 360)
+_pw243.show()
+_pw243.set_subtitle("测试字幕一行")
+check("set_subtitle 显示", _pw243.overlay.isVisible()
+      and _pw243.overlay.text() == "测试字幕一行")
+_pw243.set_subtitle("")
+check("空串隐藏", not _pw243.overlay.isVisible())
+_src243e = _insp238.getsource(_EI242._on_position)
+check("播放位置驱动 overlay", "set_subtitle" in _src243e and "at_time" in _src243e)
+check("换文档清 overlay", 'set_subtitle("")' in _insp238.getsource(_EI242.set_document))
+check("打字即时上屏", "set_subtitle(text)" in _insp238.getsource(_EI242._on_text_changed))
+# ③ Key 跳转 + 术语合并
+from sstudio.ui import fix_page as _fp243  # noqa: E402
+_src243f = _insp238.getsource(_fp243.FixInterface._on_failed)
+check("Key 缺失给跳转按钮", "尚未配置 API Key" in _src243f and "打开设置" in _src243f)
+check("术语合并不覆盖", "existing" in _insp238.getsource(_fp243.FixInterface._harvest_terms)
+      and 'setPlainText("\\n".join(k for k, _ in top))' not in
+      _insp238.getsource(_fp243.FixInterface._harvest_terms))
+# ④ H.265 常驻角标
+_src243g = _insp238.getsource(_PW243._on_status)
+check("InvalidMedia 设常驻角标", "set_badge" in _src243g and "H.265" in _src243g)
+_pw243.set_badge("测试角标")
+check("角标显示", _pw243.badge.isVisible() and _pw243.badge.text() == "测试角标")
+_pw243.set_badge("")
+check("空串隐藏角标", not _pw243.badge.isVisible())
+check("换视频清角标", 'set_badge("")' in _insp238.getsource(_PW243.load))
+_pw243.shutdown()
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

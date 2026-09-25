@@ -466,6 +466,25 @@ class MainWindow(FluentWindow):
                 self.switch_to("settings")
             return
 
+        # 模型缺失预检：首次转写要下约 1.5GB，黑盒等待是旅程最大痛点。
+        # 开跑前明说，用户可选继续或先去设置换本地模型。
+        try:
+            from ..core.transcriber import model_missing, model_download_size_mb
+            _mdl = (self.cfg.whisper_model or "").strip() or "large-v3-turbo"
+            if model_missing(_mdl):
+                mb = model_download_size_mb(_mdl)
+                box = _CloseAskBox(
+                    "首次使用需下载模型",
+                    f"本地还没有「{_mdl}」模型（约 {mb / 1024:.1f} GB）。\n\n"
+                    "首次转写会先自动下载（国内源实测约 2~5 分钟，完成后永久复用；"
+                    "进度条会显示下载进度）。\n\n是否继续？", self)
+                box.yesButton.setText("继续，先下载")
+                box.cancelButton.setText("先不转写")
+                if not box.exec_():
+                    return
+        except Exception:
+            pass    # 预检失败不拦路：让转写流程自己报错
+
         self._gen = getattr(self, "_gen", 0) + 1      # 代际：旧 worker 的迟到信号一律丢弃
         gen = self._gen
         self.switch_to("editor")

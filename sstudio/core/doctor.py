@@ -188,6 +188,12 @@ class CheckItem:
 
     @property
     def fixable(self) -> bool:
+        # 打包版（frozen）跑在自身 exe 里，pip 装到系统 Python 的
+        # site-packages 后本进程 find_spec 依旧 None——按钮按了"安装成功"
+        # 但检查永远红，死循环。frozen 下 pip 类修复一律不给按钮，只留
+        # 文字指引（CUDA 运行库除外：按路径找 DLL，装哪儿都能挂上）。
+        if getattr(sys, "frozen", False) and self.id != "cuda12":
+            return False
         return bool(self.fix_pkgs)
 
 

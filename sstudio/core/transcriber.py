@@ -93,6 +93,46 @@ def _ms_repo_for(model: str) -> str:
     return _MS_REPOS.get(_model_key(model), "")
 
 
+# 各档模型的约数（MB）：用于下载前预告「要下多大」。不用精确值——
+# 预告的目的只是让用户对首次等待有心理准备。
+_MODEL_SIZE_MB = {
+    "tiny": 75, "base": 145, "small": 480,
+    "medium": 1500, "large": 3000, "large-v3": 3000,
+    "large-v3-turbo": 1600, "turbo": 1600, "distil-large-v3": 1500,
+}
+
+
+def model_download_size_mb(model: str) -> int:
+    """返回该模型的约数大小（MB）；未知模型给 1600（large 级别兜底）。"""
+    return _MODEL_SIZE_MB.get(_model_key(model), 1600)
+
+
+def model_missing(model: str) -> bool:
+    """本地是否还没有这个模型（resolve 会回退下载时返回 True）。"""
+    try:
+        path = _probe_model_path(model)
+    except Exception:
+        return True
+    return not os.path.isdir(path)
+
+
+def _probe_model_path(model: str) -> str:
+    """轻量 resolve：只做路径发现，不触发 import/下载。
+
+    resolve_model 在引擎实例上，且 available 检查要 import faster_whisper；
+    预检只需要路径判断，重复实现发现逻辑的核心（标准缓存 + 自家目录）。
+    """
+    m = (model or "").strip() or "large-v3-turbo"
+    if os.path.isdir(m):
+        return m
+    key = _model_key(m)
+    for cand in discover_ct2_models():
+        label = (cand.get("name") or "").split()[0]
+        if key in (_model_key(cand["path"]), _model_key(label)):
+            return cand["path"]
+    return m
+
+
 def _apply_hf_mirror(enabled: bool) -> str:
     """（兼容旧入口）True=走 hf-mirror，False=官方。新代码请用 _apply_download_source。"""
     return _apply_download_source("hf-mirror" if enabled else "official")
@@ -204,10 +244,14 @@ def _download_from_modelscope(model: str, dest_root: str,
                             if progress and now - last_ui > 0.25:
                                 last_ui = now
                                 mb = got / 1048576.0
+                                # 第二个参数是真实比例（0..1）而非 -1：
+                                # 上层 worker 把它映射进「模型下载」区间，
+                                # 进度条动起来；此前恒 -1 被钉死在 15%
                                 progress(
                                     f"下载模型 {fn} {mb:.0f}/{expect/1048576:.0f} MB"
                                     f"（合计约 {done_bytes/1048576:.0f}/"
-                                    f"{total_bytes/1048576:.0f} MB，完成后永久复用）", -1)
+                                    f"{total_bytes/1048576:.0f} MB，完成后永久复用）",
+                                    done_bytes / total_bytes)
                 os.replace(tmp, target)
     except TranscribeError:
         raise

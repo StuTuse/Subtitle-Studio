@@ -363,8 +363,23 @@ class FixInterface(QWidget):
     def _on_failed(self, msg: str) -> None:
         self._finish()
         self.log.append("✕ 失败：" + msg)
-        InfoBar.error("纠错失败", msg, parent=self.main,
-                      position=InfoBarPosition.TOP, duration=7000)
+        # 未配 Key 的错误给「打开设置」跳转：文案与导航页实际名一致（「设置」，
+        # 此前提示「模型设置」——页面上没有这个名字，用户找不到去处）
+        nokey = "尚未配置 API Key" in msg or "没有配置 API Key" in msg
+        w = InfoBar.error("纠错失败", msg, parent=self.main,
+                          position=InfoBarPosition.TOP, duration=-1 if nokey else 7000,
+                          isClosable=True)
+        if nokey:
+            from qfluentwidgets import TransparentToolButton, FluentIcon as FIF
+            btn = TransparentToolButton(FIF.SETTING, w)
+            btn.setText("打开设置")
+            btn.clicked.connect(self._open_settings)
+            # InfoBar 的按钮区：拿 widget 布局末尾追加
+            lay = w.view.layout()
+            lay.addWidget(btn)
+
+    def _open_settings(self) -> None:
+        self.main.switch_to("settings")
 
     def _finish(self) -> None:
         self.btn_run.setEnabled(True)
@@ -464,6 +479,14 @@ class FixInterface(QWidget):
         for w in re.findall(r"[一-鿿]{2,6}(?=公司|科技|平台|系统|模型|协议|芯片|显卡)", text):
             cands[w] = cands.get(w, 0) + 1
         top = sorted(cands.items(), key=lambda kv: -kv[1])[:60]
-        self.glossary.setPlainText("\n".join(k for k, _ in top))
-        InfoBar.success("已生成", f"从字幕中提取 {len(top)} 个候选术语，请删掉不需要的。",
+        # 合并而非覆盖：用户手填的「错=>对」映射是心血，一键冲掉且无撤销
+        # 是数据丢失。已有行原样保留，新候选追加到末尾（重复词去重）。
+        existing = [ln.strip() for ln in self.glossary.toPlainText().splitlines()
+                    if ln.strip()]
+        seen = {ln.split("=>")[0].strip() for ln in existing if "=>" in ln}
+        seen |= set(existing)
+        added = [k for k, _ in top if k not in seen]
+        merged = existing + added
+        self.glossary.setPlainText("\n".join(merged))
+        InfoBar.success("已合并", f"保留已有 {len(existing)} 行，新增 {len(added)} 个候选术语。",
                         parent=self.main, position=InfoBarPosition.TOP, duration=3500)

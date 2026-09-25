@@ -9,12 +9,31 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from PyQt5.QtCore import QUrl, pyqtSignal
+from PyQt5.QtCore import QUrl, pyqtSignal, Qt
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QSizePolicy, QVBoxLayout, QWidget, QLabel
 
 SPEEDS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+
+# 成片检查标准与 export_page 一致：单行超 28 字会进导出警告。
+# overlay 预览按同一规则折行，所见即导出效果。
+OVERLAY_MAX_CHARS = 28
+
+
+def wrap_subtitle(text: str, max_chars: int = OVERLAY_MAX_CHARS) -> str:
+    """按成片检查标准折行：先保留手动的 \\n，再对超长行硬折到 28 字。"""
+    out = []
+    for ln in (text or "").split("\n"):
+        ln = ln.strip()
+        if not ln:
+            continue
+        while len(ln) > max_chars:
+            out.append(ln[:max_chars])
+            ln = ln[max_chars:]
+        if ln:
+            out.append(ln)
+    return "\n".join(out)
 
 
 class PlayerWidget(QWidget):
@@ -43,6 +62,30 @@ class PlayerWidget(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.video)
+
+        # 字幕 overlay：当前时间的字幕按 28 字规则折行画在画面底部，
+        # 不用开导出就能看到"成片里字幕长什么样"。QLabel 盖在 video 上，
+        # 自绘描边样式模拟播放器渲染。
+        self.overlay = QLabel(self.video)
+        self.overlay.setAlignment(Qt.AlignHCenter | Qt.AlignBottom)
+        self.overlay.setWordWrap(True)
+        self.overlay.setStyleSheet(
+            "color:#fff;background:rgba(0,0,0,140);"
+            "border-radius:4px;padding:4px 10px;"
+            "font-size:14px;font-weight:500;")
+        self.overlay.setVisible(False)
+        self._overlay_text = ""
+
+        # 解码失败常驻角标：H.265/10bit 黑屏时用户要一直看得见原因
+        self.badge = QLabel(self.video)
+        self.badge.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.badge.setWordWrap(True)
+        self.badge.setStyleSheet(
+            "color:#ffb020;background:rgba(20,20,20,220);"
+            "border:1px solid rgba(255,176,32,120);border-radius:8px;"
+            "padding:14px 22px;font-size:14px;")
+        self.badge.setVisible(False)
+        self._badge_text = ""
 
         self.player = QMediaPlayer(self, QMediaPlayer.VideoSurface)
         self.player.setVideoOutput(self.video)
@@ -78,6 +121,7 @@ class PlayerWidget(QWidget):
     def load(self, path: str) -> None:
         if not path or not os.path.isfile(path):
             return
+        self.set_badge("")       # 换视频：清掉上一个的解码失败角标
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(os.path.abspath(path))))
         self._loop_a = self._loop_b = None
         self.player.setVolume(self._volume)
@@ -181,6 +225,41 @@ class PlayerWidget(QWidget):
     def loop(self):
         return self._loop_a, self._loop_b
 
+    # ------------------------------------------------------------ 字幕 overlay
+    def set_subtitle(self, text: str) -> None:
+        """显示/隐藏字幕预览。text 为当前时间的字幕文本，空串隐藏。
+
+        折行与导出检查同一标准（28 字），表格里的"两行"与成片效果
+        从此一致。
+        """
+        t = wrap_subtitle(text or "")
+        self._overlay_text = t
+        if t:
+            self.overlay.setText(t)
+            self.overlay.adjustSize()
+            self._place_overlay()
+            self.overlay.setVisible(True)
+        else:
+            self.overlay.setVisible(False)
+
+    def subtitle_text(self) -> str:
+        return self._overlay_text
+
+    def _place_overlay(self) -> None:
+        # 底边贴视频区下沿、宽不超视频 90%：超宽靠 wordWrap 竖排
+        w = self.video.width()
+        h = self.video.height()
+        self.overlay.setMaximumWidth(int(w * 0.9))
+        self.overlay.move((w - self.overlay.width()) // 2,
+                          h - self.overlay.height() - int(h * 0.06))
+
+    def resizeEvent(self, ev) -> None:  # noqa: N802 (Qt 命名)
+        super().resizeEvent(ev)
+        if self.overlay.isVisible():
+            self._place_overlay()
+        if self.badge.isVisible():
+            self._place_badge()
+
     # ------------------------------------------------------------ 内部
     def _on_pos(self, ms: int) -> None:
         sec = ms / 1000.0
@@ -194,8 +273,33 @@ class PlayerWidget(QWidget):
 
     def _on_status(self, status: int) -> None:
         if status == QMediaPlayer.InvalidMedia:
+            # 常驻角标而非 6 秒小字：用户对着黑屏播放器会以为程序坏了——
+            # 提示必须在屏幕上一直可见，直到换可解码的视频
+            self.set_badge("⚠ 无法解码此视频\n可能是 H.265/10bit 或缺少解码器\n"
+                           "字幕与时间轴仍可正常编辑")
             self.error.emit("该视频无法在此解码（可能是 H.265/10bit 或缺少解码器）。"
                             "字幕与时间轴仍可正常编辑，仅预览受限。")
+
+    def set_badge(self, text: str) -> None:
+        """常驻角标（如解码失败提示）。空串隐藏。"""
+        self._badge_text = text or ""
+        if self._badge_text:
+            self.badge.setText(self._badge_text)
+            self.badge.adjustSize()
+            self._place_badge()
+            self.badge.setVisible(True)
+        else:
+            self.badge.setVisible(False)
+
+    def badge_text(self) -> str:
+        return self._badge_text
+
+    def _place_badge(self) -> None:
+        w = self.video.width()
+        self.badge.setMaximumWidth(int(w * 0.92))
+        self.badge.adjustSize()
+        self.badge.move((w - self.badge.width()) // 2,
+                        max(8, (self.video.height() - self.badge.height()) // 2))
 
     def _on_err(self, _err: int) -> None:
         s = self.player.errorString() or ""

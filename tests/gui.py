@@ -226,9 +226,11 @@ pump()
 check("出字幕后：hero 让位、主编辑区上场",
       ed._flow == "done" and not ed.hero.isVisibleTo(ed) and ed.split.isVisibleTo(ed))
 from sstudio.ui.workers import TranscribeWorker  # noqa: E402
-check("进度区间映射：抽音频在前 15%，识别占其余",
-      TranscribeWorker.EXTRACT_SPAN[1] == 0.15
-      and TranscribeWorker.TRANSCRIBE_SPAN == (0.15, 1.0))
+# 第 243 轮：拆掉下载黑盒——下载独立区间拿真实比例，识别占其余
+check("进度区间映射：抽音频+下载+识别三段连续",
+      TranscribeWorker.EXTRACT_SPAN[1] == 0.12
+      and TranscribeWorker.DOWNLOAD_SPAN == (0.12, 0.30)
+      and TranscribeWorker.TRANSCRIBE_SPAN == (0.30, 1.0))
 
 section("6. LLM 纠错写回与撤销（不走线程，直接验证接线）")
 from sstudio.core import llm as _llm  # noqa: E402

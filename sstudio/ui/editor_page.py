@@ -580,6 +580,7 @@ class EditorInterface(QWidget):
             self._undo_row, self._undo_ts = -1, 0.0
         self.table.render(doc.cues if doc else [])
         self.timeline.set_document(doc)
+        self.player.set_subtitle("")     # 换文档：清掉旧工程的 overlay 残留
         if doc is not None and doc.source_video and os.path.isfile(doc.source_video):
             self.player.load(doc.source_video)
             self.player.set_volume(self.cfg.player_volume)
@@ -646,6 +647,10 @@ class EditorInterface(QWidget):
             cue.state = "edited"
         self.table.update_row(row, cue)
         self.timeline.update()
+        # 暂停预览时 overlay 也要跟着改：正在播的行被打字后立即上屏
+        if self.player.position() >= cue.start and \
+                self.player.position() <= max(cue.end, cue.start + 0.001):
+            self.player.set_subtitle(text)
         self.update_status()
         self.main.mark_dirty()
         self._edit_buf_dirty = False    # 该行已消费：缓冲重新干净
@@ -911,6 +916,10 @@ class EditorInterface(QWidget):
         self.timeline.set_position(sec)
         dur = self.player.duration() or (self.doc.duration if self.doc else 0)
         self.time_label.setText(f"{human_time(sec)} / {human_time(dur)}")
+        # 字幕 overlay 预览：按当前时间找 cue，28 字折行画上屏
+        if self.doc is not None:
+            cue = self.doc.at_time(sec)
+            self.player.set_subtitle(cue.display_text if cue is not None else "")
         if not self.doc or not self._follow:
             return
         if not self.player.playing:

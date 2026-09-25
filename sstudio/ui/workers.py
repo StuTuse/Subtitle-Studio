@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import re
 import traceback
 from typing import Any, Callable, List, Optional
 
@@ -126,8 +127,9 @@ class TranscribeWorker(_BaseWorker):
     sig_stage = pyqtSignal(str)
 
     # 各阶段在总进度条里占的区间
-    EXTRACT_SPAN = (0.02, 0.15)
-    TRANSCRIBE_SPAN = (0.15, 1.0)
+    EXTRACT_SPAN = (0.02, 0.12)
+    DOWNLOAD_SPAN = (0.12, 0.30)   # 模型下载：真实比例（0..1），黑盒拆解
+    TRANSCRIBE_SPAN = (0.30, 1.0)
 
     def __init__(self, video_path: str, cfg: Config, keep_audio: bool = False):
         super().__init__()
@@ -158,9 +160,19 @@ class TranscribeWorker(_BaseWorker):
                 return
             self.sig_stage.emit("transcribing")
             lo2, hi2 = self.TRANSCRIBE_SPAN
+            dlo, dhi = self.DOWNLOAD_SPAN
+            # 「下载模型」消息从 transcriber 带真实比例（0..1）：映射进
+            # 独立下载区间，进度条真实推进；其余 -1（加载等无刻度阶段）
+            # 在转录区间起点给半格，不再恒钉 15%
+            _dl_re = re.compile(r"下载模型")
 
             def _tr(msg: str, pct: float) -> None:
-                p = lo2 + (hi2 - lo2) * (0.0 if pct is None or pct < 0 else min(1.0, pct))
+                if pct is not None and pct >= 0 and _dl_re.search(msg):
+                    p = dlo + (dhi - dlo) * min(1.0, pct)
+                elif pct is None or pct < 0:
+                    p = lo2 + (hi2 - lo2) * 0.0
+                else:
+                    p = lo2 + (hi2 - lo2) * min(1.0, pct)
                 self._progress(f"② {msg}", p)
 
             res = transcriber.transcribe(wav, self.cfg, progress=_tr,
