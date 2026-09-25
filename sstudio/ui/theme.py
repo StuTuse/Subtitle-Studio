@@ -195,8 +195,10 @@ def state_color(state: str, dark: bool) -> QColor:
 
 
 def state_text(state: str) -> str:
-    return {"asr": "原始", "llm": "已修正", "edited": "已编辑", "review": "待复查",
-            "confirmed": "已确认"}.get(state, state or "")
+    from ..core.i18n import S
+    return {"asr": S("原始", "ASR"), "llm": S("已修正", "Fixed"),
+            "edited": S("已编辑", "Edited"), "review": S("待复查", "Review"),
+            "confirmed": S("已确认", "Confirmed")}.get(state, state or "")
 
 
 # 语义状态色：同一个色值不可能在深浅两种底上都达标（实测 #1a7f37 浅底

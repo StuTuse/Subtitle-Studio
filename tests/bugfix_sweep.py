@@ -5366,6 +5366,42 @@ check("设置页语言下拉", "self.ui_lang" in _sp238 and 'addItem("English"'
 check("启动早期写语言", "set_language" in open(os.path.join(
     _harness.ROOT, "sstudio", "__main__.py"), encoding="utf-8").read())
 
+section("239. i18n 铺量第二批：theme/cue_table/first_run/doctor（第 245 轮 backlog ⑥）")
+# 运行时双向验证：zh 保持历史字面量（历史钉不破），en 取英文。
+check("state_text zh 保持", _th189.state_text("llm") == "已修正"
+      and _th189.state_text("review") == "待复查")
+_i18n238.set_language("en")
+try:
+    check("state_text en", _th189.state_text("llm") == "Fixed"
+          and _th189.state_text("asr") == "ASR"
+          and _th189.state_text("confirmed") == "Confirmed")
+    from sstudio.ui.cue_table import _duration_warn as _dw239, \
+        _tip as _tip239, CueTable as _CT239  # noqa: E402
+    check("duration_warn en", "over 8s" in _dw239(
+        _Cue147(start=0, end=9, text="x")))
+    check("tip en 置信度复查", "Confidence" in _tip239(_Cue147(
+        start=0, end=1, text="T", state="review", confidence=0.87))
+        and "Review" in _tip239(_Cue147(start=0, end=1, text="T",
+                                        state="review", confidence=0.87)))
+    _ct239 = _CT239()
+    _hh239 = [_ct239.horizontalHeaderItem(_i).text()
+              for _i in range(_ct239.columnCount())]
+    check("表头 en", "Start" in _hh239 and "End" in _hh239
+          and "Subtitle text" in _hh239)
+    from sstudio.ui.first_run_dialog import FirstRunDialog as _FRD239  # noqa: E402
+    from sstudio.core import doctor as _doc239  # noqa: E402
+    check("summary en", "All good" in _doc239.summary(_doc239.check_all()))
+    _frd239 = _FRD239(_CF120())
+    check("体检按钮 en 初值", _frd239.btn_close.text() == "Later"
+          and _frd239.btn_log.text() == "Details")
+    _frd239._run_checks()
+    check("体检按钮 en 完成语", _frd239.btn_close.text() == "Done, start using")
+    _frd239.reject()
+finally:
+    _i18n238.set_language("zh")
+check("恢复 zh 后按钮回中文", _th189.state_text("llm") == "已修正"
+      and _doc239.summary(_doc239.check_all()).startswith("一切正常"))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

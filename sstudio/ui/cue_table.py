@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu
                              QTextEdit)
 
 from ..core.model import Cue, sec_to_ts
+from ..core.i18n import S
 from .theme import _crisp, is_dark, monospace, state_color, state_text, status_hex
 
 COL_NO, COL_S, COL_E, COL_D, COL_STATE, COL_TEXT = range(6)
@@ -66,7 +67,9 @@ class CueTable(QTableWidget):
         _crisp(self._body)
         self.setItemDelegateForColumn(COL_TEXT, _TextDelegate(self))
 
-        self.setHorizontalHeaderLabels(["#", "开始", "结束", "时长", "状态", "字幕内容"])
+        self.setHorizontalHeaderLabels(["#", S("开始", "Start"), S("结束", "End"),
+                                        S("时长", "Dur"), S("状态", "State"),
+                                        S("字幕内容", "Subtitle text")])
         hh = self.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.Fixed)
         hh.setSectionResizeMode(COL_TEXT, QHeaderView.Stretch)
@@ -238,36 +241,47 @@ class CueTable(QTableWidget):
         if not rows:
             return
         m = QMenu(self)
-        m.addAction("跳到这条", lambda: self.cue_activated.emit(rows[0]))
-        m.addAction("从这条开始播放", lambda: self.cue_activated.emit(rows[0]))
+        m.addAction(S("跳到这条", "Jump to cue"), lambda: self.cue_activated.emit(rows[0]))
+        m.addAction(S("从这条开始播放", "Play from here"), lambda: self.cue_activated.emit(rows[0]))
         m.addSeparator()
-        m.addAction("播放选中片段", lambda: self.request_action.emit("play_range", rows))
-        m.addAction("从头播放到末条结束", lambda: self.request_action.emit("play_selection", rows))
+        m.addAction(S("播放选中片段", "Play selection"),
+                    lambda: self.request_action.emit("play_range", rows))
+        m.addAction(S("从头播放到末条结束", "Play to end"),
+                    lambda: self.request_action.emit("play_selection", rows))
         m.addSeparator()
-        m.addAction("在时间点拆分（空格处）" if len(rows) == 1 else "拆分（按字数）",
+        m.addAction(S("在时间点拆分（空格处）", "Split at playhead (at space)") if len(rows) == 1
+                    else S("拆分（按字数）", "Split (by length)"),
                     lambda: self.request_action.emit("split", rows))
         if len(rows) >= 2:
-            m.addAction(f"合并选中的 {len(rows)} 条", lambda: self.request_action.emit("merge", rows))
-        m.addAction("在选中前插入空条目", lambda: self.request_action.emit("insert", rows))
+            m.addAction(S(f"合并选中的 {len(rows)} 条", f"Merge {len(rows)} selected"),
+                        lambda: self.request_action.emit("merge", rows))
+        m.addAction(S("在选中前插入空条目", "Insert empty before"),
+                    lambda: self.request_action.emit("insert", rows))
         m.addSeparator()
-        for label, act in (("标记为待复查", "review"), ("标记为已确认", "confirmed"),
-                           ("恢复为原始识别文本", "revert"), ("清除该行标点", "strip_punct")):
+        for label, act in ((S("标记为待复查", "Mark as review"), "review"),
+                           (S("标记为已确认", "Mark as confirmed"), "confirmed"),
+                           (S("恢复为原始识别文本", "Restore original text"), "revert"),
+                           (S("清除该行标点", "Strip punctuation"), "strip_punct")):
             m.addAction(label, lambda a=act: self.request_action.emit(a, rows))
         m.addSeparator()
         # 智能断句/去重是文档级批处理：接通 model.split_long /
         # dedupe_repeats——功能早已实现却一直没有 UI 入口。
-        m.addAction("智能断句（拆过长条目）",
+        m.addAction(S("智能断句（拆过长条目）", "Smart re-split long cues"),
                     lambda: self.request_action.emit("split_long", rows))
-        m.addAction("删除连续重复句",
+        m.addAction(S("删除连续重复句", "Delete repeated lines"),
                     lambda: self.request_action.emit("dedupe", rows))
         m.addSeparator()
-        m.addAction("前移 0.10s", lambda: self.request_action.emit("shift:-0.1", rows))
-        m.addAction("后移 0.10s", lambda: self.request_action.emit("shift:0.1", rows))
-        m.addAction("延长 0.20s", lambda: self.request_action.emit("extend:0.2", rows))
-        m.addAction("缩短 0.20s", lambda: self.request_action.emit("extend:-0.2", rows))
+        m.addAction(S("前移 0.10s", "Shift earlier 0.10s"),
+                    lambda: self.request_action.emit("shift:-0.1", rows))
+        m.addAction(S("后移 0.10s", "Shift later 0.10s"),
+                    lambda: self.request_action.emit("shift:0.1", rows))
+        m.addAction(S("延长 0.20s", "Extend 0.20s"),
+                    lambda: self.request_action.emit("extend:0.2", rows))
+        m.addAction(S("缩短 0.20s", "Shorten 0.20s"),
+                    lambda: self.request_action.emit("extend:-0.2", rows))
         m.addSeparator()
-        m.addAction("复制文本", lambda: self.request_action.emit("copy", rows))
-        m.addAction("删除", lambda: self.request_action.emit("delete", rows))
+        m.addAction(S("复制文本", "Copy text"), lambda: self.request_action.emit("copy", rows))
+        m.addAction(S("删除", "Delete"), lambda: self.request_action.emit("delete", rows))
         m.exec_(self.mapToGlobal(pos))
 
 
@@ -276,12 +290,15 @@ def _duration_warn(c: Cue) -> str:
     """时长列警示文案：与 export_page 预检（>28 字 / <0.5s / >9 字每秒）、
     本表自身的 >8s 过长红字共用同一套判定，返回空串表示没有问题。"""
     if c.duration > 8:
-        return f"时长 {c.duration:.1f}s，超过 8s——考虑拆分"
+        return S(f"时长 {c.duration:.1f}s，超过 8s——考虑拆分",
+                 f"Duration {c.duration:.1f}s, over 8s — consider splitting")
     if c.duration < 0.5:
-        return f"时长 {c.duration:.1f}s，不足 0.5s——播放时会一闪而过"
+        return S(f"时长 {c.duration:.1f}s，不足 0.5s——播放时会一闪而过",
+                 f"Duration {c.duration:.1f}s, under 0.5s — will flash by")
     n = len(c.display_text.replace("\n", ""))
     if c.duration > 0 and n / c.duration > 9:
-        return f"约 {n / c.duration:.1f} 字/秒，超过 9 字/秒——观众跟不上"
+        return S(f"约 {n / c.duration:.1f} 字/秒，超过 9 字/秒——观众跟不上",
+                 f"~{n / c.duration:.1f} chars/sec, over 9 — too fast to read")
     return ""
 
 
@@ -299,11 +316,12 @@ def _state_badge(state: str, dark: bool) -> QColor:
 def _tip(c: Cue) -> str:
     bits = [f"{sec_to_ts(c.start)} → {sec_to_ts(c.end)}"]
     if c.confidence is not None:
-        bits.append(f"置信度 {c.confidence:.2f}")
+        bits.append(S(f"置信度 {c.confidence:.2f}", f"Confidence {c.confidence:.2f}"))
     if c.state == "review":
-        bits.append("⚠ 待复查")
+        bits.append(S("⚠ 待复查", "⚠ Review"))
     if c.is_changed():
-        bits.append("原文：" + (c.original_text or "").replace("\n", " / "))
+        bits.append(S("原文：", "Original:")
+                    + (c.original_text or "").replace("\n", " / "))
     return "\n".join(bits)
 
 

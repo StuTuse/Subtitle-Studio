@@ -333,14 +333,18 @@ def check_all() -> List[CheckItem]:
 
 def summary(items: List[CheckItem]) -> str:
     """一行摘要，给进度条/状态栏用。"""
+    from .i18n import S
     n_ok = sum(1 for i in items if i.ok)
     n_req_bad = sum(1 for i in items if i.level == "required" and not i.ok)
     if n_req_bad:
-        return f"缺少必需组件（{n_req_bad} 项），程序无法正常工作"
+        return S(f"缺少必需组件（{n_req_bad} 项），程序无法正常工作",
+                 f"Missing {n_req_bad} required component(s) — cannot run")
     n_rec_bad = sum(1 for i in items if i.level == "recommend" and not i.ok)
     if n_rec_bad:
-        return f"核心功能可用；建议补装 {n_rec_bad} 个组件"
-    return f"一切正常（{n_ok}/{len(items)} 通过）"
+        return S(f"核心功能可用；建议补装 {n_rec_bad} 个组件",
+                 f"Core features OK; {n_rec_bad} recommended component(s) missing")
+    return S(f"一切正常（{n_ok}/{len(items)} 通过）",
+             f"All good ({n_ok}/{len(items)} passed)")
 
 
 def all_required_ok(items: List[CheckItem]) -> bool:

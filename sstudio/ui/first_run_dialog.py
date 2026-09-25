@@ -44,10 +44,12 @@ except Exception:  # pragma: no cover
 
 from ..core import doctor
 from ..core.config import Config
+from ..core.i18n import S
 from .theme import dim_span, status_hex
 from .workers import ThreadedCall, reap
 
-_LEVEL_TAG = {"required": "必需", "recommend": "建议", "optional": "可选"}
+_LEVEL_TAG = {"required": S("必需", "Required"), "recommend": S("建议", "Recommended"),
+              "optional": S("可选", "Optional")}
 
 
 class FirstRunDialog(QDialog):
@@ -56,7 +58,8 @@ class FirstRunDialog(QDialog):
     def __init__(self, cfg: Config, parent=None, auto_fix: bool = False):
         super().__init__(parent)
         self.cfg = cfg
-        self.setWindowTitle("环境体检 · Subtitle Studio")
+        self.setWindowTitle(S("环境体检 · Subtitle Studio",
+                              "Environment check · Subtitle Studio"))
         self.resize(640, 560)
         self.setMinimumSize(560, 480)
         self._items: List[doctor.CheckItem] = []
@@ -73,10 +76,12 @@ class FirstRunDialog(QDialog):
         v.setContentsMargins(24, 20, 24, 16)
         v.setSpacing(10)
 
-        self.title = TitleLabel("正在检查运行环境…", self)
+        self.title = TitleLabel(S("正在检查运行环境…", "Checking your environment…"), self)
         v.addWidget(self.title)
         self.subtitle = CaptionLabel(
-            "只检查本机组件，不上传任何信息。缺什么可以一键补装。", self)
+            S("只检查本机组件，不上传任何信息。缺什么可以一键补装。",
+              "Checks local components only; nothing is uploaded. "
+              "Missing pieces can be installed with one click."), self)
         v.addWidget(self.subtitle)
 
         self.ring = ProgressRing(self)
@@ -109,15 +114,15 @@ class FirstRunDialog(QDialog):
 
         btns = QHBoxLayout()
         btns.setSpacing(8)
-        self.btn_log = QPushButton("详细日志", self)
+        self.btn_log = QPushButton(S("详细日志", "Details"), self)
         self.btn_log.clicked.connect(self._toggle_log)
         btns.addWidget(self.btn_log)
         btns.addStretch(1)
-        self.btn_fix_all = PrimaryPushButton("一键修复", self)
+        self.btn_fix_all = PrimaryPushButton(S("一键修复", "Fix all"), self)
         self.btn_fix_all.clicked.connect(self._fix_all)
         btns.addWidget(self.btn_fix_all)
         self._required_ok = True     # 必需组件是否齐全；决定关闭按钮的真实语义
-        self.btn_close = QPushButton("稍后再说", self)
+        self.btn_close = QPushButton(S("稍后再说", "Later"), self)
         self.btn_close.clicked.connect(self._on_close)
         btns.addWidget(self.btn_close)
         v.addLayout(btns)
@@ -152,11 +157,11 @@ class FirstRunDialog(QDialog):
         h.addLayout(mid, 1)
 
         if it.fixable and not it.ok:
-            btn = PrimaryPushButton(it.fix_note or "安装", card)
+            btn = PrimaryPushButton(it.fix_note or S("安装", "Install"), card)
             btn.clicked.connect(lambda _=False, i=it: self._fix_one(i))
             h.addWidget(btn)
         elif it.fix_note and not it.ok:
-            tip = CaptionLabel("手动安装", card)
+            tip = CaptionLabel(S("手动安装", "Manual install"), card)
             tip.setToolTip(it.fix_note)
             h.addWidget(tip)
         self.rows_host.addWidget(card)
@@ -209,14 +214,15 @@ class FirstRunDialog(QDialog):
         self.title.setText(s)
         if doctor.all_required_ok(self._items):
             self._required_ok = True
-            self.btn_close.setText("完成，开始使用")
+            self.btn_close.setText(S("完成，开始使用", "Done, start using"))
             self.btn_fix_all.setVisible(bool(need))
-            self.btn_fix_all.setText(f"一键修复（{len(need)}）" if need else "")
+            self.btn_fix_all.setText(S(f"一键修复（{len(need)}）", f"Fix all ({len(need)})")
+                                     if need else "")
         else:
             self._required_ok = False
-            self.btn_close.setText("退出程序")
+            self.btn_close.setText(S("退出程序", "Quit"))
             self.btn_fix_all.setVisible(True)
-            self.btn_fix_all.setText(f"一键修复（{len(need)}）")
+            self.btn_fix_all.setText(S(f"一键修复（{len(need)}）", f"Fix all ({len(need)})"))
         if getattr(self, "_auto_fix", False):
             # 等检查结果真正回来再自动修复：定在 400ms 的定时器在慢机器上
             # 会抢在 _run_checks 之前跑，静默空转一次
@@ -332,7 +338,8 @@ class FirstRunDialog(QDialog):
                 b.setEnabled(True)
         if ok:
             self.fix_bar.setValue(100)
-            self.fix_label.setText("修复完成，正在重新检查…")
+            self.fix_label.setText(S("修复完成，正在重新检查…",
+                                     "Fixed. Re-checking…"))
             QTimer.singleShot(600, self._run_checks)
             QTimer.singleShot(2400, lambda: (self.fix_bar.setVisible(False),
                                              self.fix_label.setVisible(False)))
@@ -346,9 +353,9 @@ class FirstRunDialog(QDialog):
     def _toggle_log(self) -> None:
         vis = not self.log_box.isVisible()
         self.log_box.setVisible(vis)
-        self.btn_log.setText("收起日志" if vis else "详细日志")
+        self.btn_log.setText(S("收起日志", "Hide log") if vis else S("详细日志", "Details"))
         if vis:
-            self.log_box.setPlainText("\n".join(self._log) or "（暂无日志）")
+            self.log_box.setPlainText("\n".join(self._log) or S("（暂无日志）", "(no log yet)"))
             self.resize(self.width(), max(560, self.height()))
 
 
