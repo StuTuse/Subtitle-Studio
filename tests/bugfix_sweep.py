@@ -5118,6 +5118,35 @@ _srcmain232 = open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
 ck232("启动检测提示", "_offer_recovery" in _srcmain232
       and "恢复未保存的工程" in _srcmain232 and "list_snapshots" in _srcmain232)
 
+section("233. 云端转写 25MB 预检查（第 245 轮 backlog ⑤ 钉子）")
+from sstudio.core.transcriber import OpenAIApiEngine as _OAE233, \
+    TranscribeError as _TE233  # noqa: E402
+from sstudio.core.config import Config as _Cfg233  # noqa: E402
+_eng233 = _OAE233(_Cfg233())
+_big233 = os.path.join(_tp175.gettempdir(), "too_big_233.bin")
+with open(_big233, "wb") as _bf233:
+    _bf233.write(b"\0" * (int(_OAE233.MAX_UPLOAD_MB * 1048576) + 1024))
+try:
+    _eng233.transcribe(_big233)
+    _raised233 = False
+except _TE233 as _e233:
+    _raised233 = True
+    _msg233 = str(_e233)
+except Exception as _e233:                      # 其它异常=没走预检查
+    _raised233 = False
+    _msg233 = f"wrong type: {type(_e233).__name__}"
+ck232("超 25MB 上传前拒绝", _raised233, _msg233 if not _raised233 else "")
+ck232("报错含 25MB 与解决指引", _raised233 and "25MB" in _msg233
+      and "faster-whisper" in _msg233)
+os.remove(_big233)
+# 源码级：预检查在 load_client 之前（不浪费网络/不建 client）
+_src233 = open(os.path.join(_harness.ROOT, "sstudio", "core", "transcriber.py"),
+               encoding="utf-8").read()
+_body233 = _src233.split("class OpenAIApiEngine")[1].split("\nclass ")[0]
+ck232("预检查在建 client 之前",
+      _body233.index("MAX_UPLOAD_MB") < _body233.index("load_client"))
+ck232("小文件不拦（走正常路径）", _OAE233.MAX_UPLOAD_MB == 25.0)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

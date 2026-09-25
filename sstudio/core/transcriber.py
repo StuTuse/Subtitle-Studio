@@ -821,11 +821,26 @@ class OpenAIApiEngine:
     key = "openai_api"
     label = "调用云端语音转写 API（Whisper API 等）"
 
+    # OpenAI /v1/audio/transcriptions 硬限制 25MB；提前拦下并给出
+    # 可操作的指引，比上传几分钟后被 413 拒绝体验好得多
+    MAX_UPLOAD_MB = 25.0
+
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
     def transcribe(self, audio_path: str, progress: Optional[Progress] = None,
                    cancel: Optional[Cancel] = None) -> TranscriptResult:
+        try:
+            size_mb = os.path.getsize(audio_path) / 1048576.0
+        except OSError:
+            size_mb = 0.0
+        if size_mb > self.MAX_UPLOAD_MB:
+            mins = int(size_mb / (0.096 * 60))   # 16kHz s16 单声道 ≈ 1.92MB/min
+            raise TranscribeError(
+                f"音频 {size_mb:.0f}MB 超过云端转写接口的 25MB 上限"
+                f"（约可传 {mins} 分钟以内的 16kHz 单声道音频）。\n"
+                "解决办法：① 缩短音频时长；② 在设置里改用本地 "
+                "faster-whisper 引擎（无大小限制）。")
         from .llm import load_client
         prof = self.cfg.profile()
         client = load_client(prof)
