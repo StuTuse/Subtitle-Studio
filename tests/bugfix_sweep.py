@@ -5402,6 +5402,36 @@ finally:
 check("恢复 zh 后按钮回中文", _th189.state_text("llm") == "已修正"
       and _doc239.summary(_doc239.check_all()).startswith("一切正常"))
 
+section("240. i18n en 整机验收（第 245 轮 backlog ⑥ 收官钉）")
+# en 模式整机构建主窗 + 向导，逐控件验证英文取值；环境变量
+# SUBTITLE_STUDIO_LANG=en 是文档化入口（__main__/i18n 双处读取）。
+check("env 直定入口存在", "SUBTITLE_STUDIO_LANG" in open(os.path.join(
+    _harness.ROOT, "sstudio", "core", "i18n.py"), encoding="utf-8").read())
+_i18n238.set_language("en")
+try:
+    class _Main240(_QW227):
+        def apply_cfg_theme(self):
+            pass
+    from sstudio.ui.main_window import MainWindow as _MW240  # noqa: E402
+    _mw240 = _MW240(_CF216())
+    check("en 主窗标题", "subtitle workshop" in _mw240.windowTitle())
+    check("en 转写按钮", _mw240.editor.btn_start.text().strip() == "Start transcription"
+          and _mw240.editor.btn_cancel.text() == "Cancel")
+    check("en 纠错按钮", _mw240.fix.btn_run.text() == "Start AI fix"
+          and _mw240.fix.btn_review.text() == "Review one by one…")
+    check("en 导出与设置按钮", _mw240.export.btn_export.text() == "Export"
+          and _mw240.settings.btn_defaults.text() == "Restore defaults"
+          and _mw240.settings.btn_save.text() == "Save settings")
+    check("en 下语言开关仍含 zh 项", _mw240.settings.ui_lang.findData("zh") >= 0)
+    _mw240.close()
+    _ww240 = _WW165(cfg=_CF216())
+    check("en 向导标题与导航", "Welcome to Subtitle Studio" in _ww240.windowTitle()
+          and _ww240.btn_next.text() == "Next" and _ww240.btn_finish.text() == "Finish")
+    _ww240.close()
+finally:
+    _i18n238.set_language("zh")
+check("回收 zh 后主窗控件回中文", _th189.state_text("llm") == "已修正")
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

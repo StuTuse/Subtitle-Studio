@@ -85,7 +85,8 @@ class MainWindow(FluentWindow):
         self._prog_timer.setSingleShot(True)
         self._prog_timer.timeout.connect(self._flush_progress)
 
-        self.setWindowTitle(f"Subtitle Studio · 视频字幕工坊  v{__version__}")
+        self.setWindowTitle(S(f"Subtitle Studio · 视频字幕工坊  v{__version__}",
+                              f"Subtitle Studio · subtitle workshop  v{__version__}"))
         self.setWindowIcon(FIF.CAPTION_TEXT.icon() if hasattr(FIF, "CAPTION_TEXT")
                            else FIF.VIDEO.icon())
         self.resize(1440, 900)
