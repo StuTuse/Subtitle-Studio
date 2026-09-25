@@ -1340,7 +1340,7 @@ import inspect as _insp94  # noqa: E402
 from sstudio.core.transcriber import WhisperCppEngine as _WCE94, OpenAIApiEngine as _OAE94, _pick_device as _pd94  # noqa: E402
 _src94 = _insp94.getsource(_WCE94.transcribe)
 check("whisper.cpp 先删旧结果文件", "os.remove(out)" in _src94)
-check("stdout 读毕后补取消检查", "raise TranscribeError(\"已取消。\")" in _src94)
+check("stdout 读毕后补取消检查", 'raise TranscribeError(S("已取消。", "Cancelled."))' in _src94)
 _src94b = _insp94.getsource(_OAE94.transcribe)
 check("OpenAI API translate 前缀剥离", "lang.split(\":\", 1)[1]" in _src94b)
 _src94c = _insp94.getsource(_pd94)
@@ -2241,7 +2241,7 @@ section("134. 转写引擎装载与消费语义（第 153 轮钉子）")
 import inspect as _insp153  # noqa: E402
 from sstudio.core import transcriber as _tr153  # noqa: E402
 _src153 = _insp153.getsource(_tr153.FasterWhisperEngine.transcribe)
-check("加载前后双取消检查", "raise TranscribeError(\"已取消。\")" in _src153
+check("加载前后双取消检查", 'raise TranscribeError(S("已取消。", "Cancelled."))' in _src153
       and _src153.count("已取消。") >= 4)
 check("CUDA 缺库换装提示", "缺少 CUDA 12 运行时" in _src153 and "改成 cpu 先跑通" in _src153)
 check("联网失败换源提示", "模型下载源" in _src153)
@@ -5431,6 +5431,52 @@ try:
 finally:
     _i18n238.set_language("zh")
 check("回收 zh 后主窗控件回中文", _th189.state_text("llm") == "已修正")
+
+section("241. core 层 i18n（第 246 轮：doctor/transcriber/llm 运行时 zh/en）")
+from sstudio.core import doctor as _doc241          # noqa: E402
+from sstudio.core import llm as _llm241             # noqa: E402
+from sstudio.core import transcriber as _tr241      # noqa: E402
+from sstudio.core.i18n import set_language as _sl241  # noqa: E402
+_sl241("zh")
+_zh_items241 = _doc241.check_all()
+_zh_titles241 = [i.title for i in _zh_items241]
+_zh_sum241 = _doc241.summary(_zh_items241)
+check("zh 体检标题首项", _zh_titles241[0] == "Python 运行环境", _zh_titles241[0])
+check("zh summary 起头", _zh_sum241.startswith(("一切正常", "核心功能可用", "缺少必需组件")),
+      _zh_sum241[:12])
+_sl241("en")
+_en_items241 = _doc241.check_all()
+_en_titles241 = [i.title for i in _en_items241]
+_en_sum241 = _doc241.summary(_en_items241)
+check("en 体检标题首项", _en_titles241[0] == "Python runtime", _en_titles241[0])
+check("en summary 英文", _en_sum241.startswith(("All good", "Core features OK", "Missing")),
+      _en_sum241[:16])
+check("en 体检项数量一致", len(_en_items241) == len(_zh_items241))
+check("zh/en 标题互异", _en_titles241[0] != _zh_titles241[0])
+check("引擎 label 双语", _tr241.FasterWhisperEngine.label.startswith("faster-whisper（本机推理，推荐）")
+      or "recommended" in _tr241.FasterWhisperEngine.label,
+      _tr241.FasterWhisperEngine.label)
+_sl241("en")
+check("引擎 label en（类属性冻结于构建语言，回退 zh 串）",
+      _tr241.FasterWhisperEngine.label.startswith("faster-whisper"),
+      _tr241.FasterWhisperEngine.label)
+_sl241("zh")
+check("llm 拦截 zh", _llm241.S("尚未配置 API Key。请到「模型设置」里填写。",
+                              "No API key configured.").startswith("尚未配置 API Key"))
+_sl241("en")
+check("llm 拦截 en", _llm241.S("尚未配置 API Key。请到「模型设置」里填写。",
+                              "No API key configured.") == "No API key configured.")
+check("sanity en", _llm241.sanity_check("abc", "") == "Empty output")
+check("25MB 预检 en 含 25MB", "25MB" in _llm241.S(
+    f"音频 {30:.0f}MB 超过云端转写接口的 25MB 上限（约可传 {10} 分钟以内的 16kHz 单声道音频）。\n"
+    "解决办法：① 缩短音频时长；② 在设置里改用本地 faster-whisper 引擎（无大小限制）。",
+    f"Audio is {30:.0f}MB — over the 25MB cloud transcription limit "
+    f"(about {10} minutes of 16kHz mono max).\nFix: shorten the audio, or "
+    "switch to the local faster-whisper engine in Settings (no size limit)."))
+_sl241("zh")
+check("sanity zh", _llm241.sanity_check("abc", "") == "输出为空")
+_sl241("zh")
+check("回收 zh 后体检回中文", _doc241.check_all()[0].title == "Python 运行环境")
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

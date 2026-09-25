@@ -28,6 +28,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
+from .i18n import S
+
 # ---------------------------------------------------------------- 镜像
 PIP_INDEXES = [
     ("清华镜像", "https://pypi.tuna.tsinghua.edu.cn/simple"),
@@ -102,14 +104,17 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
     errs: List[str] = []
     base = _pip_base_args()
     if not base:
-        msg = ("本机没有找到可用的 Python 环境，无法自动安装。\n"
-               "请先安装 Python 3.10+（勾选 Add to PATH），再打开体检窗口重试。")
+        msg = (S("本机没有找到可用的 Python 环境，无法自动安装。\n"
+                 "请先安装 Python 3.10+（勾选 Add to PATH），再打开体检窗口重试。",
+                 "No usable Python environment found — cannot install automatically.\n"
+                 "Install Python 3.10+ first (check Add to PATH), then reopen "
+                 "the environment check and retry."))
         if log:
             log(msg)
         return False, msg
     for i, (name, idx) in enumerate(PIP_INDEXES):
         if cancel and cancel():
-            return False, "已取消。"
+            return False, S("已取消。", "Cancelled.")
         # 复用循环前算好的 base：frozen 下每次重建都会重新扫系统 python
         # （逐个起子进程探测，单个可耗 10s+），3 镜像 × N 探测纯属浪费，
         # 且不同镜像间可能落到不同解释器
@@ -120,7 +125,9 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
             cmd += ["-i", idx]
         label = name
         if progress:
-            progress(f"正在通过{label}安装 {' '.join(pkgs)} …", i / (len(PIP_INDEXES) + 1))
+            progress(S(f"正在通过{label}安装 {' '.join(pkgs)} …",
+                       f"Installing {' '.join(pkgs)} via {label} …"),
+                     i / (len(PIP_INDEXES) + 1))
         if log:
             log(f"$ {' '.join(cmd)}")
         t0 = time.time()
@@ -144,7 +151,8 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
             if time.time() - t0 > PIP_TIMEOUT:
                 p.kill()
                 killed = True
-                errs.append(f"{label}: 超过 {PIP_TIMEOUT}s 未完成，已终止")
+                errs.append(S(f"{label}: 超过 {PIP_TIMEOUT}s 未完成，已终止",
+                              f"{label}: no completion within {PIP_TIMEOUT}s — terminated"))
                 break
             line = line.rstrip()
             if not line:
@@ -163,15 +171,18 @@ def pip_install(pkgs: List[str], progress: Optional[Callable[[str, float], None]
             p.wait()
         dt = time.time() - t0
         if killed and cancel and cancel():
-            return False, "已取消。"
+            return False, S("已取消。", "Cancelled.")
         if killed:
             continue
         if p.returncode == 0:
             if progress:
-                progress(f"{' '.join(pkgs)} 安装成功（{label}，{dt:.0f}s）", 1.0)
-            return True, f"已通过{label}安装（{dt:.0f}s）"
-        errs.append(f"{label}: pip 退出码 {p.returncode}（{dt:.0f}s）")
-    return False, "所有镜像都失败了：\n" + "\n".join(errs[-6:])
+                progress(S(f"{' '.join(pkgs)} 安装成功（{label}，{dt:.0f}s）",
+                           f"{' '.join(pkgs)} installed ({label}, {dt:.0f}s)"), 1.0)
+            return True, S(f"已通过{label}安装（{dt:.0f}s）",
+                           f"Installed via {label} ({dt:.0f}s)")
+        errs.append(S(f"{label}: pip 退出码 {p.returncode}（{dt:.0f}s）",
+                      f"{label}: pip exit code {p.returncode} ({dt:.0f}s)"))
+    return False, S("所有镜像都失败了：\n", "All mirrors failed:\n") + "\n".join(errs[-6:])
 
 
 # ---------------------------------------------------------------- 检查项
@@ -248,22 +259,25 @@ def check_all() -> List[CheckItem]:
     # ---- Python（源码运行才有意义；打包版恒真）----
     frozen = getattr(sys, "frozen", False)
     items.append(CheckItem(
-        id="python", title="Python 运行环境",
-        why="程序运行的基础。",
+        id="python", title=S("Python 运行环境", "Python runtime"),
+        why=S("程序运行的基础。", "The foundation the app runs on."),
         level="required", ok=True,
-        detail="打包版内置" if frozen else f"{sys.version_info.major}.{sys.version_info.minor}"
-              f".{sys.version_info.micro}",
-        fix_note="" if frozen else "请从 python.org 安装 3.10+ 后重试"))
+        detail=S("打包版内置", "bundled with the app") if frozen
+        else f"{sys.version_info.major}.{sys.version_info.minor}"
+             f".{sys.version_info.micro}",
+        fix_note="" if frozen else S("请从 python.org 安装 3.10+ 后重试",
+                                     "Install 3.10+ from python.org and retry")))
 
     # ---- PyQt5（打包版随包；源码环境可能缺）----
     pyqt_ok = importlib.util.find_spec("PyQt5") is not None
     items.append(CheckItem(
-        id="pyqt5", title="界面框架（PyQt5）",
-        why="没有它程序连窗口都画不出来。",
+        id="pyqt5", title=S("界面框架（PyQt5）", "UI framework (PyQt5)"),
+        why=S("没有它程序连窗口都画不出来。", "Without it the app cannot draw a window at all."),
         level="required", ok=pyqt_ok or frozen,
-        detail=_mod_version("PyQt5.QtCore") or ("打包版内置" if frozen else "未安装"),
+        detail=_mod_version("PyQt5.QtCore") or (S("打包版内置", "bundled with the app")
+                                                if frozen else S("未安装", "not installed")),
         fix_pkgs=[] if (pyqt_ok or frozen) else ["PyQt5>=5.15.2"],
-        fix_note="" if (pyqt_ok or frozen) else "安装"))
+        fix_note="" if (pyqt_ok or frozen) else S("安装", "Install")))
 
     # ---- faster-whisper：本地转写的核心 ----
     # 打包版（frozen）里 faster_whisper/av 必须被本进程 import 才算在——
@@ -273,34 +287,46 @@ def check_all() -> List[CheckItem]:
     # 它按路径找 DLL，装哪儿都能被 add_dll_directory 挂上）。
     fw_ok = importlib.util.find_spec("faster_whisper") is not None
     items.append(CheckItem(
-        id="faster_whisper", title="本地语音识别（faster-whisper）",
-        why="没有它无法在本地把语音转成字幕（也没法用 GPU 加速）。",
+        id="faster_whisper", title=S("本地语音识别（faster-whisper）",
+                                     "Local speech recognition (faster-whisper)"),
+        why=S("没有它无法在本地把语音转成字幕（也没法用 GPU 加速）。",
+              "Without it, speech cannot be transcribed locally (and no GPU acceleration)."),
         level="recommend", ok=fw_ok or frozen,
         detail=_mod_version("faster_whisper")
-        or ("打包版内置" if frozen else "未安装"),
+        or (S("打包版内置", "bundled with the app") if frozen else S("未安装", "not installed")),
         fix_pkgs=[] if (fw_ok or frozen) else ["faster-whisper>=1.0.0"],
-        fix_note="" if (fw_ok or frozen) else "安装"))
+        fix_note="" if (fw_ok or frozen) else S("安装", "Install")))
 
     # ---- PyAV：不装 ffmpeg 也能解码视频的兜底 ----
     av_ok = importlib.util.find_spec("av") is not None
     items.append(CheckItem(
-        id="pyav", title="视频解码（PyAV）",
-        why="没装 ffmpeg 时的内置解码兜底；有它 + ffmpeg 双保险。",
+        id="pyav", title=S("视频解码（PyAV）", "Video decoding (PyAV)"),
+        why=S("没装 ffmpeg 时的内置解码兜底；有它 + ffmpeg 双保险。",
+              "Built-in decoding fallback when ffmpeg is absent; together with "
+              "ffmpeg it is double insurance."),
         level="recommend", ok=av_ok or frozen,
-        detail=_mod_version("av") or ("打包版内置" if frozen else "未安装"),
+        detail=_mod_version("av") or (S("打包版内置", "bundled with the app")
+                                      if frozen else S("未安装", "not installed")),
         fix_pkgs=[] if (av_ok or frozen) else ["av>=12.0.0"],
-        fix_note="" if (av_ok or frozen) else "安装"))
+        fix_note="" if (av_ok or frozen) else S("安装", "Install")))
 
     # ---- ffmpeg（可选，找不到也能跑）----
     from . import media as _media
     ff = _media.find_ffmpeg()
     items.append(CheckItem(
-        id="ffmpeg", title="ffmpeg（可选，抽音频更快更稳）",
-        why="没有也行——会自动用 PyAV 解码；有的话抽音频兼容性最好。",
+        id="ffmpeg", title=S("ffmpeg（可选，抽音频更快更稳）",
+                             "ffmpeg (optional: faster, steadier audio extraction)"),
+        why=S("没有也行——会自动用 PyAV 解码；有的话抽音频兼容性最好。",
+              "Optional — PyAV decoding is used automatically; ffmpeg has the "
+              "best audio-extraction compatibility."),
         level="optional", ok=bool(ff),
-        detail=ff or "未找到（将使用内置 PyAV 解码）",
-        fix_note="到 https://www.gyan.dev/ffmpeg/builds/ 下载 release-fulls 压缩包，"
-                 "解压后把 ffmpeg.exe 所在目录加入 PATH，或放到 C:\\ffmpeg\\bin\\"))
+        detail=ff or S("未找到（将使用内置 PyAV 解码）",
+                       "not found (built-in PyAV decoding will be used)"),
+        fix_note=S("到 https://www.gyan.dev/ffmpeg/builds/ 下载 release-fulls 压缩包，"
+                   "解压后把 ffmpeg.exe 所在目录加入 PATH，或放到 C:\\ffmpeg\\bin\\",
+                   "Download the release-fulls archive from "
+                   "https://www.gyan.dev/ffmpeg/builds/ , extract it, add the "
+                   "ffmpeg.exe folder to PATH, or drop it into C:\\ffmpeg\\bin\\")))
 
     # ---- CUDA 12 运行库（可选，GPU 加速的关键）----
     try:
@@ -312,22 +338,30 @@ def check_all() -> List[CheckItem]:
         if gpu:
             ok = bool(rt.usable and _cuda.probe_loadable(rt))
             items.append(CheckItem(
-                id="cuda12", title="CUDA 12 运行库（GPU 加速）",
-                why="检测到独立显卡。装上运行库后转写速度可快 5~20 倍。",
+                id="cuda12", title=S("CUDA 12 运行库（GPU 加速）",
+                                     "CUDA 12 runtime (GPU acceleration)"),
+                why=S("检测到独立显卡。装上运行库后转写速度可快 5~20 倍。",
+                      "Dedicated GPU detected. With the runtime, transcription "
+                      "can be 5–20x faster."),
                 level="optional", ok=ok,
-                detail=(rt.cublas_dir if ok else rt.note) or "未找到",
+                detail=(rt.cublas_dir if ok else rt.note) or S("未找到", "not found"),
                 fix_pkgs=[] if ok else
                 ["nvidia-cublas-cu12", "nvidia-cudnn-cu12", "nvidia-cuda-runtime-cu12"],
-                fix_note="" if ok else "安装（约 700 MB，装完即用 GPU）"))
+                fix_note="" if ok else S("安装（约 700 MB，装完即用 GPU）",
+                                         "Install (~700 MB, GPU ready afterwards)")))
         else:
             items.append(CheckItem(
-                id="cuda12", title="独立显卡（NVIDIA GPU）",
-                why="没检测到 N 卡，将用 CPU 转写（速度慢一些，功能不受影响）。",
-                level="optional", ok=False, detail="未检测到 CUDA 设备", fix_note=""))
+                id="cuda12", title=S("独立显卡（NVIDIA GPU）", "Dedicated GPU (NVIDIA)"),
+                why=S("没检测到 N 卡，将用 CPU 转写（速度慢一些，功能不受影响）。",
+                      "No NVIDIA GPU detected; CPU transcription will be used "
+                      "(slower, features unaffected)."),
+                level="optional", ok=False,
+                detail=S("未检测到 CUDA 设备", "No CUDA device detected"), fix_note=""))
     except Exception as e:      # 探测本身失败不拦路
-        items.append(CheckItem(id="cuda12", title="CUDA 12 运行库（GPU 加速）",
+        items.append(CheckItem(id="cuda12", title=S("CUDA 12 运行库（GPU 加速）",
+                                                    "CUDA 12 runtime (GPU acceleration)"),
                                why="", level="optional", ok=False,
-                               detail=f"探测失败：{e}", fix_note=""))
+                               detail=S(f"探测失败：{e}", f"Probe failed: {e}"), fix_note=""))
     return items
 
 

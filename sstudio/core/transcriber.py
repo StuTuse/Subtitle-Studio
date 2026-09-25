@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..core.config import Config, models_dir
+from ..core.i18n import S
 from ..core.model import Cue, CueDocument, normalize_cues
 
 Progress = Callable[[str, float], None]        # (message, 0..1 或 -1 表示不确定)
@@ -184,9 +185,12 @@ def _download_from_modelscope(model: str, dest_root: str,
     repo = _ms_repo_for(model)
     if not repo:
         raise TranscribeError(
-            f"「{model}」不在内置下载列表里。\n"
-            "请改用 tiny/base/small/medium/large-v3/large-v3-turbo 之一，"
-            "或在「设置 → 模型」里直接填本地模型目录。")
+            S(f"「{model}」不在内置下载列表里。\n"
+              "请改用 tiny/base/small/medium/large-v3/large-v3-turbo 之一，"
+              "或在「设置 → 模型」里直接填本地模型目录。",
+              f"「{model}」 is not in the built-in download list.\n"
+              "Use tiny/base/small/medium/large-v3/large-v3-turbo, or type a "
+              "local model directory in Settings → Model."))
     files = list(_CT2_FILES) + ["preprocessor_config.json", "vocabulary.json"]
     cache_root = os.path.join(dest_root, "models--" + repo.replace("/", "--"))
     # 快照目录名用仓库名而不是随意字符串：discover/resolve 靠路径末段匹配
@@ -212,7 +216,7 @@ def _download_from_modelscope(model: str, dest_root: str,
             total_bytes = float(sum(sizes.values())) or 1.0
             for fn in files:
                 if cancel and cancel():
-                    raise TranscribeError("已取消。")
+                    raise TranscribeError(S("已取消。", "Cancelled."))
                 target = os.path.join(snap, fn)
                 expect = sizes.get(fn, 0)
                 if expect and os.path.isfile(target) and os.path.getsize(target) == expect:
@@ -227,7 +231,8 @@ def _download_from_modelscope(model: str, dest_root: str,
                 with cli.stream("GET", url, headers=hdr) as r:
                     if r.status_code not in (200, 206):
                         raise TranscribeError(
-                            f"ModelScope 下载失败（HTTP {r.status_code}）：{url}")
+                            S(f"ModelScope 下载失败（HTTP {r.status_code}）：{url}",
+                              f"ModelScope download failed (HTTP {r.status_code}): {url}"))
                     if pos and r.status_code == 200:
                         pos = 0              # 服务器不认 Range，重来
                     mode = "ab" if (pos and r.status_code == 206) else "wb"
@@ -236,7 +241,7 @@ def _download_from_modelscope(model: str, dest_root: str,
                     with open(tmp, mode) as fh:
                         for chunk in r.iter_bytes(1024 * 512):
                             if cancel and cancel():
-                                raise TranscribeError("已取消。")
+                                raise TranscribeError(S("已取消。", "Cancelled."))
                             fh.write(chunk)
                             got += len(chunk)
                             done_bytes += len(chunk)
@@ -248,24 +253,34 @@ def _download_from_modelscope(model: str, dest_root: str,
                                 # 上层 worker 把它映射进「模型下载」区间，
                                 # 进度条动起来；此前恒 -1 被钉死在 15%
                                 progress(
-                                    f"下载模型 {fn} {mb:.0f}/{expect/1048576:.0f} MB"
-                                    f"（合计约 {done_bytes/1048576:.0f}/"
-                                    f"{total_bytes/1048576:.0f} MB，完成后永久复用）",
+                                    S(f"下载模型 {fn} {mb:.0f}/{expect/1048576:.0f} MB"
+                                      f"（合计约 {done_bytes/1048576:.0f}/"
+                                      f"{total_bytes/1048576:.0f} MB，完成后永久复用）",
+                                      f"Downloading {fn} {mb:.0f}/{expect/1048576:.0f} MB"
+                                      f" (about {done_bytes/1048576:.0f}/"
+                                      f"{total_bytes/1048576:.0f} MB total, reused forever)"),
                                     done_bytes / total_bytes)
                 os.replace(tmp, target)
     except TranscribeError:
         raise
     except ImportError as e:
-        raise TranscribeError(f"缺少 httpx 依赖，无法下载模型：{e}") from e
+        raise TranscribeError(S(f"缺少 httpx 依赖，无法下载模型：{e}",
+                                f"Missing httpx dependency; cannot download model: {e}")) from e
     except Exception as e:
         if _is_net_error(str(e)):
             raise TranscribeError(
-                f"从 ModelScope 下载「{model}」失败：网络不通。\n"
-                "可换「设置 → 模型下载源」为 hf-mirror，或手动下载模型目录后在设置里填路径。") from e
-        raise TranscribeError(f"从 ModelScope 下载失败：{e}") from e
+                S(f"从 ModelScope 下载「{model}」失败：网络不通。\n"
+                  "可换「设置 → 模型下载源」为 hf-mirror，或手动下载模型目录后在设置里填路径。",
+                  f"ModelScope download of 「{model}」 failed: no network.\n"
+                  "Switch Settings → Model download source to hf-mirror, or "
+                  "download the model directory manually and point Settings at it.")) from e
+        raise TranscribeError(S(f"从 ModelScope 下载失败：{e}",
+                                f"ModelScope download failed: {e}")) from e
     if not all(os.path.isfile(os.path.join(snap, f)) for f in _CT2_FILES):
         raise TranscribeError(
-            f"ModelScope 仓库 {repo} 缺少 CT2 必需文件，换其它模型或下载源试试。")
+            S(f"ModelScope 仓库 {repo} 缺少 CT2 必需文件，换其它模型或下载源试试。",
+              f"ModelScope repo {repo} lacks required CT2 files; try another "
+              "model or download source."))
     return snap
 
 
@@ -278,8 +293,8 @@ class TranscriptResult:
 # ---------------------------------------------------------------- 模型发现
 _MODEL_PATTERNS = [
     # (探测路径, 描述)——只扫标准缓存位置与自家模型目录
-    (os.path.expanduser(r"~\.cache\huggingface\hub"), "HuggingFace 缓存"),
-    (os.path.expanduser(r"~\.cache\modelscope\hub"), "ModelScope 缓存"),
+    (os.path.expanduser(r"~\.cache\huggingface\hub"), S("HuggingFace 缓存", "HuggingFace cache")),
+    (os.path.expanduser(r"~\.cache\modelscope\hub"), S("ModelScope 缓存", "ModelScope cache")),
     (os.path.expandvars(r"%USERPROFILE%\.cache\whisper"), "openai-whisper"),
 ]
 
@@ -410,7 +425,8 @@ def _scan_shallow(root: str, name_prefix: str, max_depth: int,
 # ------------------------------------------------------------ faster-whisper
 class FasterWhisperEngine:
     key = "faster-whisper"
-    label = "faster-whisper（本机推理，推荐）"
+    label = S("faster-whisper（本机推理，推荐）",
+              "faster-whisper (local inference, recommended)")
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -449,8 +465,10 @@ class FasterWhisperEngine:
             from faster_whisper import WhisperModel
         except Exception as e:
             raise TranscribeError(
-                "未安装 faster-whisper。请在终端执行：\n\n    pip install faster-whisper\n\n"
-                f"（原始错误：{e}）") from e
+                S("未安装 faster-whisper。请在终端执行：\n\n    pip install faster-whisper\n\n",
+                  "faster-whisper is not installed. Run in a terminal:\n\n"
+                  "    pip install faster-whisper\n\n")
+                + S(f"（原始错误：{e}）", f"(original error: {e})")) from e
 
         from . import cuda_rt
 
@@ -463,28 +481,35 @@ class FasterWhisperEngine:
             # 本地没有：按设置从 ModelScope / hf-mirror / 官方下载
             if source == "modelscope" and _ms_repo_for(cfg.whisper_model):
                 if progress:
-                    progress("本地未找到模型，正在从 ModelScope 下载"
-                             "（首次约 1.5 GB，完成后永久复用）…", -1)
+                    progress(S("本地未找到模型，正在从 ModelScope 下载"
+                               "（首次约 1.5 GB，完成后永久复用）…",
+                               "Model not found locally; downloading from ModelScope "
+                               "(~1.5 GB first time, reused forever)…"), -1)
                 model_path = _download_from_modelscope(
                     cfg.whisper_model,
                     getattr(cfg, "model_dir", "") or models_dir(),
                     progress=progress, cancel=cancel)
             elif progress:
-                progress(f"本地未找到模型，正在从 {ep.replace('https://', '')} 下载"
-                         "（首次约 1.5 GB，完成后永久复用）…", -1)
+                progress(S(f"本地未找到模型，正在从 {ep.replace('https://', '')} 下载"
+                           "（首次约 1.5 GB，完成后永久复用）…",
+                           f"Model not found locally; downloading from "
+                           f"{ep.replace('https://', '')} "
+                           "(~1.5 GB first time, reused forever)…"), -1)
         if progress:
             if os.path.isdir(model_path):
-                progress(f"加载模型 {os.path.basename(str(model_path))}（{device}/{compute}）…", -1)
+                progress(S(f"加载模型 {os.path.basename(str(model_path))}（{device}/{compute}）…",
+                           f"Loading model {os.path.basename(str(model_path))} "
+                           f"({device}/{compute})…"), -1)
         # 模型加载是取消盲区里最痛的一段：large-v3 冷加载 30~120 秒，
         # 此前这期间点取消毫无反应。加载前后各查一次，把体感压到秒级
         if cancel and cancel():
-            raise TranscribeError("已取消。")
+            raise TranscribeError(S("已取消。", "Cancelled."))
         t0 = time.time()
         try:
             model, device, compute, note = _load_model(
                 WhisperModel, model_path, device, compute, cfg)
             if cancel and cancel():
-                raise TranscribeError("已取消。")
+                raise TranscribeError(S("已取消。", "Cancelled."))
             if note and progress:
                 progress(note, -1)
         except TranscribeError:
@@ -494,15 +519,23 @@ class FasterWhisperEngine:
             low = msg.lower()
             if "cublas" in low or "cudart" in low or "cudnn" in low or "dll is not found" in low:
                 raise TranscribeError(
-                    "GPU 推理失败：缺少 CUDA 12 运行时（cublas64_12.dll）。\n\n"
-                    f"{cuda_rt.describe()}\n\n"
-                    "临时办法：在「设置 → 计算设备」改成 cpu 先跑通。") from e
+                    S("GPU 推理失败：缺少 CUDA 12 运行时（cublas64_12.dll）。\n\n",
+                      "GPU inference failed: CUDA 12 runtime missing (cublas64_12.dll).\n\n")
+                    + f"{cuda_rt.describe()}\n\n"
+                    + S("临时办法：在「设置 → 计算设备」改成 cpu 先跑通。",
+                        "Workaround: switch Settings → Compute device to cpu first.")) from e
             if _is_net_error(msg):
-                hint = ("请检查网络，或在「设置 → 模型下载源」换一项"
-                        f"（当前：{source}），也可改选已下载的本地模型。")
+                hint = S("请检查网络，或在「设置 → 模型下载源」换一项"
+                         f"（当前：{source}），也可改选已下载的本地模型。",
+                         "Check the network, or switch Settings → Model download "
+                         f"source (current: {source}); alternatively pick an "
+                         "already-downloaded local model.")
                 raise TranscribeError(
-                    f"本地找不到模型「{cfg.whisper_model}」，且无法联网下载。\n{hint}") from e
-            raise TranscribeError(f"模型加载失败：{msg}") from e
+                    S(f"本地找不到模型「{cfg.whisper_model}」，且无法联网下载。\n{hint}",
+                      f"Local model 「{cfg.whisper_model}」 not found and cannot "
+                      f"be downloaded.\n{hint}")) from e
+            raise TranscribeError(S(f"模型加载失败：{msg}",
+                                    f"Model loading failed: {msg}")) from e
 
         prompt = (cfg.initial_prompt or "").strip()
         kw: Dict[str, Any] = dict(
@@ -524,13 +557,13 @@ class FasterWhisperEngine:
             kw["vad_parameters"] = {"min_silence_duration_ms": 300, "speech_pad_ms": 200}
 
         if progress:
-            progress("模型就绪，开始识别…", 0.0)
+            progress(S("模型就绪，开始识别…", "Model ready; transcribing…"), 0.0)
         total = _audio_duration(audio_path)
         # VAD 预处理在第一个 segment 产出前整文件跑完（静音多的 4h 文件
         # 可达分钟级）：跑之前最后给取消一次机会，此后进入 CTranslate2
         # 解码确实无法中断
         if cancel and cancel():
-            raise TranscribeError("已取消。")
+            raise TranscribeError(S("已取消。", "Cancelled."))
 
         # faster-whisper 返回的是惰性生成器，缺 cublas 这类运行时错误要等到
         # 真正迭代时才抛出；而完整消费一次又不该重复跑模型。因此把「跑一次 +
@@ -542,7 +575,7 @@ class FasterWhisperEngine:
             cues: List[Cue] = []
             for seg in segments:
                 if cancel and cancel():
-                    raise TranscribeError("已取消。")
+                    raise TranscribeError(S("已取消。", "Cancelled."))
                 text = (seg.text or "").strip()
                 if text:
                     words = []
@@ -562,7 +595,9 @@ class FasterWhisperEngine:
                     # 不要求 cues 非空：长静音开头（VAD 后第一句在数分钟
                     # 处）时 0% 挂几分钟，进度条看着像卡死
                     pos = float(seg.end)
-                    progress(f"识别中 {pos / total * 100:.0f}%", min(0.999, pos / total))
+                    progress(S(f"识别中 {pos / total * 100:.0f}%",
+                               f"Transcribing {pos / total * 100:.0f}%"),
+                             min(0.999, pos / total))
             return cues, info
 
         try:
@@ -574,7 +609,8 @@ class FasterWhisperEngine:
                     getattr(cfg, "auto_cpu_fallback", True):
                 cuda_rt._result = None
                 if progress:
-                    progress("GPU 运行库缺失，改用 CPU 重新识别…", -1)
+                    progress(S("GPU 运行库缺失，改用 CPU 重新识别…",
+                               "GPU runtime missing; retrying on CPU…"), -1)
                 try:
                     model, device, compute, note = _load_model(
                         WhisperModel, model_path, "cpu", "int8", cfg)
@@ -583,18 +619,23 @@ class FasterWhisperEngine:
                     raise
                 except Exception as e2:  # noqa: BLE001
                     raise TranscribeError(
-                        f"CPU 兜底同样失败：{e2}\n\n{cuda_rt.describe()}") from e2
+                        S(f"CPU 兜底同样失败：{e2}\n\n{cuda_rt.describe()}",
+                          f"CPU fallback failed too: {e2}\n\n{cuda_rt.describe()}")) from e2
             elif _looks_like_gpu_error(e):
                 raise TranscribeError(
-                    f"GPU 识别失败：{e}\n\n{cuda_rt.describe()}\n\n"
-                    "或在「设置 → 计算设备」改成 cpu。") from e
+                    S(f"GPU 识别失败：{e}\n\n{cuda_rt.describe()}\n\n",
+                      f"GPU transcription failed: {e}\n\n{cuda_rt.describe()}\n\n")
+                    + S("或在「设置 → 计算设备」改成 cpu。",
+                        "Or switch Settings → Compute device to cpu.")) from e
             else:
                 raise TranscribeError(
-                    f"识别失败：{e}\n\n可尝试：设置 → 计算设备改成 cpu，"
-                    "或把量化精度改成 int8。") from e
+                    S(f"识别失败：{e}\n\n可尝试：设置 → 计算设备改成 cpu，"
+                      "或把量化精度改成 int8。",
+                      f"Transcription failed: {e}\n\nTry: Settings → Compute "
+                      "device to cpu, or quantization to int8.")) from e
 
         if progress:
-            progress("整理时间轴…", 0.999)
+            progress(S("整理时间轴…", "Aligning timeline…"), 0.999)
 
         doc = CueDocument(source_video=audio_path, duration=total,
                           language=getattr(info, "language", "") or "", cues=cues)
@@ -642,7 +683,8 @@ def _pick_device(cfg: Config, progress: Optional[Progress] = None) -> Tuple[str,
                     pass
                 else:
                     if progress:
-                        progress("未找到 CUDA 12 运行时，自动改用 CPU…", -1)
+                        progress(S("未找到 CUDA 12 运行时，自动改用 CPU…",
+                                   "CUDA 12 runtime not found; falling back to CPU…"), -1)
                     dev, compute = "cpu", (compute if compute not in ("auto", "") else "int8")
                     return dev, "int8" if compute in ("auto", "") else compute
             else:
@@ -679,7 +721,8 @@ def _load_model(WhisperModel, model_path: str, device: str, compute: str, cfg: C
             or "dll is not found" in low)
         if gpu_broken and getattr(cfg, "auto_cpu_fallback", True):
             cuda_rt._result = None            # 让下次重新探测
-            note = ("GPU 不可用，已改用 CPU：" + cuda_rt.describe())
+            note = (S("GPU 不可用，已改用 CPU：", "GPU unavailable; switched to CPU: ")
+                    + cuda_rt.describe())
             m = attempt("cpu", "int8")
             _track_model(m)
             return m, "cpu", "int8", note
@@ -723,7 +766,7 @@ def _audio_duration(path: str) -> float:
 # --------------------------------------------------------------- whisper.cpp
 class WhisperCppEngine:
     key = "whisper.cpp"
-    label = "whisper.cpp（CPU 友好）"
+    label = S("whisper.cpp（CPU 友好）", "whisper.cpp (CPU friendly)")
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -740,10 +783,13 @@ class WhisperCppEngine:
                          or os.path.isfile(os.path.join(os.path.dirname(cand), "libwhisper.dll"))):
                 exe = cand
         if not exe:
-            raise TranscribeError("未找到 whisper-cli。请安装 whisper.cpp 或在 PATH 中提供。")
+            raise TranscribeError(S("未找到 whisper-cli。请安装 whisper.cpp 或在 PATH 中提供。",
+                                    "whisper-cli not found. Install whisper.cpp or "
+                                    "put it on PATH."))
         model = self.cfg.whisper_model
         if not os.path.isfile(model):
-            raise TranscribeError("请选择一个 ggml-*.bin 模型文件。")
+            raise TranscribeError(S("请选择一个 ggml-*.bin 模型文件。",
+                                    "Pick a ggml-*.bin model file."))
         out = audio_path + ".whispercpp.json"
         # 上次运行（取消/崩溃）可能留下旧结果：不清掉的话，本次即使
         # whisper-cli 没产出新文件也会把**上一次的字幕**当新结果解析成功。
@@ -763,20 +809,21 @@ class WhisperCppEngine:
         if task == "translate":
             cmd += ["-tr"]
         if progress:
-            progress("whisper.cpp 识别中…", -1)
+            progress(S("whisper.cpp 识别中…", "whisper.cpp transcribing…"), -1)
         t0 = time.time()
         try:
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  text=True, errors="replace",
                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except OSError as e:
-            raise TranscribeError(f"无法启动 whisper.cpp：{e}")
+            raise TranscribeError(S(f"无法启动 whisper.cpp：{e}",
+                                    f"Cannot launch whisper.cpp: {e}"))
         assert p.stdout is not None
         try:
             for line in p.stdout:
                 if cancel and cancel():
                     p.kill()
-                    raise TranscribeError("已取消。")
+                    raise TranscribeError(S("已取消。", "Cancelled."))
                 m = re.search(r"(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->", line)
                 if m and progress:
                     progress(f"whisper.cpp: {m.group(1)}", -1)
@@ -784,13 +831,14 @@ class WhisperCppEngine:
             # stdout 读毕但 cancel 在最后一段进度后才发生：补一次检查，
             # 否则取消请求被"stdout 已无行可读"吞掉，白等到底
             if cancel and cancel():
-                raise TranscribeError("已取消。")
+                raise TranscribeError(S("已取消。", "Cancelled."))
         finally:
             if p.poll() is None:
                 p.kill()
                 p.wait()
         if not os.path.isfile(out):
-            raise TranscribeError("whisper.cpp 未产出结果文件。")
+            raise TranscribeError(S("whisper.cpp 未产出结果文件。",
+                                    "whisper.cpp produced no result file."))
         try:
             with open(out, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -819,7 +867,8 @@ class WhisperCppEngine:
 # ------------------------------------------------------------ OpenAI 兼容 API
 class OpenAIApiEngine:
     key = "openai_api"
-    label = "调用云端语音转写 API（Whisper API 等）"
+    label = S("调用云端语音转写 API（Whisper API 等）",
+              "Cloud speech API (Whisper API etc.)")
 
     # OpenAI /v1/audio/transcriptions 硬限制 25MB；提前拦下并给出
     # 可操作的指引，比上传几分钟后被 413 拒绝体验好得多
@@ -837,15 +886,19 @@ class OpenAIApiEngine:
         if size_mb > self.MAX_UPLOAD_MB:
             mins = int(size_mb / (0.096 * 60))   # 16kHz s16 单声道 ≈ 1.92MB/min
             raise TranscribeError(
-                f"音频 {size_mb:.0f}MB 超过云端转写接口的 25MB 上限"
-                f"（约可传 {mins} 分钟以内的 16kHz 单声道音频）。\n"
-                "解决办法：① 缩短音频时长；② 在设置里改用本地 "
-                "faster-whisper 引擎（无大小限制）。")
+                S(f"音频 {size_mb:.0f}MB 超过云端转写接口的 25MB 上限"
+                  f"（约可传 {mins} 分钟以内的 16kHz 单声道音频）。\n"
+                  "解决办法：① 缩短音频时长；② 在设置里改用本地 "
+                  "faster-whisper 引擎（无大小限制）。",
+                  f"Audio is {size_mb:.0f}MB — over the 25MB cloud transcription "
+                  f"limit (about {mins} minutes of 16kHz mono max).\n"
+                  "Fix: shorten the audio, or switch to the local faster-whisper "
+                  "engine in Settings (no size limit)."))
         from .llm import load_client
         prof = self.cfg.profile()
         client = load_client(prof)
         if progress:
-            progress("上传音频到云端转写…", 0.2)
+            progress(S("上传音频到云端转写…", "Uploading audio for cloud transcription…"), 0.2)
         # 与 faster-whisper 引擎同一套约定：translate:xx 表示「翻译成 xx 语」；
         # API 的 language 参数只认纯语言码，带前缀直接 400
         lang = self.cfg.language or "auto"
@@ -888,5 +941,6 @@ def transcribe(audio_path: str, cfg: Config, progress: Optional[Progress] = None
                cancel: Optional[Cancel] = None) -> TranscriptResult:
     eng = get_engine(cfg)
     if cfg.asr_engine == FasterWhisperEngine.key and not FasterWhisperEngine.available():
-        raise TranscribeError("未安装 faster-whisper：pip install faster-whisper")
+        raise TranscribeError(S("未安装 faster-whisper：pip install faster-whisper",
+                                "faster-whisper not installed: pip install faster-whisper"))
     return eng.transcribe(audio_path, progress=progress, cancel=cancel)

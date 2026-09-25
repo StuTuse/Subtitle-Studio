@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .config import Config, LLMProfile
+from .i18n import S
 from .model import Cue
 
 Progress = Optional[Callable[[str, float], None]]
@@ -261,9 +262,13 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
     if text or not reasoning or on_delta is not None or not _retry_no_cap:
         if not text and reasoning:
             raise ReasoningBudgetError(
-                f"模型「{prof.model}」是推理模型，{cap} token 全部用在了内部思考上，"
-                "正文为空。\n\n解决：把「最大输出 token」调大（如 8192 以上），"
-                "或在设置里留空/填 0 表示不限制。")
+                S(f"模型「{prof.model}」是推理模型，{cap} token 全部用在了内部思考上，"
+                  "正文为空。\n\n解决：把「最大输出 token」调大（如 8192 以上），"
+                  "或在设置里留空/填 0 表示不限制。",
+                  f"Model 「{prof.model}」 is a reasoning model and spent all "
+                  f"{cap} tokens on internal thinking — the body is empty.\n\n"
+                  "Fix: raise Max output tokens (e.g. 8192+), or leave it "
+                  "empty/0 in Settings for unlimited."))
         return text
 
     # 去掉 max_tokens 上限重试一次
@@ -274,11 +279,17 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
         _REASONING_NO_CAP.add(key)      # 同接入点后续批次直接不带 cap
         return text2
     raise ReasoningBudgetError(
-        f"模型「{prof.model}」只输出了内部思考、没有输出正文，且不限长度后仍然如此。\n\n"
-        "通常是该服务把 reasoning 与 content 拆成了两个字段。可尝试：\n"
-        "  · 换一个非推理模型（如 deepseek-chat、qwen-plus）\n"
-        f"  · 或在提示词末尾加一句「直接输出结果，不要解释」\n"
-        f"（思考片段末尾：…{reasoning2[-120:]}）")
+        S(f"模型「{prof.model}」只输出了内部思考、没有输出正文，且不限长度后仍然如此。\n\n"
+          "通常是该服务把 reasoning 与 content 拆成了两个字段。可尝试：\n"
+          "  · 换一个非推理模型（如 deepseek-chat、qwen-plus）\n"
+          f"  · 或在提示词末尾加一句「直接输出结果，不要解释」\n"
+          f"（思考片段末尾：…{reasoning2[-120:]}）",
+          f"Model 「{prof.model}」 output only internal reasoning, no body — "
+          "even with no token cap.\n\nThe service likely splits reasoning and "
+          "content into separate fields. Try:\n"
+          "  · switch to a non-reasoning model (deepseek-chat, qwen-plus…)\n"
+          "  · or append to the prompt: \"Output the result directly, no explanation\"\n"
+          f"(end of reasoning: …{reasoning2[-120:]})"))
 
 
 def no_reasoning_note(prof: LLMProfile) -> str:
@@ -287,10 +298,15 @@ def no_reasoning_note(prof: LLMProfile) -> str:
         return ""
     key = ((prof.base_url or "").rstrip("/"), prof.model)
     if key in _REASON_INEFFECTIVE:
-        return (f"「{prof.model}」不接受本程序已知的任何一种关闭思考参数"
-                "（reasoning_effort / thinking / chat_template_kwargs 都被忽略），"
-                "思考仍会产生、拖慢速度并消耗 token。纠错结果不受影响；"
-                "想提速可换 reasoning_effort=none 生效的模型（如 Qwen3 / GLM-Flash 系）。")
+        return (S(f"「{prof.model}」不接受本程序已知的任何一种关闭思考参数"
+                  "（reasoning_effort / thinking / chat_template_kwargs 都被忽略），"
+                  "思考仍会产生、拖慢速度并消耗 token。纠错结果不受影响；"
+                  "想提速可换 reasoning_effort=none 生效的模型（如 Qwen3 / GLM-Flash 系）。",
+                  f"「{prof.model}」 accepts none of the known no-reasoning "
+                  "parameters (reasoning_effort / thinking / chat_template_kwargs "
+                  "are ignored); thinking still runs, slowing it down and "
+                  "burning tokens. Fix results are unaffected; for speed switch "
+                  "to a model honoring reasoning_effort=none (Qwen3 / GLM-Flash)."))
     return ""
 
 
@@ -299,9 +315,12 @@ def truncation_note(prof: LLMProfile) -> str:
     key = ((prof.base_url or "").rstrip("/"), prof.model)
     if key not in _STREAM_TRUNCATED:
         return ""
-    return (f"「{prof.model}」最近有输出在 token 上限处被截断（或连接中断），"
-            "对应批次已按原样收下但可能不完整。可调大「最大输出 token」"
-            "或减小每批行数后对失败行重跑。")
+    return (S(f"「{prof.model}」最近有输出在 token 上限处被截断（或连接中断），"
+              "对应批次已按原样收下但可能不完整。可调大「最大输出 token」"
+              "或减小每批行数后对失败行重跑。",
+              f"「{prof.model}」 recently hit the token cap (or the connection "
+              "dropped); that batch was accepted as-is but may be incomplete. "
+              "Raise Max output tokens or lower batch size and re-run failed rows."))
 
 
 def test_connection(prof: LLMProfile) -> Tuple[bool, str, float]:
@@ -323,22 +342,29 @@ def _friendly_err(e: Exception) -> str:
     if isinstance(e, ReasoningBudgetError):
         return s
     if "401" in low or "invalid api key" in low or "authentication" in low:
-        return "API Key 无效或未授权（401）。请检查密钥与 Base URL。"
+        return S("API Key 无效或未授权（401）。请检查密钥与 Base URL。",
+                 "API key invalid or unauthorized (401). Check the key and Base URL.")
     if "404" in low and "model" in low:
-        return "模型名不存在（404）。请检查模型标识是否与服务商一致。"
+        return S("模型名不存在（404）。请检查模型标识是否与服务商一致。",
+                 "Model not found (404). Check the model name against your provider.")
     if "429" in low:
-        return "触发限流（429）。请降低并发/请求频率或稍后再试。"
+        return S("触发限流（429）。请降低并发/请求频率或稍后再试。",
+                 "Rate limited (429). Lower concurrency/frequency or retry later.")
     if "connection" in low or "timeout" in low or "unreachable" in low or "dns" in low:
-        return "网络不通或超时。检查 Base URL、代理设置（本地服务注意 http://127.0.0.1）。"
+        return S("网络不通或超时。检查 Base URL、代理设置（本地服务注意 http://127.0.0.1）。",
+                 "Network unreachable or timed out. Check Base URL and proxy "
+                 "(local services need http://127.0.0.1).")
     if "converting" in low or "openai" in low and "api_key" in low:
-        return "OpenAI SDK 需要非空 api_key，本地服务可填任意占位串（如 ollama）。"
+        return S("OpenAI SDK 需要非空 api_key，本地服务可填任意占位串（如 ollama）。",
+                 "The OpenAI SDK needs a non-empty api_key; for local services "
+                 "any placeholder works (e.g. ollama).")
     return s[:220]
 
 
 def _friendly_short(err: str) -> str:
     """换档提示里引用的失败原因：一句话足够，不贴大段 SDK 文案。"""
     head = (err or "").strip().splitlines()
-    return (head[0][:80] if head else "连接失败")
+    return (head[0][:80] if head else S("连接失败", "Connection failed"))
 
 
 # ------------------------------------------------------------------ 提示词
@@ -540,16 +566,16 @@ def looks_translated(src: str, dst: str) -> bool:
 def sanity_check(src: str, dst: str) -> Optional[str]:
     """返回 None 表示可接受，否则返回拒绝原因。"""
     if dst is None or dst == "":
-        return "输出为空"
+        return S("输出为空", "Empty output")
     if src.strip() and not dst.strip():
-        return "输出为空"
+        return S("输出为空", "Empty output")
     ls, ld = len(src.strip()), len(dst.strip())
     # 先判翻译再判长度：整句被换成英文时必然同时触发长度异常，
     # 但「被翻译」才是更准确、也更可操作的原因。
     if looks_translated(src, dst):
-        return "疑似被翻译而非纠错"
+        return S("疑似被翻译而非纠错", "Looks translated, not corrected")
     if ls and (ld > ls * 2.2 + 12 or ld < ls * 0.45):
-        return f"长度异常（{ls}→{ld}）"
+        return S(f"长度异常（{ls}→{ld}）", f"Suspicious length ({ls}→{ld})")
     return None
 
 
@@ -576,7 +602,8 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     # 一点「运行纠错」却报"尚未配置 API Key"，同一服务两个入口互相矛盾。
     if (not prof.api_key and prof.kind != "ollama"
             and not _is_local_base(prof.base_url)):
-        raise LLMError("尚未配置 API Key。请到「模型设置」里填写。")
+        raise LLMError(S("尚未配置 API Key。请到「模型设置」里填写。",
+                         "No API key configured. Fill it in under Model settings."))
     # 备用档：当前档连不上时按顺序热切换（base_url 必须与已挂档不同，
     # 同一网关换档名没有意义）。多档配置的用户在端点重启时不再整篇报废。
     _failover: List[LLMProfile] = [
@@ -639,7 +666,8 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
         got = parse_numbered(raw, range(idx, idx + len(batch)))
         missing = [n for n in range(idx, idx + len(batch)) if n not in got]
         if cfg.strict_mode and (missing or len(got) != len(batch)):
-            raise ValueError(f"编号缺失/多余（期望 {len(batch)}，得到 {len(got)}）")
+            raise ValueError(S(f"编号缺失/多余（期望 {len(batch)}，得到 {len(got)}）",
+                               f"Row numbers missing/extra (expected {len(batch)}, got {len(got)})"))
         return got
 
     def _try_failover(err: str) -> bool:
@@ -675,8 +703,10 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
             _failed_bases.add((nxt.base_url or "").rstrip("/"))
             _prof_holder[0] = nxt
             _abort_flag[0] = None
-            note = (f"「{prof.name}」连不上（{_friendly_short(err)}），"
-                    f"已自动切换到「{nxt.name}」继续。")
+            note = S(f"「{prof.name}」连不上（{_friendly_short(err)}），"
+                     f"已自动切换到「{nxt.name}」继续。",
+                     f"「{prof.name}」 unreachable ({_friendly_short(err)}); "
+                     f"switched to 「{nxt.name}」 automatically.")
             _failover_note.append(note)
             return True
 
@@ -700,7 +730,7 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     def _worker_inner(job: Tuple[int, List[Cue]]):
         idx, batch = job
         if cancel and cancel():
-            return idx, None, "已取消"
+            return idx, None, S("已取消", "Cancelled")
         err = ""
         # 换档重试不消耗 attempt 名额：auto_retry=0 的用户在主档挂掉时
         # 仍要能吃到备档的完整一轮。上限 = 配置轮数 + 每个备用档各一轮。
@@ -711,20 +741,21 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                 return idx, None, _ABORT_NOTE
             if attempt:
                 # 限流/并发满：等久一点再试，固定几百毫秒只会一直撞在同一个坑里
-                _sleep(min(20.0, 3.0 * (2 ** (attempt - 1))) if "限流" in err else 1.2 * attempt)
+                _sleep(min(20.0, 3.0 * (2 ** (attempt - 1)))
+                       if S("限流", "Rate limited") in err else 1.2 * attempt)
             if cancel and cancel():
-                return idx, None, "已取消"
+                return idx, None, S("已取消", "Cancelled")
             try:
                 got = one(idx, batch, attempt)
                 if got is None:
-                    return idx, None, "无结果"
+                    return idx, None, S("无结果", "No result")
                 return idx, got, ""
             except ReasoningBudgetError as e:
                 # 改配置才能解决，重试只会白等
                 return idx, None, _friendly_err(e)
             except Exception as e:
                 err = _friendly_err(e)
-                if "API Key" in err or "模型名不存在" in err:
+                if S("API Key", "API key") in err or S("模型名不存在", "Model not found") in err:
                     return idx, None, err          # 参数错误，重试无意义
                 if _is_conn_refused(e):
                     # 服务根本没开/地址写错。先试故障转移：还有别的启用档
@@ -738,7 +769,7 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                         _abort_flag[0] = err
                     return idx, None, err
                 if cancel and cancel():
-                    return idx, None, "已取消"
+                    return idx, None, S("已取消", "Cancelled")
                 attempt += 1
         return idx, None, err
 
@@ -753,7 +784,9 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
             with lock:
                 done += 1
                 if progress:
-                    progress(f"已修正 {done}/{len(batches)} 批", done / max(1, len(batches)))
+                    progress(S(f"已修正 {done}/{len(batches)} 批",
+                               f"Fixed {done}/{len(batches)} batches"),
+                             done / max(1, len(batches)))
             if _abort_flag[0] is not None and not aborted_cancels:
                 # 服务连不上：排队中还没开跑的批次一律不再发起
                 aborted_cancels = True
@@ -761,7 +794,8 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                     f2.cancel()
             if err:
                 if err != _ABORT_NOTE:      # 止损而放弃的批次不进失败清单刷消息
-                    result.failures.append(f"第 {idx + 1} 行起：{err}")
+                    result.failures.append(S(f"第 {idx + 1} 行起：{err}",
+                                             f"From row {idx + 1}: {err}"))
                 continue
             assert got is not None
             batch = cues[idx:idx + bs]
@@ -774,7 +808,8 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                 reason = sanity_check(old, new) if cfg.strict_mode else None
                 if reason:
                     with lock:
-                        result.failures.append(f"第 {no + 1} 行被拦下（{reason}）")
+                        result.failures.append(S(f"第 {no + 1} 行被拦下（{reason}）",
+                                                 f"Row {no + 1} rejected ({reason})"))
                     cue.state = "review"
                     continue
                 if new != old:
@@ -803,11 +838,16 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
         # 止损时已经写回 cue 的批次成果不能丢：把部分结果随异常带上，
         # 调用方（FixWorker/UI）能展示"已修正 N 条 + 失败原因"，而不是
         # 看着一条失败消息以为全部白跑（cue 其实已经改了一半）。
-        result.failures.append("连接中断，剩余批次未执行")
+        result.failures.append(S("连接中断，剩余批次未执行",
+                                 "Connection lost; remaining batches skipped"))
         raise LLMPartialError(
-            "连不上模型服务，已停止剩余批次。\n\n" + _abort_flag[0]
-            + "\n\n请检查：模型服务是否启动（本地网关要先开）、"
-              "地址是否正确、网络/代理是否正常。", result)
+            S("连不上模型服务，已停止剩余批次。\n\n",
+              "Cannot reach the model service; remaining batches stopped.\n\n")
+            + _abort_flag[0]
+            + S("\n\n请检查：模型服务是否启动（本地网关要先开）、"
+                "地址是否正确、网络/代理是否正常。",
+                "\n\nCheck: is the model service running (start local gateways "
+                "first), is the address right, and do network/proxy work?"), result)
     note = no_reasoning_note(_prof_holder[0])
     if note:
         result.failures.append(note)       # 跑完提示一次即可，不逐批刷屏
