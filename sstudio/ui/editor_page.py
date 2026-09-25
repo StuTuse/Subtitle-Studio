@@ -746,15 +746,17 @@ class EditorInterface(QWidget):
             self.pos_label.setText(f"— / {total}" if total else "0 / 0")
             return
         self.pos_bar.setValue(int((row + 1) * 100 / total))
-        self.pos_label.setText(f"{row + 1} / {total}")
+        self.pos_label.setText(f"{row + 1} / {total}")   # 纯数字，无需翻译
 
     def _on_select(self, row: int) -> None:
         self._editing_row = row
         self._update_pos_bar(row)
         if self.doc and 0 <= row < len(self.doc.cues):
             c = self.doc.cues[row]
-            self.cur_row.setText(f"第 {row + 1} 条 · {human_time(c.start)} → {human_time(c.end)}"
-                                 f" · {c.duration:.2f}s")
+            self.cur_row.setText(S(f"第 {row + 1} 条 · {human_time(c.start)} → {human_time(c.end)}"
+                                   f" · {c.duration:.2f}s",
+                                   f"Cue {row + 1} · {human_time(c.start)} → {human_time(c.end)}"
+                                   f" · {c.duration:.2f}s"))
             # 编辑中不要把用户正在打的字冲掉（点击别行时由 focusOut 先落盘）。
             # 缓冲归属追踪：缓冲 dirty（有未落盘的输入）且焦点还在编辑框时，
             # 程序化换行绝不能覆盖它——否则「新行原文+我打的字」会被写进别的行

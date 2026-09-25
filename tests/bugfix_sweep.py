@@ -5549,6 +5549,24 @@ check("stat_label 双语", 'S(f"显示 {shown} / {total} 条", f"Showing {shown}
 check("flow ready 已导入双语", 'S(f"已导入：{os.path.basename(doc.source_video)}"' in _ed244
       and 'f"Imported: {os.path.basename(doc.source_video)}"' in _ed244)
 
+section("245. LRC 超长毫秒丢行修复 + 编辑页行标题双语（第 246 轮）")
+_fm245 = open(os.path.join(_harness.ROOT, "sstudio", "core", "formats.py"),
+              encoding="utf-8").read()
+check("宽松剥离正则在", '_LRC_LOOSE_RE = re.compile(r' in _fm245)
+check("parse_lrc 走宽松兜底", "if loose and not stamps:" in _fm245
+      and "_LRC_LOOSE_RE.sub" in _fm245)
+# 运行时验证：坏毫秒行正文不得静默消失
+_lr245 = formats.parse_lrc("[00:01.50]甲\n[00:05.99999]坏毫秒行\n[00:09.20]丙\n")
+check("坏毫秒行 3 条都在", len(_lr245) == 3, f"n={len(_lr245)}")
+check("坏行正文保留", any("坏毫秒行" in c.text for c in _lr245))
+check("坏行时间截断 999ms", any(abs(c.start - 5.999) < 0.001 for c in _lr245))
+check("普通 LRC 不回归", len(formats.parse_lrc("[00:01.00]A\n[00:05.20]B\n")) == 2)
+check("元数据行不产 cue", len(formats.parse_lrc("[ti:测试]\n[00:02.00]正文\n")) == 1)
+_ed245 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
+              encoding="utf-8").read()
+check("行标题双语", 'S(f"第 {row + 1} 条' in _ed245
+      and 'f"Cue {row + 1} ·' in _ed245)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，

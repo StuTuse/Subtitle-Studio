@@ -93,6 +93,11 @@ def parse_vtt(text: str) -> List[Cue]:
 
 
 _LRC_RE = re.compile(r"\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]")
+# 变体：毫秒超过 3 位（部分工具产物 [00:05.99999]）。主正则的 \d{1,3}
+# 对它整体不匹配 → 整行歌词静默消失（findall 空、sub 原样保留）。
+# 用宽松正则**只做剥离**，时间解析仍走 parse_lrc 的截断逻辑；
+# findall 两个正则、sub 用宽松的，正文不丢。
+_LRC_LOOSE_RE = re.compile(r"\[(\d{1,3}):(\d{1,2})(?:[.:](\d+))?\]")
 # [hh:mm:ss] 三段式是时间轴文本而非 LRC 歌词（LRC 只有 分:秒）
 _HMS_RE = re.compile(r"\[\d{1,2}:\d{2}:\d{2}")
 
@@ -129,7 +134,13 @@ def parse_lrc(text: str) -> List[Cue]:
     marks: List[Tuple[float, str]] = []
     for ln in lines:
         stamps = _LRC_RE.findall(ln)
-        body = _LRC_RE.sub("", ln).strip()
+        # 毫秒超 3 位的变体行：主正则不匹配、宽松正则匹配。时间按宽松组
+        # 截断解析（99999ms→999ms 与旧版口径一致），正文照常保留——
+        # 不能让整行静默消失。
+        loose = _LRC_LOOSE_RE.findall(ln)
+        if loose and not stamps:
+            stamps = loose
+        body = _LRC_LOOSE_RE.sub("", ln).strip()
         for h_or_m, s, ms in stamps:
             t = int(h_or_m) * 60 + int(s) + (int((ms or "0").ljust(3, "0")[:3]) / 1000.0)
             marks.append((t, body))
