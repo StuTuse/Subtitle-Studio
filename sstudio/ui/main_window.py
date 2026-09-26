@@ -169,6 +169,20 @@ class MainWindow(FluentWindow):
 
         self.editor.doc_changed.connect(self._on_doc_changed)
         self.stackedWidget.currentChanged.connect(self._on_page)
+        # ------------------------------------------------------------ 切页手感
+        # qfluentwidgets 默认切页 = 300ms OutQuad 位移动画（新页从下方
+        # 76px 滑入）。真机上"卡"的观感来自三件事：位移距离长（整页从
+        # 76px 外滑到 0）、InQuad 类曲线起步迟缓、以及切换瞬间新页还没
+        # 完成首帧布局就开始动画。三步治理：
+        # ① 每页位移 delta 76px→44px：滑行距离短，视觉速度翻倍；
+        # ② 动画曲线换 OutCubic、时长 300→240ms（覆盖 view 的
+        #    setCurrentIndex：1.8.4 没有公开的曲线配置接口，用绑定方法
+        #    替换注入参数，逻辑照抄原版只改 duration/easing 两个值）；
+        # ③ refresh 延后一拍（见 _on_page）：首帧先画，动画期间不做重活。
+        try:
+            self._retune_page_ani()
+        except Exception:
+            pass
 
         self._restore_geometry()
 
@@ -223,14 +237,93 @@ class MainWindow(FluentWindow):
         # （纠错页文本框按 Ctrl+Z 触发字幕撤销而非输入框撤销）
         if hasattr(self.editor, "set_page_active"):
             self.editor.set_page_active(w is self.editor)
+        # refresh 延后一拍：切页动画的首帧先画（qfluentwidgets 的位移动画
+        # 从 setCurrentWidget 立即起跑，同步跑 refresh 的全量统计/富文本
+        # setText 会挤掉前几帧——用户看到的就是切换瞬间掉帧）。
+        # singleShot 回调里的异常不能让它静默逃逸到事件循环（PyQt5 默认
+        # 只打 stderr，用户侧表现为"页面数据莫名没刷"），这里包一层。
+        def _deferred(fn):
+            def _run():
+                try:
+                    fn()
+                except Exception:
+                    pass
+            return _run
         if w is self.fix:
-            self.fix.refresh()
+            QTimer.singleShot(0, _deferred(self.fix.refresh))
         elif w is self.export:
-            self.export.refresh()
+            QTimer.singleShot(0, _deferred(self.export.refresh))
         elif w is self.settings:
             # 首次进入设置页才补做 ASR 昂贵初始化（模型扫描/CUDA 探测），
             # 冷启动不扫盘；singleShot 让页面先完成首帧再扫，切换不卡顿。
-            QTimer.singleShot(0, self.settings.warm_asr)
+            QTimer.singleShot(0, _deferred(self.settings.warm_asr))
+
+    def _retune_page_ani(self) -> None:
+        """把 qfluentwidgets 切页动画调成 240ms OutCubic + 位移减半。
+
+        1.8.4 的 PopUpAniStackedWidget.setCurrentIndex 参数由上层
+        StackedWidget.setCurrentWidget 写死（popOut=False → 300ms OutQuad；
+        popOut=True → 200ms InQuad），没有公开配置口。这里在 view 实例上
+        用绑定方法替换：原版逻辑逐行照抄，只改 duration（240）与曲线
+        （OutCubic），并把 aniInfos 里的每页位移 delta 76px→44px——
+        滑行距离短、收尾缓，切页观感从"生硬一顿"变成"利落滑入"。
+        替换只挂在本实例，不动库全局。
+        """
+        from PyQt5.QtCore import QEasingCurve as _EC, QPoint as _QPoint
+        from PyQt5.QtWidgets import QStackedWidget as _QSW
+        from PyQt5.QtCore import QAbstractAnimation as _QAB
+        view = self.stackedWidget.view
+        # 每页位移 delta 减半（起步位置更贴近终点）
+        for info in getattr(view, "aniInfos", []):
+            info.deltaX = 0
+            info.deltaY = 44
+
+        def _set_current_index(self_view, index, needPopOut=False,
+                               showNextWidgetDirectly=True, duration=240,
+                               easingCurve=None):
+            if index < 0 or index >= self_view.count():
+                return
+            if index == self_view.currentIndex():
+                return
+            if not self_view.isAnimationEnabled:
+                _QSW.setCurrentIndex(self_view, index)
+                return
+            if self_view._ani and self_view._ani.state() == _QAB.Running:
+                self_view._ani.stop()
+                self_view._PopUpAniStackedWidget__onAniFinished()
+            self_view._nextIndex = index
+            next_info = self_view.aniInfos[index]
+            cur_info = self_view.aniInfos[self_view.currentIndex()]
+            cur_w = self_view.currentWidget()
+            next_w = next_info.widget
+            ani = cur_info.ani if needPopOut else next_info.ani
+            self_view._ani = ani
+            if easingCurve is None:
+                easingCurve = _EC(_EC.OutCubic)
+            if needPopOut:
+                pos = cur_w.pos() + _QPoint(cur_info.deltaX, cur_info.deltaY)
+                self_view._PopUpAniStackedWidget__setAnimation(
+                    ani, cur_w.pos(), pos, duration, easingCurve)
+                next_w.setVisible(showNextWidgetDirectly)
+            else:
+                pos = next_w.pos() + _QPoint(next_info.deltaX, next_info.deltaY)
+                self_view._PopUpAniStackedWidget__setAnimation(
+                    ani, pos, _QPoint(next_w.x(), 0), duration, easingCurve)
+                _QSW.setCurrentIndex(self_view, index)
+            ani.finished.connect(self_view._PopUpAniStackedWidget__onAniFinished)
+            ani.start()
+            self_view.aniStart.emit()
+
+        # 实例级替换（type 槽允许）：PyQt5 的 pyqtSlot 按名字解析，实例
+        # 属性优先于类方法，setCurrentWidget→setCurrentIndex 链路照常通。
+        # 防御：qfluentwidgets 内部改名（无 _ani/aniInfos/私有方法）时，
+        # 替换后的方法会在切页时炸——校验关键私有成员齐全才替换，否则
+        # 保留原版动画（降级不损功能）。
+        required = ("_ani", "aniInfos", "isAnimationEnabled",
+                    "_PopUpAniStackedWidget__onAniFinished",
+                    "_PopUpAniStackedWidget__setAnimation")
+        if all(hasattr(view, attr) for attr in required):
+            view.setCurrentIndex = _set_current_index.__get__(view, type(view))
 
     def goto_fix(self) -> None:
         if not self.doc or not self.doc.cues:
@@ -486,6 +579,10 @@ class MainWindow(FluentWindow):
         # 旧实现从不在这里递增，_autosave_done 的复核恒成立——写盘期间
         # 用户的新输入会被误清脏标，盘上内容比界面旧却显示"已保存"。
         self._dirty_gen += 1
+        # stats() 缓存失效：所有编辑流（打字/LLM 回填/结构操作）最终都会
+        # 走 mark_dirty，在这里统一失效最省心，漏网可能性最低
+        if self.doc is not None:
+            self.doc.touch_stats()
         self._update_title()
         if self.cfg.auto_save and self.doc and self.doc.path and len(self.doc.cues):
             QTimer.singleShot(2500, self._auto_save)

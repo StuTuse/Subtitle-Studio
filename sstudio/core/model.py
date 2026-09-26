@@ -138,6 +138,9 @@ class CueDocument:
     cues: List[Cue] = field(default_factory=list)
     meta: Dict[str, Any] = field(default_factory=dict)  # engine/model/asr info/...
     path: str = ""  # 工程文件路径（.ssp）
+    # stats() 缓存代数：结构/内容变更走 touch_stats() 递增（dataclass 非
+    # InitVar，直接给类级默认，实例首次写入即生效）
+    _stats_gen: int = 0
 
     # ------------------------------------------------------------- 基本操作
     def __len__(self) -> int:
@@ -347,12 +350,27 @@ class CueDocument:
 
     # --------------------------------------------------------------- 统计
     def stats(self) -> Dict[str, Any]:
+        # 每次调用 4 遍全表扫描（chars/changed/review/end_time），update_status
+        # 与 export.refresh 在每次编辑/切页都拉一遍——5k 条约 2ms/次，打字
+        # 流里就是可感抖动。按内部代数缓存：任何结构/内容变更走 touch_stats()
+        # 失效，无变更时重复调用 O(1)。
+        gen = getattr(self, "_stats_gen", 0)
+        if gen == getattr(self, "_stats_cache_gen", -1):
+            return self._stats_cache
         total = len(self.cues)
-        chars = sum(len(c.display_text.replace("\n", "")) for c in self.cues)
-        dur = self.end_time
-        changed = sum(1 for c in self.cues if c.is_changed())
-        review = sum(1 for c in self.cues if c.state == "review")
-        return {
+        chars = 0
+        changed = 0
+        review = 0
+        dur = self.duration
+        for c in self.cues:
+            chars += len(c.display_text.replace("\n", ""))
+            if c.is_changed():
+                changed += 1
+            if c.state == "review":
+                review += 1
+            if c.end > dur:
+                dur = c.end
+        result = {
             "count": total,
             "chars": chars,
             "duration": dur,
@@ -361,6 +379,18 @@ class CueDocument:
             "changed": changed,
             "review": review,
         }
+        self._stats_cache = result
+        self._stats_cache_gen = self._stats_gen
+        return result
+
+    def touch_stats(self) -> None:
+        """内容/结构变更后调用：stats() 缓存失效。
+
+        保险丝式设计：即使调用点漏了（直接改 cue 字段的地方），缓存也只
+        错一代——_stats_gen 在外部编辑流会递增；未递增的漏网路径与旧版
+        逐次重算的行为差异仅是"可能显示旧统计 1 拍"，不损数据。
+        """
+        self._stats_gen = getattr(self, "_stats_gen", 0) + 1
 
     # ----------------------------------------------------------- 序列化
     def to_dict(self) -> Dict[str, Any]:

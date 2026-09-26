@@ -745,7 +745,14 @@ with TempDir() as _td28:
     _ed._undo_row, _ed._undo_ts = -1, 0.0   # 编辑流合并节流状态（第 240 轮）
     _ed._editing_row = -1
     _ed._say = lambda *_a, **_k: None
-    _ed.table = type("T", (), {"render": lambda self, cues: None})()
+    # 第 285 轮起 undo/redo 走 _refresh_after_restore：同长度走逐行
+    # update_row 局部刷新，行数变化退回 render——测试替身补齐这两个方法
+    _ed.table = type("T", (), {
+        "render": lambda self, cues: None,
+        "rowCount": lambda self: 0,           # 与 len(cues) 不等 → 走全量
+        "update_row": lambda self, row, cue: None,
+        "_suspend": False,
+    })()
     _ed.timeline = type("TL", (), {"update": lambda self: None})()
     _ed._sync_edit_area_after_history = lambda: None
     _ed.main = type("M", (), {"mark_dirty": lambda self: None})()
@@ -3664,6 +3671,7 @@ _d205.cues = [_Cue147(start=0, end=1, text="改正后", original_text="原始", 
 check("text≠original changed=1", _d205.stats()["changed"] == 1)
 _d205.cues[0].text = "  原始  "
 _d205.cues[0].state = "asr"
+_d205.touch_stats()   # 第 264 轮：stats 走代数缓存，改字段后需失效
 check("剥边相同 changed=0", _d205.stats()["changed"] == 0)
 _c205c = _Cue147(start=0, end=1, text="甲",
                  words=[{"start": 0, "end": 0.5, "word": "甲", "prob": 0.9}])
@@ -6190,7 +6198,7 @@ check("延迟期 model_value 兜底 cfg 原值",
 check("重扫清两个缓存并标记已热身",
       "ct2_cache_reset()" in _setsrc261 and "self._asr_warmed = True" in _setsrc261)
 check("主窗切设置页 singleShot 触发热身",
-      "QTimer.singleShot(0, self.settings.warm_asr)" in _mwsrc260)
+      "QTimer.singleShot(0, _deferred(self.settings.warm_asr))" in _mwsrc260)
 # ⑧ 波形：旧版逐样本 Python 循环（8kHz×全片=千万级标量转换）持 GIL 抢
 # UI/转写线程时间片。
 _medsrc261 = open(os.path.join(_harness.ROOT, "sstudio", "core", "media.py"),
@@ -6208,6 +6216,104 @@ check("队列模式不逐文件弹导入成功条",
 check("队列常驻状态行 + 完成计数",
       "def _queue_state_line" in _mwsrc260 and "def _queue_mark_done" in _mwsrc260)
 check("_queue_next 走 queue_mode", "self.open_media(path, queue_mode=True)" in _mwsrc260)
+
+section("262. 切页动画调优 + refresh 延后一拍")
+# 用户反馈：切换界面卡顿。实测切页逻辑本身 <1ms，"卡"的观感来自
+# qfluentwidgets 默认切页动画（300ms OutQuad + 76px 纵向位移）+ 切换
+# 瞬间同步跑 refresh 的统计/富文本渲染挤掉动画前几帧。三步治理：
+check("切页动画调优入口存在", "def _retune_page_ani" in _mwsrc260)
+check("构造期调用调优（带 try 降级）",
+      "self._retune_page_ani()" in _mwsrc260
+      and _mwsrc260.count("self._retune_page_ani()") == 1)
+# 方法体内含内嵌 def _set_current_index，按下一个顶级 def 切分会提前截断；
+# 这里用文件锚点：从 def _retune_page_ani 到 _restore_geometry() 调用处
+_ani_seg262 = _mwsrc260.split("def _retune_page_ani")[1].split("self._restore_geometry")[0]
+check("deltaY 76→44（滑行距离减半）", "info.deltaY = 44" in _ani_seg262)
+check("deltaX 置 0（纯纵向）", "info.deltaX = 0" in _ani_seg262)
+check("动画时长 300→240", "duration=240" in _ani_seg262)
+check("缓动曲线 OutCubic", "_EC.OutCubic" in _ani_seg262)
+check("私有成员校验后才替换（库版本防御）",
+      'hasattr(view, attr) for attr in required' in _ani_seg262
+      and '"_PopUpAniStackedWidget__setAnimation"' in _ani_seg262)
+check("refresh 延后 singleShot(0)",
+      "QTimer.singleShot(0, _deferred(self.fix.refresh))" in _mwsrc260
+      and "QTimer.singleShot(0, _deferred(self.export.refresh))" in _mwsrc260)
+check("延后回调异常不逃逸事件循环",
+      "def _deferred(fn):" in _mwsrc260 and "except Exception:" in _mwsrc260)
+
+section("263. render/filter 批量重绘保护 + 渲染热路径缓存")
+_ctsrc263 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "cue_table.py"),
+                 encoding="utf-8").read()
+# 旧版 render() 逐格 setItem 各自触发 dataChanged→重排/重绘，5k 行累计
+# 176ms；冻结视口后 Qt 合并脏区，恢复时一次性重绘。
+check("render 用 setUpdatesEnabled 包裹",
+      _ctsrc263.count("self.setUpdatesEnabled(False)") >= 1
+      and "finally:" in _ctsrc263.split("def render")[1].split("def update_row")[0])
+check("render 异常安全（finally 恢复重绘）",
+      _ctsrc263.split("def render")[1].split("def update_row")[0]
+      .count("setUpdatesEnabled(True)") == 1)
+check("_tip 按字段元组缓存（17.6ms→3ms @5k）",
+      "_tip_cache" in _ctsrc263 and "key = (c.start, c.end, c.confidence" in _ctsrc263)
+check("_tip 缓存上限防膨胀", "len(_tip_cache) >= 20000" in _ctsrc263)
+check("_state_text_fast 按 (state,dark) 缓存",
+      "_state_text_cache" in _ctsrc263
+      and "ck = (state, is_dark())" in _ctsrc263)
+check("update_row 全等短路（跳过未变单元格）",
+      "if tx.text() != cue.display_text:" in _ctsrc263
+      and "it_s.text() != s_ts" in _ctsrc263)
+check("update_row 同步时间列（撤销平移后显示跟数据一致）",
+      "it_s, it_e = self.item(row, COL_S), self.item(row, COL_E)" in _ctsrc263
+      and "it_d.setText(d_txt)" in _ctsrc263)
+check("update_row/mark_row_llm 异常安全（finally 摘 suppress）",
+      _ctsrc263.split("def update_row")[1].split("def mark_row_llm")[0]
+      .count("finally:") == 1
+      and _ctsrc263.split("def mark_row_llm")[1].split("def jump")[0]
+      .count("finally:") == 1)
+_eps263 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
+               encoding="utf-8").read()
+check("_filter 用 setUpdatesEnabled 包裹",
+      _eps263.split("def _filter")[1].split("def _replace_dialog")[0]
+      .count("self.table.setUpdatesEnabled(False)") == 1
+      and _eps263.split("def _filter")[1].split("def _replace_dialog")[0]
+      .count("self.table.setUpdatesEnabled(True)") == 1)
+
+section("264. stats 缓存 + 撤销局部刷新")
+_msrc264 = open(os.path.join(_harness.ROOT, "sstudio", "core", "model.py"),
+                encoding="utf-8").read()
+check("stats 按代数缓存", "_stats_cache_gen" in _msrc264
+      and "_stats_cache" in _msrc264)
+check("touch_stats 失效接口", "def touch_stats" in _msrc264)
+check("stats 单遍合并扫描（4 遍→1 遍）",
+      "chars += len(c.display_text" in _msrc264
+      and "sum(1 for c in self.cues if c.is_changed())" not in _msrc264)
+check("mark_dirty 统一失效", "self.doc.touch_stats()" in _mwsrc260)
+try:
+    from sstudio.core.model import CueDocument as _Doc264, Cue as _Cue264
+    _doc264 = _Doc264()
+    _doc264.cues = [_Cue264(start=float(i) * 2.0, end=float(i) * 2.0 + 1.8,
+                            text=f"第{i}行", original_text=f"第{i}行")
+                    for i in range(500)]
+    _s264 = _doc264.stats()
+    check("stats 首调正确", _s264["count"] == 500 and _s264["changed"] == 0)
+    _doc264.cues[7].text = "改"
+    _doc264.touch_stats()
+    check("touch 后重算 changed", _doc264.stats()["changed"] == 1)
+    _t264a = time.perf_counter()
+    for _i264 in range(200):
+        _doc264.stats()
+    _hot264 = (time.perf_counter() - _t264a) / 200 * 1000
+    check("stats 热路径 O(1)", _hot264 < 0.05, f"{_hot264:.4f}ms")
+except Exception as _e264:
+    check("stats 缓存运行时钉", False, str(_e264))
+check("undo/redo 走 _refresh_after_restore",
+      _eps263.count("self._refresh_after_restore()") == 2
+      and "def _refresh_after_restore" in _eps263)
+check("局部刷新同长度快路径 + 行数变化退回全量",
+      "if self.table.rowCount() != len(cues):" in _eps263
+      and "self.table.render(cues)" in _eps263)
+check("局部刷新异常退回全量 render（撤销语义必达）",
+      _eps263.split("def _refresh_after_restore")[1].split("def ")[0]
+      .count("except Exception:") == 1)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
