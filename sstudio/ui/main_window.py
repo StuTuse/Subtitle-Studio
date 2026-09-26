@@ -33,10 +33,23 @@ def _snapshot_to_json(snap: dict, doc: CueDocument) -> str:
 
     自动保存的序列化在工作线程跑：直接 to_json 会与 UI 线程的
     normalize_cues（list.sort 迭代中改列表）竞态。这里只碰 UI 线程
-    预先抽好的只读快照（cue dict 列表）+ 文档级三字段（字符串/数值，
-    跨线程读安全）。
+    预先抽好的只读快照 + 文档级三字段（字符串/数值，跨线程读安全）。
+
+    快照两种形态都认：
+    - v2 轻量元组（撤销栈现用）：词表/置信度不进自动保存盘——词表
+      只在转写刚产出时有意义，编辑期间的旧词表不会被任何功能读取；
+    - v1 cue dict（旧快照/兼容）：原样保留。
     """
     import json as _json
+    cues_out = []
+    for c in snap.get("cues", []):
+        if isinstance(c, dict):
+            cues_out.append(c)
+        elif isinstance(c, (tuple, list)) and len(c) >= 7:
+            cues_out.append({"start": c[0], "end": c[1], "text": c[2],
+                             "original_text": c[3], "state": c[4],
+                             "speaker": c[5], "id": c[6],
+                             "confidence": None, "words": []})
     return _json.dumps({
         "format": "subtitle-studio-project",
         "version": 2,
@@ -44,7 +57,7 @@ def _snapshot_to_json(snap: dict, doc: CueDocument) -> str:
         "duration": doc.duration,
         "language": doc.language,
         "meta": doc.meta,
-        "cues": snap.get("cues", []),
+        "cues": cues_out,
     }, ensure_ascii=False, indent=2)
 
 
@@ -215,7 +228,9 @@ class MainWindow(FluentWindow):
         elif w is self.export:
             self.export.refresh()
         elif w is self.settings:
-            pass
+            # 首次进入设置页才补做 ASR 昂贵初始化（模型扫描/CUDA 探测），
+            # 冷启动不扫盘；singleShot 让页面先完成首帧再扫，切换不卡顿。
+            QTimer.singleShot(0, self.settings.warm_asr)
 
     def goto_fix(self) -> None:
         if not self.doc or not self.doc.cues:
@@ -275,19 +290,23 @@ class MainWindow(FluentWindow):
         if fp:
             self.open_media(fp)
 
-    def open_media(self, path: str) -> None:
-        if self._worker is not None:
+    def open_media(self, path: str, queue_mode: bool = False) -> None:
+        if self._worker is not None and not queue_mode:
             self._warn(S("正在转写", "Transcribing"),
                        S("请先点「取消」结束当前转写，再导入新视频。",
                          "Press Cancel to stop the current transcription before importing."))
             return
         path = os.path.abspath(path)
         if not os.path.isfile(path):
-            self._warn(S("文件不存在", "File not found"), path)
+            if not queue_mode:
+                self._warn(S("文件不存在", "File not found"), path)
             return
-        if self.doc and self.doc.cues and self._dirty:
+        if (self.doc and self.doc.cues and self._dirty and not queue_mode):
             # 用无动画的 _CloseAskBox：裸 MessageBox 的淡出动画对象无父级，
-            # 被 GC 后 done() 永不执行——表现是"点保存/不保存都没反应"
+            # 被 GC 后 done() 永不执行——表现是"点保存/不保存都没反应"。
+            # 队列模式绝不弹模态框：_queue_autosave 写盘失败（只读目录/
+            # 盘满）时每文件一弹，队列卡死等点击——队列的未保存内容由
+            # open_media 前的自动保存负责，失败就继续（旧内容在 .ssp）。
             box = _CloseAskBox(S("当前工程未保存", "Unsaved project"),
                                S("打开新视频会替换当前字幕。要先保存吗？\n"
                                  "（选择「取消」则直接打开）",
@@ -298,11 +317,19 @@ class MainWindow(FluentWindow):
             r = box.exec_()
             if r:
                 self.save_project()
-        info = media.probe(path)
+        try:
+            info = media.probe(path)
+        except Exception as e:
+            if not queue_mode:
+                self._warn(S("无法读取", "Cannot read"),
+                           S(f"这个文件可能不是有效的媒体文件，或缺少解码器。\n{e}",
+                             f"This may not be a valid media file, or a decoder is missing.\n{e}"))
+            return
         if info.duration <= 0:
-            self._warn(S("无法读取", "Cannot read"),
-                       S("这个文件可能不是有效的媒体文件，或缺少解码器。",
-                         "This may not be a valid media file, or a decoder is missing."))
+            if not queue_mode:
+                self._warn(S("无法读取", "Cannot read"),
+                           S("这个文件可能不是有效的媒体文件，或缺少解码器。",
+                             "This may not be a valid media file, or a decoder is missing."))
             return
         self.doc = CueDocument(source_video=path, duration=info.duration)
         self.editor.set_document(self.doc)
@@ -317,12 +344,15 @@ class MainWindow(FluentWindow):
               f"Loaded {os.path.basename(path)} ({_fmt(info.duration)}, "
               f"{'video ' + str(info.width) + 'x' + str(info.height) if info.has_video else 'audio only'})"
               " — press Transcribe to extract audio and recognize."))
-        InfoBar.success(S("导入成功", "Imported"),
-                        S(f"{os.path.basename(path)}（{_fmt(info.duration)}）已就绪，"
-                          "点「开始转写」即可。",
-                          f"{os.path.basename(path)} ({_fmt(info.duration)}) is ready — press Transcribe."),
-                        parent=self,
-                        position=InfoBarPosition.TOP, duration=3500)
+        if not queue_mode:
+            # 队列模式不逐文件弹"导入成功"：批量 50 个文件 = 50 条 InfoBar
+            # 刷屏；队列进度走 _queue_state_line 常驻状态行
+            InfoBar.success(S("导入成功", "Imported"),
+                            S(f"{os.path.basename(path)}（{_fmt(info.duration)}）已就绪，"
+                              "点「开始转写」即可。",
+                              f"{os.path.basename(path)} ({_fmt(info.duration)}) is ready — press Transcribe."),
+                            parent=self,
+                            position=InfoBarPosition.TOP, duration=3500)
         self.mark_dirty()
 
     def _load_any(self, path: str) -> None:
@@ -476,16 +506,53 @@ class MainWindow(FluentWindow):
                     self._snap_timer.start(2000)     # 尾随 2s：保证最后一拍也落盘
                 return
             self._snap_ts = now
-            recovery.write_snapshot(self.doc, self._dirty_gen)
+            self._write_snapshot()      # 全链在工作线程：UI 线程只抽只读快照
         except Exception:
             pass
 
     def _write_snapshot(self) -> None:
+        """崩溃恢复快照：全链移出 UI 线程。
+
+        旧版在 UI 线程跑 recovery.write_snapshot（to_json + fsync，5k 条
+        可感 100-300ms），8s 节流意味着持续编辑期间每 8 秒卡一次。现在
+        UI 线程只抽一份只读快照（与 _auto_save 同一模式），序列化+写盘
+        全在工作线程；同代复核丢弃过气快照，连发编辑只落最后一拍。
+        """
         try:
+            if self.doc is None or not self.doc.cues:
+                return
             from ..core import recovery
-            recovery.write_snapshot(self.doc, self._dirty_gen)
+            from .workers import ThreadedCall, reap
+            if getattr(self, "_snap_worker", None) is not None:
+                return      # 上一次快照还在写：mark_dirty 会再排，不排队列
+            gen = self._dirty_gen
+            doc = self.doc
+            # UI 线程内只做浅拷贝（tuple 列表，不碰 words）：亚毫秒级
+            snap = doc.snapshot()
+            source_video = doc.source_video
+            path_key = doc.path or ""
+            meta = doc.meta
+
+            def _write() -> str:
+                # 快照含 meta dict：浅层引用，线程里只读序列化安全
+                # （与 _snapshot_to_json 相同的契约：UI 侧只整体替换 meta）。
+                # 复用 _snapshot_to_json：v1 dict / v2 元组两种快照形态都认。
+                data = _snapshot_to_json(snap, doc)
+                recovery.write_snapshot_data(data, path_key, source_video, gen)
+                return ""
+
+            w = ThreadedCall(_write)
+            self._snap_worker = w
+            w.sig_done.connect(lambda _p: self._snap_done())
+            w.sig_failed.connect(lambda _m: self._snap_done())
+            w.start()
         except Exception:
-            pass
+            self._snap_worker = None
+
+    def _snap_done(self) -> None:
+        from .workers import reap
+        reap(getattr(self, "_snap_worker", None))
+        self._snap_worker = None
 
     def _auto_save(self) -> None:
         if not (self._dirty and self.doc and self.doc.path):
@@ -554,6 +621,15 @@ class MainWindow(FluentWindow):
     def start_transcribe(self, queue_mode: bool = False) -> None:
         if self._worker is not None:
             return          # 已在转写中：由「取消」按钮负责停止
+        # 纠错还在跑时转写会整文档替换 main.doc：纠错 worker 对着旧文档
+        # 继续烧 token，结果全部作废（旧版不设防，Ctrl+G 静默踩踏）。
+        # 先请求纠错停止，让用户显式重按；队列模式同理不抢跑。
+        if self.fix_page.is_running():
+            if not queue_mode:
+                self._warn(S("纠错正在进行", "AI fix in progress"),
+                           S("请先停止纠错再开始转写，否则纠错结果会作废。",
+                             "Stop the AI fix first, or its results will be discarded."))
+            return
         # 注意：CueDocument 有 __len__，空字幕 doc 的布尔值是 False，判空用 is None
         if self.doc is None or not self.doc.source_video:
             if queue_mode:
@@ -879,27 +955,44 @@ class MainWindow(FluentWindow):
         # 跳过运行中已被删掉/消失的文件
         while q and not os.path.isfile(q[0]):
             q.pop(0)
+        self._queue_state_line()
         if not q:
             self._queue_active = False
             return
         self._queue_active = True
         path = q.pop(0)
         self._queue = q
-        self.open_media(path)          # 走同一套未保存确认/导入链
+        self._queue_done = getattr(self, "_queue_done", 0)
+        self.open_media(path, queue_mode=True)   # 队列模式：不弹未保存框/成功条
         if self.doc is not None and self.doc.source_video and \
                 os.path.abspath(self.doc.source_video) == path and \
                 self._worker is None:
-            # open_media 被未保存框挡住（用户点了取消）或导入失败：
-            # 队列不能卡死，跳过它继续
+            # open_media 失败（解码不开等）：队列不能卡死，跳过它继续
             QTimer.singleShot(400, self._queue_next)
             return
         if self._worker is not None:
             self.start_transcribe(queue_mode=True)
+        else:
+            QTimer.singleShot(400, self._queue_next)
+
+    def _queue_state_line(self) -> None:
+        """队列常驻进度：状态栏显示 剩余 N / 已完成 M，批量处理时一眼可见。"""
+        q = getattr(self, "_queue", [])
+        done = getattr(self, "_queue_done", 0)
+        if q:
+            self.editor.status.setText(S(
+                f"批量队列：剩余 {len(q)} 个待处理（已完成 {done}）…",
+                f"Batch queue: {len(q)} pending ({done} done)…"))
+
+    def _queue_mark_done(self) -> None:
+        self._queue_done = getattr(self, "_queue_done", 0) + 1
+        self._queue_state_line()
 
     def _queue_advance(self) -> None:
         """单个任务收尾（成功/失败/取消）后由 _on_transcribed/_failed 调。"""
         if not self._queue_running():
             return
+        self._queue_mark_done()
         QTimer.singleShot(800, self._queue_next)
 
     # ------------------------------------------------------------ 杂项

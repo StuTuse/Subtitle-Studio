@@ -361,9 +361,24 @@ class FixInterface(QWidget):
         if local_row >= len(getattr(self, "_id_map", [])):
             return
         cid = self._id_map[local_row]
-        row = next((i for i, c in enumerate(doc.cues) if c.id == cid), -1)
+        row = self._find_row(doc, cid)
         if doc and row >= 0:
             self.main.editor.apply_llm_text(row, text)
+
+    def _find_row(self, doc, cid: str) -> int:
+        """id → 行号，O(1)。旧版每条回填都线性扫全文档（10k 条 = 5000 万次
+        比较全在 UI 线程，纠错越到后半程界面越卡）。映射缓存按文档长度+
+        首条 id 判断是否失效：结构变化（增删行/重排）几乎必然改动其一，
+        漏网情形（纯替换同长文档且首 id 不变）下旧映射也只是查到旧行号，
+        与旧版线性扫描的行为一致，不会错写——apply_llm_text 内部还有
+        聚焦行守卫兜底。"""
+        cache = getattr(self, "_row_cache", None)
+        if (cache is None or cache[0] != len(doc.cues)
+                or not doc.cues or cache[1] != doc.cues[0].id):
+            cache = self._row_cache = (
+                len(doc.cues), doc.cues[0].id if doc.cues else "",
+                {c.id: i for i, c in enumerate(doc.cues)})
+        return cache[2].get(cid, -1)
 
     def _on_done(self, res) -> None:
         self._finish()
@@ -425,6 +440,11 @@ class FixInterface(QWidget):
         from .workers import reap
         reap(self.worker)
         self.worker = None
+
+    def is_running(self) -> bool:
+        """纠错是否还在跑（供转写入口互设防：转写会整文档替换 main.doc，
+        纠错 worker 若不知情会对着旧文档继续烧 token，结果全部作废）。"""
+        return self.worker is not None
 
     # ------------------------------------------------------------ 辅助
     def _compare(self) -> None:

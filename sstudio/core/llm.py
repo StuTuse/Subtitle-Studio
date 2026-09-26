@@ -60,6 +60,15 @@ class ReasoningBudgetError(LLMError):
 
 
 _ABORT_NOTE = "__aborted__"      # worker 因全局止损放弃批次时的标记（不进失败清单）
+_CANCELLED_NOTE = "__cancelled__"  # worker 因用户取消放弃批次的标记（同样不进失败清单）
+
+
+class _UserCancelled(Exception):
+    """chat() 流式在途时用户点了停止：立即中断当前请求。
+
+    不继承 LLMError——它不是"服务出错"，worker 捕获后翻译成
+    _CANCELLED_NOTE 静默收敛，与"没开跑就被取消"的批次同等待遇。
+    """
 
 _CONN_REFUSED_MARKERS = (
     "connection refused", "connectionreset", "connection reset",
@@ -154,12 +163,17 @@ def _reasoning_usage(resp) -> int:
 
 def chat(prof: LLMProfile, messages: List[Dict[str, str]],
          on_delta: Optional[Callable[[str], None]] = None,
-         _retry_no_cap: bool = True) -> str:
+         _retry_no_cap: bool = True,
+         cancel: Optional[Callable[[], bool]] = None) -> str:
     """一次对话补全；返回完整文本。若 on_delta 提供则走流式。
 
     推理型模型（DeepSeek-R1 / Qwen3 / GLM 思考版等）会把 ``max_tokens`` 全部花在
     内部思考上，导致 ``content`` 为空。这里自动去掉上限重试一次并记住结论，
     同一接入点后续批次直接不再带 cap，避免重复浪费思考 token。
+
+    ``cancel``：用户取消判定（fix_document 传入）。流式分支在每个 chunk
+    检查一次——旧版在途请求只能干等完整响应/超时（最坏 300s），取消后
+    界面上"停止"按下去，当前批次还要白等几分钟才真正停下。
     """
     client = load_client(prof)
     key = ((prof.base_url or "").rstrip("/"), prof.model)
@@ -220,6 +234,10 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
         last_resp = None
         try:
             for chunk in client.chat.completions.create(**kw2):
+                if cancel is not None and cancel():
+                    # 用户取消：立即停流。本批已收到的部分丢弃——fix_document
+                    # 会把该批记为"已取消"，绝不能拿半截文本冒充完整修正。
+                    raise _UserCancelled()
                 last_resp = chunk
                 try:
                     delta = chunk.choices[0].delta if chunk.choices else None
@@ -245,6 +263,8 @@ def chat(prof: LLMProfile, messages: List[Dict[str, str]],
                           or getattr(delta, "reasoning", None))
                     if rd:
                         reason_parts.append(rd)
+        except _UserCancelled:
+            raise                    # 用户取消：原样上抛，worker 翻译成静默取消
         except Exception as e:
             # 半途断流：已有输出留给调用方处理，但"连不上"必须抛出——
             # 吞掉它全局止损就收不到信号，剩余批次会继续排队白等
@@ -665,7 +685,7 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
         # 前缀被网关 prompt cache 复用，批次间仅增量计费
         messages = [{"role": "system", "content": system_msg},
                     {"role": "user", "content": msg}]
-        raw = chat(_prof_holder[0], messages, None)
+        raw = chat(_prof_holder[0], messages, None, cancel=cancel)
         got = parse_numbered(raw, range(idx, idx + len(batch)))
         missing = [n for n in range(idx, idx + len(batch)) if n not in got]
         if cfg.strict_mode and (missing or len(got) != len(batch)):
@@ -725,6 +745,9 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
         idx, batch = job
         try:
             return _worker_inner(job)
+        except _UserCancelled:
+            # chat() 流式在途被用户掐断：与"没开跑就被取消"同等待遇
+            return idx, None, _CANCELLED_NOTE
         except Exception as e:                # noqa: BLE001
             # cancel()/_sleep/render 里冒出的意外异常绝不能逸出到 fut.result()，
             # 否则整个 as_completed 循环被打断，已完成批次的结果全部作废。
@@ -733,7 +756,7 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     def _worker_inner(job: Tuple[int, List[Cue]]):
         idx, batch = job
         if cancel and cancel():
-            return idx, None, S("已取消", "Cancelled")
+            return idx, None, _CANCELLED_NOTE
         err = ""
         # 换档重试不消耗 attempt 名额：auto_retry=0 的用户在主档挂掉时
         # 仍要能吃到备档的完整一轮。上限 = 配置轮数 + 每个备用档各一轮。
@@ -747,7 +770,7 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                 _sleep(min(20.0, 3.0 * (2 ** (attempt - 1)))
                        if S("限流", "Rate limited") in err else 1.2 * attempt)
             if cancel and cancel():
-                return idx, None, S("已取消", "Cancelled")
+                return idx, None, _CANCELLED_NOTE
             try:
                 got = one(idx, batch, attempt)
                 if got is None:
@@ -772,18 +795,26 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
                         _abort_flag[0] = err
                     return idx, None, err
                 if cancel and cancel():
-                    return idx, None, S("已取消", "Cancelled")
+                    return idx, None, _CANCELLED_NOTE
                 attempt += 1
         return idx, None, err
 
     workers = max(1, min(int(cfg.concurrency), len(batches) or 1))
     aborted_cancels = False
+    cancelled_count = 0
     with cf.ThreadPoolExecutor(max_workers=workers) as ex:
         futures = [ex.submit(worker, j) for j in batches]
         for fut in cf.as_completed(futures):
             if fut.cancelled():
                 continue                    # 被止损取消的排队批次：直接跳过
             idx, got, err = fut.result()
+            if err == _CANCELLED_NOTE:
+                # 用户取消而未开跑/中途退出的批次：静默收敛，绝不进失败清单——
+                # 旧版把每个批次一条"已取消"塞满 failures（300 批=300 条），
+                # 界面显示"完成但有告警"，把用户的主动停止说成了一堆错误。
+                with lock:
+                    cancelled_count += 1
+                continue
             with lock:
                 done += 1
                 if progress:
@@ -857,6 +888,14 @@ def fix_document(cfg: Config, cues: List[Cue], progress: Progress = None,
     tnote = truncation_note(_prof_holder[0])
     if tnote:
         result.failures.append(tnote)      # 截断提醒同理：一次就够
+    if cancelled_count:
+        # 用户主动取消：给一条汇总而不是逐批刷屏。已完成批次的成果（写回
+        # cue 的）保留有效，日志让用户知道实际修到了多少。
+        result.failures.append(S(
+            f"已取消：剩余 {cancelled_count} 批未执行，本轮已修正 "
+            f"{result.changed} 行",
+            f"Cancelled: {cancelled_count} batch(es) skipped; "
+            f"{result.changed} row(s) fixed this run"))
     return result
 
 

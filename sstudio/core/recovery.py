@@ -52,16 +52,42 @@ def write_snapshot(doc, token: int) -> Optional[str]:
 
     doc 需有 to_json()/cues；异常一律吞掉——恢复机制绝不能干扰主流程。
     返回写盘路径（未写返回 None）。
+
+    性能契约：本函数会做全量序列化 + fsync（10k 条 >100ms），调用方
+    在 UI 线程上时请先 doc.snapshot() 取只读快照，改走
+    write_snapshot_data()（见 main_window._write_snapshot 的做法）。
+    本函数保留给无界面 CLI 等非 UI 调用方。
     """
     try:
         if doc is None or not getattr(doc, "cues", None):
             return None
+        return write_snapshot_data(doc.to_json(),
+                                   getattr(doc, "path", "") or "",
+                                   getattr(doc, "source_video", "") or "",
+                                   token)
+    except Exception:
+        return None
+
+
+def write_snapshot_data(data_json: str, path_key: str, source_video: str,
+                        token: int) -> Optional[str]:
+    """write_snapshot 的纯数据形态：接受已序列化好的 JSON 文本。
+
+    序列化与 fsync 都可能上百毫秒，UI 线程只做 doc.to_json() 之外的
+    事——不，连 to_json 也不该做：调用方应在 UI 线程先取只读轻快照，
+    由工作线程完成 to_json + 写盘全链（main_window._write_snapshot）。
+    本函数只管"拿到的文本落盘"，可在任意线程调用。
+    """
+    try:
+        if not data_json:
+            return None
         d = recovery_dir()
         _prune_old()
-        stem = _stem_for(doc)
-        path = os.path.join(d, stem + ".ssprev")
+        key = path_key or source_video or "unsaved"
+        stem = _stem_for_key(key)
+        target = os.path.join(d, stem + ".ssprev")
         # 已有同名快照且 token 相同：内容没变，跳过写盘
-        meta_path = path + ".json"
+        meta_path = target + ".json"
         try:
             if os.path.isfile(meta_path):
                 with open(meta_path, "r", encoding="utf-8") as f:
@@ -73,10 +99,10 @@ def write_snapshot(doc, token: int) -> Optional[str]:
         fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(doc.to_json())
+                f.write(data_json)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp, path)
+            os.replace(tmp, target)
         except OSError:
             try:
                 os.remove(tmp)
@@ -85,9 +111,9 @@ def write_snapshot(doc, token: int) -> Optional[str]:
             return None
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump({"token": token, "ts": time.time(),
-                       "source": getattr(doc, "source_video", "") or "",
-                       "path": getattr(doc, "path", "") or ""}, f)
-        return path
+                       "source": source_video or "",
+                       "path": path_key or ""}, f)
+        return target
     except Exception:
         return None
 
@@ -96,6 +122,10 @@ def _stem_for(doc) -> str:
     """稳定文件名：优先工程路径，其次视频路径指纹——同一工程重启后
     仍能对上号，不会越攒越多。"""
     key = getattr(doc, "path", "") or getattr(doc, "source_video", "") or "unsaved"
+    return _stem_for_key(key)
+
+
+def _stem_for_key(key: str) -> str:
     import hashlib
     tag = hashlib.md5(os.path.abspath(key).encode("utf-8", "replace")).hexdigest()[:10]
     base = os.path.splitext(os.path.basename(key))[0][:40] or "unsaved"

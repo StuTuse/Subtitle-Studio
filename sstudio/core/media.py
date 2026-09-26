@@ -320,8 +320,9 @@ def extract_waveform(path: str, points_per_sec: int = WAVE_POINTS_PER_SEC,
     """从媒体文件提取归一化波形峰值（给时间轴画能量条）。
 
     返回 (peaks, duration)：peaks 是 0..1 的 float 列表，均匀覆盖全片；
-    失败/取消返回 ([], 0.0)。纯 Python 解码（PyAV resample 到 8kHz 单声道），
-    一小时视频约 20~40s，工作线程调用不卡 UI。
+    失败/取消返回 ([], 0.0)。解码在 C 层（PyAV），桶聚合用 numpy 向量化
+    （旧版逐样本 Python 循环，8kHz × 全片 = 千万级标量转换，持 GIL 抢
+    UI/转写线程时间片——导入后几十秒内界面发涩）。
     """
     import av as _av
     try:
@@ -337,9 +338,12 @@ def extract_waveform(path: str, points_per_sec: int = WAVE_POINTS_PER_SEC,
             resampler = _av.AudioResampler(format="s16", layout="mono",
                                            rate=WAVE_SR)
             n_points = max(1, int(total * points_per_sec))
-            # 每点桶内最大绝对值 = 该时刻的能量峰值
-            bucket = [0.0] * n_points
+            # 每点桶内最大绝对值 = 该时刻的能量峰值（numpy：按样本全局
+            # 下标算桶号，np.maximum.at 分桶取 max，全程无 Python 循环）
+            import numpy as _np
+            bucket = _np.zeros(n_points, dtype=_np.float32)
             scale = 1.0 / 32768.0
+            step = n_points / (WAVE_SR * (total or 1.0))
             for frame in c.decode(stream):
                 if cancel and cancel():
                     return [], 0.0
@@ -352,19 +356,22 @@ def extract_waveform(path: str, points_per_sec: int = WAVE_POINTS_PER_SEC,
                     if frame.pts is not None and frame.time_base:
                         start = float(frame.pts * frame.time_base)
                     fi = int(start * WAVE_SR)
-                    step = n_points / (WAVE_SR * (total or 1.0))
-                    for i, v in enumerate(arr):
-                        a = abs(int(v)) * scale
-                        pi = int((fi + i) * step)
-                        if 0 <= pi < n_points and a > bucket[pi]:
-                            bucket[pi] = a
+                    if arr.size == 0:
+                        continue
+                    amp = _np.abs(arr.astype(_np.int32)) * scale
+                    pi = ((fi + _np.arange(arr.size, dtype=_np.int64))
+                          * step).astype(_np.int64)
+                    m = (pi >= 0) & (pi < n_points)
+                    if m.any():
+                        _np.maximum.at(bucket, pi[m], amp[m])
             # 轻度归一化：95 分位封顶（防个别爆点把全片压扁）
-            if not bucket:
+            if bucket.size == 0:
                 return [], 0.0
-            srt = sorted(bucket)
+            flat = bucket.tolist()
+            srt = sorted(flat)
             ref = srt[int(len(srt) * 0.95)] or 1.0
             cap = min(1.0, max(ref, 0.05))
-            peaks = [min(1.0, v / cap) for v in bucket]
+            peaks = [min(1.0, v / cap) for v in flat]
             return peaks, total
         finally:
             c.close()

@@ -712,10 +712,24 @@ class EditorInterface(QWidget):
             self._undo_ts = now          # 仍在同一编辑流里：不追加新快照
             return
         self._undo.append(self.doc.snapshot())
-        del self._undo[:-60]
+        # 上限双重封顶：60 份（打字流/离散动作的常规预算）+ 32MB（10k 条
+        # 大文档的轻快照一份约 1.2MB，60 份仍可到 70MB+，按字节截断保
+        # 极端大文档不会因撤销栈吃光内存）。从最旧的一端丢。
+        while len(self._undo) > 60 or (len(self._undo) > 8
+                                       and self._undo_bytes() > 32 * 1024 * 1024):
+            del self._undo[0]
         self._undo_row = self._editing_row
         self._undo_ts = now
         self._redo.clear()
+
+    def _undo_bytes(self) -> int:
+        """估算撤销栈占用（轻快照 = 元组列表）。只在入栈时调用，
+        缓存每份快照的近似大小（条数 × 每条 120 字节），不逐条扫描。"""
+        total = 0
+        for snap in self._undo:
+            n = len(snap.get("cues", [])) if isinstance(snap, dict) else 0
+            total += n * 120 + 64
+        return total
 
     # ------------------------------------------------------------ 表格动作
     def _on_text_changed(self, row: int, text: str) -> None:
@@ -1019,7 +1033,8 @@ class EditorInterface(QWidget):
             # 暂停时的 seek 多是用户主动选行/改字引起的，
             # 这时绝不能反过来把选中拽回播放头所在行。
             return
-        cue = self.doc.at_time(sec)
+        # at_time 的近邻缓存让第二次调用基本 O(1)：同一 tick 内取两次
+        # 同一秒的 cue，第一次已把命中下标喂给缓存
         if cue is None:
             return
         row = self.doc.index_of(cue)

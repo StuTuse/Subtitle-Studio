@@ -39,6 +39,10 @@ class SettingsInterface(QWidget):
         self.cfg = cfg
         self.main = main
         self._loading = True
+        # ASR 昂贵初始化（模型扫描/CUDA 探测/引擎置灰）默认推迟到
+        # warm_asr()：主窗构造期只建控件骨架，冷启动零扫盘。
+        self._defer_asr = True
+        self._asr_warmed = False
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = ScrollArea(self)
@@ -316,12 +320,17 @@ class SettingsInterface(QWidget):
         self.engine.addItem(S("faster-whisper（本机推理，推荐）", "faster-whisper (local, recommended)"), userData="faster-whisper")
         self.engine.addItem("whisper.cpp", userData="whisper.cpp")
         self.engine.addItem(S("云端语音转写 API", "Cloud speech API"), userData="openai_api")
-        self._gate_engines()
+        # _gate_engines（扫描 LOCALAPPDATA 找 whisper CLI）从构造期推迟到
+        # 首次进入设置页：主窗构造时就建设置页，6000 项目录预算全落在
+        # 冷启动上，而多数用户这一轮根本没打开过设置。
         self.engine.currentIndexChanged.connect(self._engine_changed)
         form.addRow(S("引擎", "Engine"), self.engine)
 
         self.model = EditableComboBox(card)
         self.model.setMinimumWidth(360)
+        # 延迟填充期（warm_asr 前）的取值兜底：保持 cfg.whisper_model 原值，
+        # 保存设置不会把模型名清掉
+        self._model_value = self.cfg.whisper_model or "large-v3-turbo"
         self.model.activated.connect(self._model_picked)
         form.addRow(S("模型", "Model"), self.model)
 
@@ -589,9 +598,24 @@ class SettingsInterface(QWidget):
         self.compute.setCurrentIndex(max(0, ci))
         li = self.lang.findData(cfg.language)
         self.lang.setCurrentIndex(max(0, li))
+        if not self._defer_asr:
+            self._fill_models()
+            self._refresh_asr_hint()
+        self._loading = False
+
+    def warm_asr(self) -> None:
+        """首次进入设置页时补做三类昂贵初始化（只此一次）。
+
+        引擎可用性置灰、模型下拉填充、ASR 提示（含 CUDA 运行库探测）都
+        依赖扫盘/DLL 加载：构造期做会把冷启动拖慢几百毫秒到数秒（取决
+        于本机模型数量），挪到主窗已显示、用户切到设置页的第一拍。
+        """
+        if getattr(self, "_asr_warmed", False):
+            return
+        self._asr_warmed = True
+        self._gate_engines()
         self._fill_models()
         self._refresh_asr_hint()
-        self._loading = False
 
     def _save(self) -> None:
         self._collect_profile()
@@ -975,9 +999,11 @@ class SettingsInterface(QWidget):
 
     # ----------------------------------------------------------- ASR 部分
     def _rescan_models(self) -> None:
-        """重新扫描本地模型：外部 CLI 扫描有进程内缓存，先清掉再填。"""
-        from ..core.transcriber import ext_cli_cache_reset
+        """重新扫描本地模型：两个扫描都有进程内缓存，先清掉再填。"""
+        from ..core.transcriber import ct2_cache_reset, ext_cli_cache_reset
+        ct2_cache_reset()
         ext_cli_cache_reset()
+        self._asr_warmed = True      # 手动扫描 = 用户显式要最新结果
         self._fill_models()
 
     def _fill_models(self) -> None:

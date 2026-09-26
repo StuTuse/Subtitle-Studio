@@ -295,9 +295,26 @@ _MODEL_PATTERNS = [
 
 _CT2_FILES = ("model.bin", "tokenizer.json", "config.json")
 
+_ct2_cache: Optional[List[Dict[str, str]]] = None
+
+
+def ct2_cache_reset() -> None:
+    """清掉模型扫描缓存（设置页「重新扫描」按钮调用）。"""
+    global _ct2_cache
+    _ct2_cache = None
+
 
 def discover_ct2_models() -> List[Dict[str, str]]:
-    """扫描本机已有的 CTranslate2 模型目录（可直接喂给 faster-whisper）。"""
+    """扫描本机已有的 CTranslate2 模型目录（可直接喂给 faster-whisper）。
+
+    进程内缓存：扫描含 _dir_size_mb 的 os.walk（多 GB 模型 = 数千次
+    stat），旧版设置页每次构造、每次 _refresh_asr_hint 都全量重扫——
+    启动链路、切换引擎、打开设置页各付一次。缓存后只在「重新扫描」
+    或首次发现时真正扫盘。
+    """
+    global _ct2_cache
+    if _ct2_cache is not None:
+        return _ct2_cache
     found: List[Dict[str, str]] = []
     seen = set()
     roots = [models_dir()] + [p for p, _ in _MODEL_PATTERNS]
@@ -333,6 +350,7 @@ def discover_ct2_models() -> List[Dict[str, str]]:
                             if root == p or root.startswith(p)), "本地")
                 found.append({"name": f"{label}  [{src}]", "id": ap, "path": ap,
                               "size": _dir_size_mb(cand)})
+    _ct2_cache = found
     return found
 
 

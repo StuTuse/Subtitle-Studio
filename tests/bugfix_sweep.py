@@ -131,7 +131,7 @@ import sstudio.core.llm as llm_mod
 calls = []
 
 
-def fake_chat(prof, messages, on_delta=None, _retry_no_cap=True):
+def fake_chat(prof, messages, on_delta=None, _retry_no_cap=True, cancel=None):
     calls.append(messages)
     return "\n".join(f"[{i}] {c.text}" for i, c in enumerate(_cur[0]))
 
@@ -208,7 +208,7 @@ import sstudio.core.llm as _llm
 state = {"n": 0}
 
 
-def flaky_chat(prof, messages, on_delta=None, _retry_no_cap=True):
+def flaky_chat(prof, messages, on_delta=None, _retry_no_cap=True, cancel=None):
     state["n"] += 1
     if state["n"] == 1:
         raise RuntimeError("没预料到的内部错误")
@@ -445,8 +445,13 @@ for _nm in ("engine", "device", "compute", "lang", "mirror"):
     _c = getattr(_dlg, _nm)
     check(f"{_nm} 当前项 userData 非空", _c.currentData() not in (None, ""),
           _c.currentData())
+# v1.17.284 起模型下拉延迟填充（warm_asr 前零扫盘）：热身后 userData 落地
+check("构造期模型下拉为空（延迟填充契约）",
+      _dlg.model.count() == 0, _dlg.model.count())
+_dlg.warm_asr()
 check("模型下拉 userData 非空（选了本地模型必须真的存路径，不是显示文本）",
       _dlg.model.currentData() not in (None, ""), _dlg.model.currentData())
+check("warm_asr 幂等（二次调用不再扫）", _dlg.warm_asr() is None)
 
 
 section("19. 关窗收尾：慢线程孤儿化（QThread destroyed-while-running 闪退根治）")
@@ -1011,19 +1016,28 @@ check("构造时占位已替换为真实回调", _tc.a == (_tc._progress, _tc._l
 check("cancel 标志翻转", (_tc.cancel(), _tc._cancel())[1] is True)
 check("_cancel 返回标志", _TC48(lambda c: None, CB_CANCEL).kw == {} or True)
 
-section("49. CueDocument.snapshot 字段完备（第 58 轮钉子）")
+section("49. CueDocument.snapshot 撤销语义完备（第 58 轮钉子，v2 轻快照更新）")
 _d58 = CueDocument(cues=[Cue(0, 2, "你好", speaker="张三", confidence=0.87,
                              words=[{"start": 0.0, "end": 1.0, "word": "你好"}])],
                    source_video="v.mp4")
 _d58.cues[0].text = "改"
-_d58r = CueDocument.from_dict(_d58.snapshot())
+# v2 轻快照：undo 语义只需要文本/时间轴/状态/说话人/id（restore 走
+# Cue 构造，不再走 from_dict）。confidence/words 不在撤销语义里——
+# 词表只在转写刚产出时有意义，编辑期间的旧词表不被任何功能读取。
+_d58r = CueDocument()
+_d58r.restore(_d58.snapshot())
 check("speaker 进快照", _d58r.cues[0].speaker == "张三")
-check("confidence 进快照", _d58r.cues[0].confidence == 0.87)
-check("words 进快照", bool(_d58r.cues[0].words))
 check("text 进快照", _d58r.cues[0].text == "改")
+check("id 进快照（行身份稳定）", _d58r.cues[0].id == _d58.cues[0].id)
+check("时间轴进快照", _d58r.cues[0].start == 0 and _d58r.cues[0].end == 2)
 # 快照按设计只含 cues（meta/source_video 不入 undo 栈——restore 不动它们）：
-check("快照只含 cues（元数据不参与 undo）",
-      set(_d58.snapshot().keys()) == {"cues"})
+check("快照只含 cues+v（元数据不参与 undo）",
+      set(_d58.snapshot().keys()) == {"cues", "v"})
+# to_dict（工程文件路径）仍全量保留 confidence/words：导出 JSON 备份
+# →再导入不丢词级时间戳（formats.py 的核心卖点，与 undo 快照无关）
+_d58d = CueDocument.from_dict(_d58.to_dict())
+check("to_dict 仍全量（confidence/words 保留）",
+      _d58d.cues[0].confidence == 0.87 and bool(_d58d.cues[0].words))
 
 section("50. 编辑页筛选跳转与状态口径（第 62 轮钉子）")
 import re as _re50  # noqa: E402
@@ -1292,7 +1306,11 @@ section("70. 撤销栈语义（第 90 轮钉子）")
 import inspect as _insp90  # noqa: E402
 from sstudio.ui.editor_page import EditorInterface as _ED90  # noqa: E402
 _src90 = _insp90.getsource(_ED90.push_undo)
-check("上限 60 保留最近步骤", "del self._undo[:-60]" in _src90)
+# v1.17.284 起撤销栈双重封顶（60 份 + 32MB 字节估算），从最旧一端丢
+check("上限 60 保留最近步骤", "len(self._undo) > 60" in _src90
+      and "del self._undo[0]" in _src90)
+check("字节封顶 32MB", "32 * 1024 * 1024" in _src90
+      or "32 * 1024 * 1024" in _insp90.getsource(_ED90._undo_bytes))
 check("新步骤清空 redo", "self._redo.clear()" in _src90)
 _src90b = _insp90.getsource(_ED90._on_text_changed)
 # 第 240 轮：打字路径改走 push_undo(coalesce=True) 合并节流
@@ -2094,7 +2112,7 @@ _u148, _r148 = [], []          # 模拟 editor_page.push_undo/undo/redo 协议
 _d148.snapshot()
 _u148.append(_d148.snapshot())
 _d148.cues[0].text = "A改"
-check("快照与现值隔离", _u148[0]["cues"][0]["text"] == "A")
+check("快照与现值隔离", _u148[0]["cues"][0][2] == "A")   # v2 元组：下标 2 = text
 _r148.append(_d148.snapshot())
 _d148.restore(_u148.pop())
 check("undo 回原文", _d148.cues[0].text == "A")
@@ -2110,11 +2128,14 @@ for _i148 in range(61):
     _t148.append(_i148)
     del _t148[:-60]            # push_undo 同款截断
 check("历史栈 60 深度截断", len(_t148) == 60 and _t148[0] == 1)
+# v2 轻快照有意不带 words（撤销语义=文本/时间轴；词表只在转写产出时
+# 有意义）。恢复后 words 清空是契约，不是丢失。
 _d148.cues[0].words = [{"w": "A", "s": 0.0, "e": 0.5}]
 _s148 = _d148.snapshot()
 _d148.cues[0].words = []
 _d148.restore(_s148)
-check("words 时间轴随快照恢复", len(_d148.cues[0].words) == 1)
+check("轻快照恢复后 words 清空（撤销语义不含词表）",
+      _d148.cues[0].words == [] and _d148.cues[0].text == "A改")
 _d148.meta["k"] = 1
 _s148b = _d148.snapshot()
 _d148.meta["k"] = 2
@@ -4514,8 +4535,10 @@ _src238d = _insp238.getsource(_mw238.MainWindow.load_project)
 check("打开工程前脏检查", "_dirty" in _src238d
       and "_CloseAskBox" in _src238d)
 from sstudio.ui import fix_page as _fp238  # noqa: E402
-_src238e = _insp238.getsource(_fp238.FixInterface._on_cue)
-check("回填按 id 找行", "c.id == cid" in _src238e)
+_src238e = _insp238.getsource(_fp238.FixInterface._find_row)
+# v1.17.284 起回填走 _find_row dict 映射（O(1)），id 定位语义不变
+check("回填按 id 找行", "c.id: i for i, c in enumerate(doc.cues)" in _src238e
+      and "cache[2].get(cid, -1)" in _src238e)
 from sstudio.ui.editor_page import EditorInterface as _EI241  # noqa: E402
 _src238f = _insp238.getsource(_EI241.apply_llm_text)
 check("运行中编辑保护", 'state == "edited"' in _src238f)
@@ -5577,7 +5600,7 @@ _rec246 = open(os.path.join(_harness.ROOT, "sstudio", "core", "recovery.py"),
                encoding="utf-8").read()
 check("快照 8s 节流常量", "SNAPSHOT_INTERVAL = 8.0" in _rec246)
 check("快照 7 天保留期", "KEEP_DAYS = 7" in _rec246)
-check("快照 tmp+replace 原子落盘", "os.replace(tmp, path)" in _rec246)
+check("快照 tmp+replace 原子落盘", "os.replace(tmp, target)" in _rec246)
 check("快照 token 去重", "token" in _rec246 and "_stem_for" in _rec246)
 check("快照目录兜底 tempdir", "tempfile.gettempdir()" in _rec246)
 _mw246 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
@@ -5590,7 +5613,7 @@ check("取消转写释放模型", "transcriber.release_models()" in _mw246
       and _mw246.count("transcriber.release_models()") >= 2)
 _ed246 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
               encoding="utf-8").read()
-check("撤销栈 60 上限", "del self._undo[:-60]" in _ed246)
+check("撤销栈 60 上限", "len(self._undo) > 60" in _ed246)
 check("打字流 800ms 合并", "now - self._undo_ts < 0.8" in _ed246)
 check("取消流文案双语", 'S(f"已导入：{name}", f"Imported: {name}")' in _mw246)
 
@@ -5941,6 +5964,250 @@ try:
     _cfgmod256._CACHE_ROOT.pop("data", None)
 except Exception as _e256:
     check("BOM 端到端", False, str(_e256))
+
+section("257. 纠错取消静默收敛（用户主动停止 ≠ 一堆失败）")
+_llmsrc257 = open(os.path.join(_harness.ROOT, "sstudio", "core", "llm.py"),
+                  encoding="utf-8").read()
+# 根因：用户点「停止」后每个排队批次照常启动→返回"已取消"→逐条塞进
+# failures（300 批=300 条），界面显示"完成但有告警：X 处需注意"——把
+# 用户的主动取消说成一堆错误，语义完全颠倒。
+check("_CANCELLED_NOTE 标记常量", "__cancelled__" in _llmsrc257)
+check("worker 三处取消返回标记（不再返回明文）",
+      _llmsrc257.count("return idx, None, _CANCELLED_NOTE") >= 3)
+check("明文『已取消』不再作为批次错误返回",
+      'return idx, None, S("已取消"' not in _llmsrc257)
+check("as_completed 侧静默收敛不进 failures",
+      "err == _CANCELLED_NOTE" in _llmsrc257 and "cancelled_count += 1" in _llmsrc257)
+check("收尾一条汇总（已取消+已修正 N 行）",
+      "剩余 {cancelled_count} 批未执行" in _llmsrc257
+      and "本轮已修正" in _llmsrc257)
+check("_UserCancelled 独立异常（流式在途掐断）",
+      "class _UserCancelled" in _llmsrc257
+      and "except _UserCancelled:\n            raise" in _llmsrc257)
+check("chat() 接收 cancel（流式每 chunk 检查）",
+      "cancel: Optional[Callable[[], bool]] = None" in _llmsrc257
+      and "if cancel is not None and cancel():" in _llmsrc257)
+check("one() 传 cancel 进 chat", "cancel=cancel" in _llmsrc257)
+# 运行时端到端：chat 抛 _UserCancelled → 批次静默 → failures 只有汇总行
+try:
+    import sstudio.core.llm as _llm257
+    from sstudio.core.model import Cue as _Cue257, CueDocument as _Doc257
+
+    class _Prof257:
+        name = _model257 = "t"
+        base_url = "http://127.0.0.1:1"
+        api_key = "x"
+        model = "m"
+        temperature = 0.0
+        top_p = 1.0
+        max_tokens = 16
+        timeout = 1.0
+        no_reasoning = False
+
+    class _Cfg257:
+        batch_size = 2
+        concurrency = 2
+        auto_retry = 0
+        strict_mode = False
+        keep_original = False
+        glossary = ""
+        reference_script = ""
+        prompt_template = ""
+        profiles = []
+
+        def profile(self):
+            return _Prof257()
+
+    _doc257 = _Doc257()
+    _doc257.cues = [_Cue257(start=float(i), end=float(i) + 1, text=f"第{i}行",
+                            original_text=f"第{i}行") for i in range(10)]
+    _orig_chat257 = _llm257.chat
+
+    def _cancel_chat257(prof, messages, on_delta=None, _retry_no_cap=True,
+                        cancel=None):
+        raise _llm257._UserCancelled()
+
+    _llm257.chat = _cancel_chat257
+    try:
+        _res257 = _llm257.fix_document(_Cfg257(), list(_doc257.cues),
+                                       cancel=lambda: True)
+        _spam257 = [f for f in _res257.failures
+                    if f.startswith("第 ") and "已取消" in f]
+        _sum257 = [f for f in _res257.failures
+                   if "已取消" in f and "本轮已修正" in f]
+        check("运行时：取消不逐批进 failures", len(_spam257) == 0,
+              f"failures={_res257.failures}")
+        check("运行时：恰一条汇总", len(_sum257) == 1)
+    finally:
+        _llm257.chat = _orig_chat257
+except Exception as _e257:
+    check("取消端到端", False, str(_e257))
+
+section("258. 撤销快照轻量化（10k 条 873ms→3ms，撤销栈字节封顶）")
+_modelsrc258 = open(os.path.join(_harness.ROOT, "sstudio", "core", "model.py"),
+                    encoding="utf-8").read()
+# 根因：snapshot 走 asdict 全量深拷贝，words 词级时间戳每条带十几个 dict，
+# 打字每进一个新行快照一次（实测 10k 条 873ms/7.5MB），60 份撤销栈极端
+# 驻留 450MB。撤销语义只需要文本/时间轴/状态/说话人/id。
+check("快照改轻量元组（v2）", '"v": 2' in _modelsrc258
+      and "c.start, c.end, c.text, c.original_text, c.state, c.speaker, c.id"
+      in _modelsrc258)
+check("restore 兼容 v1 dict 快照",
+      "isinstance(raw[0], dict)" in _modelsrc258)
+try:
+    from sstudio.core.model import CueDocument as _Doc258, Cue as _Cue258
+    _doc258 = _Doc258()
+    _doc258.cues = [_Cue258(start=float(i), end=float(i) + 2.0,
+                            text=f"第{i}行", original_text=f"第{i}行",
+                            words=[{"start": 0.0, "end": 0.5, "word": "w",
+                                    "prob": 0.9}])
+                    for i in range(100)]
+    _t0258 = __import__("time").perf_counter()
+    _snap258 = _doc258.snapshot()
+    _ms258 = (__import__("time").perf_counter() - _t0258) * 1000
+    check("轻快照形态（tuple 7 元组，无 words）",
+          isinstance(_snap258["cues"][0], tuple)
+          and len(_snap258["cues"][0]) == 7, f"{_ms258:.1f}ms")
+    _doc258b = _Doc258()
+    _doc258b.restore(_snap258)
+    check("restore 往返保真（文本/时间轴/id）",
+          len(_doc258b.cues) == 100
+          and _doc258b.cues[50].text == _doc258.cues[50].text
+          and _doc258b.cues[50].id == _doc258.cues[50].id
+          and abs(_doc258b.cues[3].start - 3.0) < 1e-9)
+    _snap_old258 = {"cues": [_c.to_dict() for _c in _doc258.cues[:3]]}
+    _doc258c = _Doc258()
+    _doc258c.restore(_snap_old258)
+    check("v1 dict 快照仍可恢复", len(_doc258c.cues) == 3
+          and _doc258c.cues[0].text == _doc258.cues[0].text)
+except Exception as _e258:
+    check("快照运行时钉", False, str(_e258))
+# 撤销栈字节封顶（编辑页）
+_edsrc258 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "editor_page.py"),
+                 encoding="utf-8").read()
+check("撤销栈 60 份 + 32MB 双重封顶", "len(self._undo) > 60" in _edsrc258
+      and "32 * 1024 * 1024" in _edsrc258)
+check("_undo_bytes 估算在位", "def _undo_bytes" in _edsrc258)
+
+section("259. 回填 id→行号 dict 化（O(n²)→O(1)，10k 条 540ms→0.33ms）")
+_fixsrc259 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "fix_page.py"),
+                  encoding="utf-8").read()
+# 根因：_on_cue 每条回填线性扫全文档 next(...)，5k 条 = 1250 万次比较，
+# 全在 UI 线程 queued 信号槽里跑，纠错越到后半程界面越卡。
+check("线性 next 扫描已移除",
+      "next((i for i, c in enumerate(doc.cues) if c.id == cid), -1)"
+      not in _fixsrc259)
+check("_find_row dict 映射", "def _find_row" in _fixsrc259
+      and "{c.id: i for i, c in enumerate(doc.cues)}" in _fixsrc259)
+check("映射失效判据（长度+首 id）", "cache[0] != len(doc.cues)" in _fixsrc259
+      and "cache[1] != doc.cues[0].id" in _fixsrc259)
+check("id 消失返回 -1（旧行为保留）", "cache[2].get(cid, -1)" in _fixsrc259)
+try:
+    # 行为级：结构变化后回填按新位置命中。__new__ 跳过 QObject.__init__
+    # 会炸（super-class never called）：_find_row 是纯方法，用普通假对象
+    # 直接绑定函数体等价复现（只依赖 self 属性存取，不依赖 Qt 基类）。
+    import sstudio.ui.fix_page as _fp259
+    from sstudio.core.model import CueDocument as _Doc259, Cue as _Cue259
+    _page259 = type("_FakeFix259", (), {"_find_row": _fp259.FixInterface._find_row})()
+    _doc259 = _Doc259()
+    _doc259.cues = [_Cue259(start=float(i), end=float(i) + 1, text=f"第{i}行",
+                            original_text=f"第{i}行") for i in range(50)]
+    _r259 = _page259._find_row(_doc259, _doc259.cues[30].id)
+    check("运行时：dict 命中行号", _r259 == 30)
+    _doc259.cues.pop(10)          # 结构变化：删一条
+    _r259b = _page259._find_row(_doc259, _doc259.cues[30].id)
+    check("运行时：删行后映射失效重建", _r259b == 30)
+    _r259c = _page259._find_row(_doc259, "no-such-id")
+    check("运行时：未知 id = -1", _r259c == -1)
+except Exception as _e259:
+    check("回填运行时钉", False, str(_e259))
+
+section("260. 转写/纠错互设防 + 恢复快照线程化 + 播放 tick 减负")
+_mwsrc260 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "main_window.py"),
+                 encoding="utf-8").read()
+# ④ 纠错运行中点转写：整文档替换 main.doc，纠错 worker 对旧文档继续烧
+# token，结果全部作废——旧版不设防，Ctrl+G 静默踩踏。
+check("start_transcribe 查纠错运行中", "self.fix_page.is_running()" in _mwsrc260)
+check("提示纠错结果会作废", "纠错结果会作废" in _mwsrc260)
+check("fix_page.is_running 接口", "def is_running" in _fixsrc259)
+# ⑤ 恢复快照：旧版 UI 线程 to_json+fsync（5k 条可感 100-300ms），8s 节流
+# = 持续编辑期间每 8 秒卡一次。
+_recsrc260 = open(os.path.join(_harness.ROOT, "sstudio", "core", "recovery.py"),
+                  encoding="utf-8").read()
+check("write_snapshot_data 纯数据接口", "def write_snapshot_data(data_json" in _recsrc260)
+check("UI 侧 ThreadedCall 全链线程化",
+      "ThreadedCall(_write)" in _mwsrc260
+      and "recovery.write_snapshot_data(data" in _mwsrc260)
+check("_schedule_snapshot 不再 UI 线程直写",
+      "recovery.write_snapshot(self.doc, self._dirty_gen)" not in _mwsrc260)
+check("快照 worker 单飞守卫", "_snap_worker" in _mwsrc260
+      and "def _snap_done" in _mwsrc260)
+# ⑦ 播放 tick：每帧 2-3 次全文档线性扫 + overlay 无条件重排
+_modelsrc260 = open(os.path.join(_harness.ROOT, "sstudio", "core", "model.py"),
+                    encoding="utf-8").read()
+check("at_time 近邻缓存 + bisect", "_last_at_idx" in _modelsrc260
+      and "bisect" in _modelsrc260)
+check("index_of 近邻缓存", "_last_hit_idx" in _modelsrc260)
+try:
+    from sstudio.core.model import CueDocument as _Doc260, Cue as _Cue260
+    _doc260 = _Doc260()
+    _doc260.cues = [_Cue260(start=float(i) * 3.0, end=float(i) * 3.0 + 2.5,
+                            text=f"第{i}行", original_text=f"第{i}行")
+                    for i in range(1000)]
+    _hit260 = all(
+        (_doc260.at_time(_t) is None or _doc260.at_time(_t).contains(_t))
+        for _t in [0.5, 3.1, 1500.7, 2999.9, 3001.0])
+    check("at_time 命中正确性（含空隙/越界）", _hit260)
+    check("index_of 正确 + 缓存一致",
+          _doc260.index_of(_doc260.cues[777]) == 777
+          and _doc260.index_of(_doc260.cues[777]) == 777)
+except Exception as _e260:
+    check("at_time 运行时钉", False, str(_e260))
+_plsrc260 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "player.py"),
+                 encoding="utf-8").read()
+check("set_subtitle 文本不变短路",
+      'if t == getattr(self, "_overlay_text", None):' in _plsrc260)
+
+section("261. 启动瘦身 + 波形向量化 + 队列 UX")
+_trsrc261 = open(os.path.join(_harness.ROOT, "sstudio", "core", "transcriber.py"),
+                 encoding="utf-8").read()
+# ⑥ 旧版：设置页构造期做 6000 项目录扫描（whisper CLI）+ 模型目录 os.walk
+# + CUDA DLL 真加载——三项全在冷启动上，而设置页是访问率最低的页面。
+check("discover_ct2_models 进程内缓存", "_ct2_cache" in _trsrc261
+      and "def ct2_cache_reset" in _trsrc261)
+_setsrc261 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
+                  encoding="utf-8").read()
+check("构造期不再 _gate_engines",
+      "self._gate_engines()" not in _setsrc261.split("def warm_asr")[0]
+      .split("def _build_asr")[-1])
+check("warm_asr 一次性守卫", "_asr_warmed" in _setsrc261
+      and _setsrc261.count("def warm_asr") == 1)
+check("三件套（置灰/填模型/提示）都在 warm_asr",
+      _setsrc261.split("def warm_asr")[1].count("self._") >= 3)
+check("_load 受 _defer_asr 门控", "if not self._defer_asr:" in _setsrc261)
+check("延迟期 model_value 兜底 cfg 原值",
+      "self._model_value = self.cfg.whisper_model or" in _setsrc261)
+check("重扫清两个缓存并标记已热身",
+      "ct2_cache_reset()" in _setsrc261 and "self._asr_warmed = True" in _setsrc261)
+check("主窗切设置页 singleShot 触发热身",
+      "QTimer.singleShot(0, self.settings.warm_asr)" in _mwsrc260)
+# ⑧ 波形：旧版逐样本 Python 循环（8kHz×全片=千万级标量转换）持 GIL 抢
+# UI/转写线程时间片。
+_medsrc261 = open(os.path.join(_harness.ROOT, "sstudio", "core", "media.py"),
+                  encoding="utf-8").read()
+check("波形桶聚合 numpy 化", "np.maximum.at(bucket" in _medsrc261
+      and "np.arange" in _medsrc261)
+check("逐样本 Python 循环已移除",
+      "for i, v in enumerate(arr):" not in _medsrc261)
+# ⑨ 队列：旧版无进度面板、每文件两 InfoBar、写盘失败被未保存框卡死
+check("open_media 支持 queue_mode",
+      "def open_media(self, path: str, queue_mode: bool = False)" in _mwsrc260)
+check("队列模式跳过未保存模态框", "and self._dirty and not queue_mode" in _mwsrc260)
+check("队列模式不逐文件弹导入成功条",
+      _mwsrc260.count("if not queue_mode:") >= 3)
+check("队列常驻状态行 + 完成计数",
+      "def _queue_state_line" in _mwsrc260 and "def _queue_mark_done" in _mwsrc260)
+check("_queue_next 走 queue_mode", "self.open_media(path, queue_mode=True)" in _mwsrc260)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

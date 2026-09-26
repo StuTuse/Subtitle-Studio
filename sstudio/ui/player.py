@@ -233,8 +233,14 @@ class PlayerWidget(QWidget):
 
         折行与导出检查同一标准（28 字），表格里的"两行"与成片效果
         从此一致。
+
+        tick 每 50-250ms 调一次：文本没变时直接返回（旧版无条件
+        setText+adjustSize+setVisible，10k 条文档每 tick 三遍 Python
+        循环之外还多出一轮整控件重排——文本不变时这些全是白做）。
         """
         t = wrap_subtitle(text or "")
+        if t == getattr(self, "_overlay_text", None):
+            return
         self._overlay_text = t
         if t:
             self.overlay.setText(t)

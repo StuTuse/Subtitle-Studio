@@ -164,15 +164,41 @@ class CueDocument:
                 a.end = a.start + 0.01
 
     def index_of(self, cue: Cue) -> int:
-        for i, c in enumerate(self.cues):
+        # 播放 tick 每帧都会走到这里（overlay 高亮当前行）：10k 条线性扫
+        # 每帧 3 遍是可感知的卡顿。先试近邻（播放是单调推进的），失手再
+        # 全量扫——全量扫保留兜底，语义与旧版完全一致。
+        cues = self.cues
+        if not cues:
+            return -1
+        prev = getattr(self, "_last_hit_idx", -1)
+        if 0 <= prev < len(cues) and cues[prev] is cue:
+            return prev
+        for i, c in enumerate(cues):
             if c.id == cue.id:
+                self._last_hit_idx = i
                 return i
         return -1
 
     def at_time(self, seconds: float) -> Optional[Cue]:
-        for c in self.cues:
+        # 高频路径（每帧 2 次调用）：近邻优先——上次命中的 cue 大概率仍
+        # 在播或其邻居是答案；失手退回 bisect（cues 按 start 有序，这是
+        # normalize/转写输出/表格排序的共同不变量）。
+        cues = self.cues
+        if not cues:
+            return None
+        prev = getattr(self, "_last_at_idx", -1)
+        if 0 <= prev < len(cues) and cues[prev].contains(seconds):
+            return cues[prev]
+        import bisect
+        i = bisect.bisect_right([c.start for c in cues], seconds) - 1
+        while i >= 0:
+            c = cues[i]
             if c.contains(seconds):
+                self._last_at_idx = i
                 return c
+            if c.end <= seconds:
+                break       # 更早的 cue 结束更早：不可能包含，提前收工
+            i -= 1
         return None
 
     def cue_by_id(self, cid: str) -> Optional[Cue]:
@@ -366,12 +392,30 @@ class CueDocument:
         doc.cues = [Cue.from_dict(c) for c in cues_raw if isinstance(c, dict)]
         return doc
     def snapshot(self) -> Dict[str, Any]:
-        """给撤销栈用的深拷贝。"""
-        return {"cues": [c.to_dict() for c in self.cues]}
+        """给撤销栈用的轻量快照。
+
+        不走 to_dict（asdict 全量深拷贝）：词级时间戳 words 每条带十几个
+        dict，10k 条文档单份快照实测 873ms/7.5MB，打字每进一个新行快照
+        一次，60 份撤销栈极端可驻留 450MB。撤销只关心文本与时间轴——
+        词表、置信度都不在撤销语义里（恢复后 words 清空：词表只在转写
+        刚产出时有意义，编辑期间的旧词表本就不会被任何功能读取）。
+        元组比 dict 省 3 倍内存，restore 端按下标取。
+        """
+        return {"v": 2, "cues": [
+            (c.start, c.end, c.text, c.original_text, c.state, c.speaker, c.id)
+            for c in self.cues]}
 
     def restore(self, snap: Dict[str, Any]) -> None:
-        self.cues = [Cue.from_dict(c) for c in snap.get("cues", [])
-                     if isinstance(c, dict)]
+        raw = snap.get("cues", [])
+        if raw and isinstance(raw[0], dict):
+            # v1 旧快照（to_dict 全量 dict）：工程文件载入路径复用，保兼容
+            self.cues = [Cue.from_dict(c) for c in raw if isinstance(c, dict)]
+            return
+        self.cues = [Cue(start=float(t[0]), end=float(t[1]),
+                         text=str(t[2]), original_text=str(t[3]),
+                         state=str(t[4]), speaker=str(t[5]), id=str(t[6]),
+                         words=[], confidence=None)
+                     for t in raw if isinstance(t, (tuple, list)) and len(t) >= 7]
 
 
 def _hard_cut(s: str, max_chars: int) -> List[str]:
