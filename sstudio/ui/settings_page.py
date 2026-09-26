@@ -54,16 +54,54 @@ class SettingsInterface(QWidget):
         scroll.setWidget(host)
         lay = QVBoxLayout(host)
         lay.setContentsMargins(28, 18, 32, 28)
-        lay.setSpacing(16)
+        lay.setSpacing(14)
+        # 表单控件宽度上限：1360px 屏上不钳制会把下拉/输入框拉到 1000px+，
+        # 视线从右对齐标签跳到控件尾端要横穿半个屏，密度极低
+        _FORM_MAX_W = 420
 
         lay.addWidget(SubtitleLabel(S("大模型接入（OpenAI 兼容）",
                                       "LLM connection (OpenAI-compatible)"), self))
         lay.addWidget(self._build_llm(host))
         lay.addWidget(self._build_prompt(host))
-        lay.addWidget(self._build_asr(host))
-        lay.addWidget(self._build_misc(host))
-        lay.addWidget(self._build_doctor(host))
+
+        # 转写引擎 + 其它/体检双栏排布：ASR 表单行多但控件都短，
+        # misc/doctor 控件更短——单列排布两者都在浪费另一半宽度。
+        self.asr_card = self._build_asr(host)
+        misc_card = self._build_misc(host)
+        doctor_card = self._build_doctor(host)
+        twin = QHBoxLayout()
+        twin.setSpacing(14)
+        twin.addWidget(self.asr_card, 3)
+        right_col = QVBoxLayout()
+        right_col.setSpacing(14)
+        right_col.addWidget(misc_card)
+        right_col.addWidget(doctor_card)
+        right_col.addStretch(1)
+        twin.addLayout(right_col, 2)
+        lay.addLayout(twin)
+        # 右列最小宽 400：misc 卡内容（336 下拉 + 表单标签 + 边距）的
+        # 真实下限。窄窗（主窗最小 1100）时 QHBox 按最小宽保右列、ASR 卡
+        # 先瘦——横竖比控件破碎可读。ASR 卡同样保 420 下限（其控件钳宽）。
+        misc_card.setMinimumWidth(400)
+        doctor_card.setMinimumWidth(400)
+        self.asr_card.setMinimumWidth(420)
         lay.addStretch(1)
+
+        # 三张卡的表单控件统一钳宽（LLM 卡的字段单独在 _build_llm 处理）
+        # 同时给最小宽：双栏右列在窄窗被压时下拉不跟缩——misc 卡已保
+        # 400 最小宽，内容列 336 下拉 + 标签 60 放得下，这里 maxW 钳宽
+        # 只防 1360 全屏拉稀；minW 保窄窗下限
+        for w in (self.engine, self.model, self.device, self.compute,
+                  self.lang, self.mirror, self.theme, self.ui_lang):
+            w.setMaximumWidth(_FORM_MAX_W)
+            w.setMinimumWidth(300)
+        for w in (self.beam, self.ui_scale, self.gap_max):
+            w.setMaximumWidth(_FORM_MAX_W)
+        for w in (self.vad, self.wts, self.cpt, self.fallback,
+                  self.autosave, self.keepaudio, self.gap_auto):
+            w.setMaximumWidth(_FORM_MAX_W)
+        self.cuda_dir.setMaximumWidth(_FORM_MAX_W)
+        self.btn_rescan.setMaximumWidth(_FORM_MAX_W)
 
         bar = QHBoxLayout()
         self.btn_defaults = PushButton(S("恢复默认设置", "Restore defaults"), self)
@@ -105,6 +143,7 @@ class SettingsInterface(QWidget):
         v.addWidget(hint)
 
         top = QHBoxLayout()
+        top.setSpacing(12)
         top.addWidget(BodyLabel(S("接入点", "Profiles"), card))
         self.prof_list = QListWidget(card)
         # 不设 maxHeight 硬上限：右侧一列（3 按钮 + 预设下拉 + 存预设）自然高
@@ -113,13 +152,16 @@ class SettingsInterface(QWidget):
         self.prof_list.currentRowChanged.connect(self._on_prof_row)
         top.addWidget(self.prof_list, 1)
         pv = QVBoxLayout()
+        pv.setSpacing(8)
         for label, icon, slot in ((S("新建", "New"), FIF.ADD, self._add_prof),
                                   (S("删除", "Delete"), FIF.DELETE, self._del_prof),
                                   (S("测试连接", "Test"), FIF.SYNC, self._test)):
             b = PushButton(icon, label, card)
             b.clicked.connect(slot)
+            b.setMinimumWidth(150)
             pv.addWidget(b)
         self.preset = ComboBox(card)
+        self.preset.setMinimumWidth(150)
         self.preset.setPlaceholderText(S("供应商预设…", "Provider presets…"))
         self._fill_presets()
         self.preset.activated.connect(self._on_preset_activated)
@@ -134,6 +176,12 @@ class SettingsInterface(QWidget):
         pv.addWidget(self.btn_preset_save)
         pv.addStretch(1)
         top.addLayout(pv)
+        # 右列固定 150 宽（按钮/下拉统一），列表吃剩余全部宽度——
+        # 1360 屏下列表 ~1100 : 右列 150，不再出现 3:1 的松散失衡
+        for i in range(pv.count()):
+            it = pv.itemAt(i)
+            if it.widget() is not None:
+                it.widget().setFixedWidth(150)
         v.addLayout(top)
 
         form = QFormLayout()
@@ -177,6 +225,13 @@ class SettingsInterface(QWidget):
         form.addRow(S("请求超时", "Request timeout"), self.p_timeout)
         form.addRow(S("推理模型", "Reasoning model"), self.p_noreason)
         v.addLayout(form)
+        # 表单控件钳宽：Base URL/模型名可给宽些（长内容高频），数值类
+        # 参数 220 就够——全宽 1080 的 SpinBox 视觉上非常松散
+        for w in (self.p_name, self.p_key, self.p_model):
+            w.setMaximumWidth(420)
+        self.p_base.setMaximumWidth(560)
+        for w in (self.p_temp, self.p_maxtok, self.p_timeout):
+            w.setMaximumWidth(220)
 
         self.p_adv_hint = CaptionLabel(
             S("「关闭思考」适用于 DeepSeek-R1 / Qwen3 / GLM 思考版等推理模型："

@@ -6344,6 +6344,29 @@ check("边界钳制（到顶/到底不回弹）",
       "self._wheel_target = max(0, min(sb.maximum(), self._wheel_target))"
       in _wsrc265)
 
+section("266. 设置页排版：双栏网格 + 表单钳宽（用户反馈：优化排版）")
+# 改前：5 张卡全宽 1300 纵排 2521px（3 屏），表单控件被拉到 1000-1122px，
+# 视线横穿半屏；misc/doctor 卡内容少却独占全宽。改后：ASR(3):右列(2)
+# 双栏 + 表单控件 maxW 钳宽，总高 2118 省 1 屏。
+_sp266 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
+              encoding="utf-8").read()
+check("双栏排布存在（ASR + 右列 misc/doctor）",
+      "right_col.addWidget(misc_card)" in _sp266
+      and "twin.addLayout(right_col, 2)" in _sp266)
+check("拉伸比 3:2", "twin.addWidget(self.asr_card, 3)" in _sp266)
+check("右列最小宽 400（窄窗不破碎）",
+      "misc_card.setMinimumWidth(400)" in _sp266
+      and "doctor_card.setMinimumWidth(400)" in _sp266)
+check("ASR 卡最小宽 420", "self.asr_card.setMinimumWidth(420)" in _sp266)
+check("ASR/misc 下拉 maxW 420 钳宽",
+      "w.setMaximumWidth(_FORM_MAX_W)" in _sp266
+      and "_FORM_MAX_W = 420" in _sp266)
+check("下拉 minW 300（窄窗可读下限）",
+      "w.setMinimumWidth(300)" in _sp266)
+check("LLM 数值参数钳 220", "w.setMaximumWidth(220)" in _sp266)
+check("LLM Base URL 单独给宽 560", "self.p_base.setMaximumWidth(560)" in _sp266)
+check("接入点右列统一 150 宽", "it.widget().setFixedWidth(150)" in _sp266)
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
