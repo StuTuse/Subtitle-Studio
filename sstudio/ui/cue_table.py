@@ -1,11 +1,11 @@
-"""字幕列表：多行文本可编辑表格 + 状态着色 + 右键菜单。"""
+"""字幕列表：多行文本可编辑表格 + 状态着色 + 右键菜单 + 惯性平滑滚动。"""
 
 from __future__ import annotations
 
 from typing import List
 
-from PyQt5.QtCore import QSize, Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QFont
+from PyQt5.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, pyqtSignal
+from PyQt5.QtGui import QBrush, QColor, QFont, QWheelEvent
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu,
                              QStyledItemDelegate, QTableWidget, QTableWidgetItem,
                              QTextEdit)
@@ -88,6 +88,60 @@ class CueTable(QTableWidget):
 
         self._suspend = False
         self._suppress_rows = set()
+        # 惯性平滑滚轮（见 wheelEvent）：懒创建，未拨轮零开销
+        self._wheel_ani: QPropertyAnimation = None
+        self._wheel_target = 0
+
+    # -------------------------------------------------------- 滚轮动画
+    def wheelEvent(self, e: QWheelEvent) -> None:  # noqa: N802
+        # 表格编辑态放行给 Qt 默认处理：编辑器（QTextEdit）自己处理滚轮
+        # 与光标移动，动画劫持会造成编辑中的行跳出视口的怪异体验。
+        if self.state() == QTableWidget.EditingState:
+            super().wheelEvent(e)
+            return
+        sb = self.verticalScrollBar()
+        steps = -(e.angleDelta().y() / 120.0)     # 上拨为负（向上滚）
+        if steps == 0:
+            # 触摸板高精度滚动（pixelDelta）交还默认处理：逐像素事件走
+            # 动画会因事件频率过高而抖动，Qt 自身的平滑已足够
+            super().wheelEvent(e)
+            return
+        e.accept()
+        # 每步 3 行左右（行高 34-150px，固定 90px 与行高解耦——大行高
+        # 时不至于一格只滚一行）
+        step_px = 90 * steps
+        if self._wheel_ani is not None and \
+                self._wheel_ani.state() == QPropertyAnimation.Running:
+            # retarget：未完成的动画把剩余量与新步数累加，连续拨轮是
+            # 加速滑行而非重启抖动。上限封顶：累计目标不超过视口高度
+            # 的 3 倍（防高速甩轮一下飞几千行）。视口未布局完成时
+            # height()==0（offscreen/启动早期），此时跳过封顶钳制——
+            # 只有 0 钳 0 会把目标归零、滚动死掉（真机首次滚轮前布局
+            # 早已完成，此守卫只影响极端时序）。
+            self._wheel_target += step_px
+            vp_h = self.viewport().height()
+            if vp_h > 0:
+                max_target = sb.value() + vp_h * 3
+                min_target = sb.value() - vp_h * 3
+                self._wheel_target = max(min_target, min(max_target,
+                                                         self._wheel_target))
+            self._wheel_ani.stop()
+        else:
+            self._wheel_target = sb.value() + step_px
+        # 边界钳制：滚动条自己会 clamp，但动画目标值先钳掉可以避免
+        # "到顶后又回弹半格"的观感
+        self._wheel_target = max(0, min(sb.maximum(), self._wheel_target))
+        if self._wheel_ani is None:
+            from PyQt5.QtCore import QEasingCurve as _EC
+            self._wheel_ani = QPropertyAnimation(sb, b"value", self)
+            self._wheel_ani.setEasingCurve(_EC(_EC.OutCubic))
+        self._wheel_ani.stop()
+        self._wheel_ani.setStartValue(sb.value())
+        self._wheel_ani.setEndValue(self._wheel_target)
+        # 单步 240ms；retarget 后的剩余动画保持总时长恒定（累加量大时
+        # 走同一时长，滑行速度自然更快）
+        self._wheel_ani.setDuration(240)
+        self._wheel_ani.start()
 
     # ------------------------------------------------------------ 渲染
     # 模块级样式缓存：(state, dark) → (QColor badge, QColor text-bg)。

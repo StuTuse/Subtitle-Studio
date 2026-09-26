@@ -27,6 +27,11 @@ from .settings_page import SettingsInterface
 from .theme import apply_theme
 from .workers import TranscribeWorker, reap
 
+# 切页动画时长（ms）：qfluentwidgets 上层写死 300（OutQuad，起步慢收尾
+# 猛），实测观感"生硬一顿"。260ms OutCubic：起步快、减速滑入，比 240
+# 留一点余量让眼睛跟得上位移，又明显短于原版的拖沓感。
+_PAGE_ANI_MS = 260
+
 
 def _snapshot_to_json(snap: dict, doc: CueDocument) -> str:
     """把撤销栈格式的快照序列化成完整工程 JSON。
@@ -259,13 +264,14 @@ class MainWindow(FluentWindow):
             QTimer.singleShot(0, _deferred(self.settings.warm_asr))
 
     def _retune_page_ani(self) -> None:
-        """把 qfluentwidgets 切页动画调成 240ms OutCubic + 位移减半。
+        """把 qfluentwidgets 切页动画调成 260ms OutCubic + 位移减半。
 
         1.8.4 的 PopUpAniStackedWidget.setCurrentIndex 参数由上层
         StackedWidget.setCurrentWidget 写死（popOut=False → 300ms OutQuad；
         popOut=True → 200ms InQuad），没有公开配置口。这里在 view 实例上
-        用绑定方法替换：原版逻辑逐行照抄，只改 duration（240）与曲线
-        （OutCubic），并把 aniInfos 里的每页位移 delta 76px→44px——
+        用绑定方法替换：原版逻辑逐行照抄，时长/曲线以 _PAGE_ANI_MS 为准
+        （上层传 300 也会被覆盖——实测 switchTo 链路传参 (False, True,
+        300, OutQuad)），并把 aniInfos 里的每页位移 delta 76px→44px——
         滑行距离短、收尾缓，切页观感从"生硬一顿"变成"利落滑入"。
         替换只挂在本实例，不动库全局。
         """
@@ -279,7 +285,7 @@ class MainWindow(FluentWindow):
             info.deltaY = 44
 
         def _set_current_index(self_view, index, needPopOut=False,
-                               showNextWidgetDirectly=True, duration=240,
+                               showNextWidgetDirectly=True, duration=_PAGE_ANI_MS,
                                easingCurve=None):
             if index < 0 or index >= self_view.count():
                 return
@@ -298,8 +304,14 @@ class MainWindow(FluentWindow):
             next_w = next_info.widget
             ani = cur_info.ani if needPopOut else next_info.ani
             self_view._ani = ani
-            if easingCurve is None:
-                easingCurve = _EC(_EC.OutCubic)
+            # 上层 StackedWidget.setCurrentWidget 写死 duration=300（实测
+            # switchTo→setCurrentWidget(popOut=False) 传参 (False, True,
+            # 300, 2)）——我们的 240ms 默认值永远被覆盖。时长是本次调优的
+            # 核心参数，这里一律以本模块常量为准；曲线同理（上层传的 2=
+            # OutQuad 是生硬感的另一半来源）。needPopOut=True 的进场
+            # （200ms InQuad，仅代码路由用）同样按本模块节奏走。
+            duration = _PAGE_ANI_MS
+            easingCurve = _EC(_EC.OutCubic)
             if needPopOut:
                 pos = cur_w.pos() + _QPoint(cur_info.deltaX, cur_info.deltaY)
                 self_view._PopUpAniStackedWidget__setAnimation(

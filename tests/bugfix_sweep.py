@@ -6230,7 +6230,10 @@ check("构造期调用调优（带 try 降级）",
 _ani_seg262 = _mwsrc260.split("def _retune_page_ani")[1].split("self._restore_geometry")[0]
 check("deltaY 76→44（滑行距离减半）", "info.deltaY = 44" in _ani_seg262)
 check("deltaX 置 0（纯纵向）", "info.deltaX = 0" in _ani_seg262)
-check("动画时长 300→240", "duration=240" in _ani_seg262)
+check("动画时长常量 _PAGE_ANI_MS=260", "_PAGE_ANI_MS = 260" in _mwsrc260)
+check("上层写死 300 被覆盖（duration 强制回本模块常量）",
+      "duration = _PAGE_ANI_MS" in _ani_seg262
+      and "easingCurve = _EC(_EC.OutCubic)" in _ani_seg262)
 check("缓动曲线 OutCubic", "_EC.OutCubic" in _ani_seg262)
 check("私有成员校验后才替换（库版本防御）",
       'hasattr(view, attr) for attr in required' in _ani_seg262
@@ -6314,6 +6317,32 @@ check("局部刷新同长度快路径 + 行数变化退回全量",
 check("局部刷新异常退回全量 render（撤销语义必达）",
       _eps263.split("def _refresh_after_restore")[1].split("def ")[0]
       .count("except Exception:") == 1)
+
+section("265. 表格惯性平滑滚轮（用户反馈：界面动画更流畅）")
+# QTableWidget 滚轮一格 40px 硬跳变，5k 行连拨是逐格抖动。滚轮改走
+# QPropertyAnimation（OutCubic 240ms），连拨 retarget 累加成加速滑行。
+_wsrc265 = _ctsrc263
+check("wheelEvent 动画接管存在", "def wheelEvent" in _wsrc265)
+check("QPropertyAnimation 懒创建（未拨轮零开销）",
+      "self._wheel_ani: QPropertyAnimation = None" in _wsrc265
+      and "if self._wheel_ani is None:" in _wsrc265)
+check("OutCubic 240ms（与切页动画同节奏）",
+      "setDuration(240)" in _wsrc265
+      and "_EC(_EC.OutCubic)" in _wsrc265)
+check("编辑态放行给 Qt 默认（编辑器自管滚动）",
+      "if self.state() == QTableWidget.EditingState:" in _wsrc265
+      and _wsrc265.split("def wheelEvent")[1].split("sb = ")[0]
+      .count("super().wheelEvent(e)") == 1)
+check("触摸板 pixelDelta/零 angleDelta 放行",
+      "if steps == 0:" in _wsrc265)
+check("连拨 retarget 累加（不重启抖动）",
+      "self._wheel_target += step_px" in _wsrc265
+      and "Running:" in _wsrc265.split("def wheelEvent")[1].split("def ")[0])
+check("视口高度 0 守卫（offscreen/启动早期不死锁）",
+      "if vp_h > 0:" in _wsrc265)
+check("边界钳制（到顶/到底不回弹）",
+      "self._wheel_target = max(0, min(sb.maximum(), self._wheel_target))"
+      in _wsrc265)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
