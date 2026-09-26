@@ -331,7 +331,12 @@ class Config:
         cfg = cls.from_dict({})
         path = config_path()
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            # utf-8-sig：容忍 BOM。外部工具（PowerShell Set-Content -Encoding
+            # UTF8、部分编辑器）写出的配置带 UTF-8 BOM，裸 utf-8 读进来
+            # json.load 直接抛 "Unexpected UTF-8 BOM" —— load_failed 置位后
+            # save() 拒写（设置改不了）、setup_done 读不出（每次启动都弹
+            # 欢迎向导），三个症状同一个根源。BOM 合法且无害，直接忽略。
+            with open(path, "r", encoding="utf-8-sig") as f:
                 return cls.from_dict(json.load(f))
         except FileNotFoundError:
             # 无配置文件（真·首次）：出厂自定义预设在那里注入
@@ -375,6 +380,15 @@ class Config:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, path)
+            # 落盘自检：os.replace 成功不代表读得回来（历史教训：外部工具
+            # 污染过目录后，写出去的文件下次 load 炸掉，直到现在才暴露）。
+            # 读一遍验证，失败按保存失败处理——绝不让"写成功但读不出"的
+            # 配置留在盘上冒充完好。
+            try:
+                with open(path, "r", encoding="utf-8-sig") as f:
+                    json.load(f)
+            except Exception:
+                return False
             return True
         except Exception:
             return False

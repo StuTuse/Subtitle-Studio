@@ -628,15 +628,34 @@ class SettingsInterface(QWidget):
         cfg.model_source = self.mirror.currentData() or "modelscope"
         cfg.cuda_rt_dir = self.cuda_dir.text().strip()
         if not cfg.save():
-            # 旧实现吞掉写盘异常：磁盘满/被占用时也显示"已保存"，重启后
-            # 设置无声回滚。现在失败明确报错。
-            InfoBar.error(S("保存失败", "Save failed"),
-                          S("设置未能写入本地配置文件（磁盘满或被占用？）。"
-                            "当前会话内设置仍生效，请检查磁盘后重试。",
-                            "Settings could not be written to the config file "
-                            "(disk full or locked?). They still apply for this session; "
-                            "check the disk and retry."),
-                          parent=self.main, position=InfoBarPosition.TOP, duration=6000)
+            # save() 失败有两类：load_failed 拒写（配置读取时坏过，宁可拒写
+            # 也不能用默认值覆盖用户真实配置）与真·磁盘满/被占用。旧文案把
+            # 两类混成"磁盘满或被占用"，误导用户去查磁盘——实际配置文件
+            # 并没有被占用。分开提示，并给出具体处置办法。
+            if getattr(cfg, "load_failed", False):
+                from ..core.config import config_path
+                InfoBar.error(
+                    S("保存失败：配置文件此前读取失败", "Save failed: config "
+                      "was unreadable at startup"),
+                    S("启动时本地配置文件损坏或无法解析，为保护你已保存的"
+                      "大模型接入点，本次设置没有写入。请关闭软件后手动处理 "
+                      "config.json（同目录下有损坏快照 .bad 可对照），或联系"
+                      "支持。文件位置：",
+                      "The local config file was corrupt or unreadable at "
+                      "startup. To protect your saved LLM connection, this "
+                      "change was NOT written. Close the app and fix "
+                      "config.json manually (a .bad snapshot sits next to "
+                      "it). Location: ") + config_path(),
+                    parent=self.main, position=InfoBarPosition.TOP, duration=10000)
+            else:
+                InfoBar.error(
+                    S("保存失败", "Save failed"),
+                    S("设置未能写入本地配置文件（磁盘满或被占用？）。"
+                      "当前会话内设置仍生效，请检查磁盘后重试。",
+                      "Settings could not be written to the config file "
+                      "(disk full or locked?). They still apply for this session; "
+                      "check the disk and retry."),
+                    parent=self.main, position=InfoBarPosition.TOP, duration=6000)
             return
         tip = S("设置已写入本地配置文件。", "Settings written to the local config file.")
         if scale_changed:

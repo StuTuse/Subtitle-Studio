@@ -5889,6 +5889,59 @@ QApplication.mouseButtons()（=NoButton，旧版拦截）
 check("快照生命周期覆盖 singleShot 延迟", len(_qseq255) > 0 and
       "_press_buttons" in _srcpress255 and "_press_buttons" in _src128)
 
+section("256. 配置 BOM 容错（三症状同根源：欢迎弹不停/保存被占用/缩放存不上）")
+_cfgsrc256 = open(os.path.join(_harness.ROOT, "sstudio", "core", "config.py"),
+                  encoding="utf-8").read()
+# 根因：外部工具写出的 config.json 带 UTF-8 BOM → json.load 抛
+# "Unexpected UTF-8 BOM" → load_failed 置位 → save() 拒写（UI 报"磁盘满
+# 或被占用"，误导）→ setup_done 存不进（每次启动弹欢迎向导）→ 用户改的
+# ui_scale 也存不进。读侧换 utf-8-sig 全部化解。
+check("load 用 utf-8-sig（BOM 容忍）", 'encoding="utf-8-sig"' in _cfgsrc256)
+check("save 落盘后自检可读", _cfgsrc256.count('encoding="utf-8-sig"') >= 2
+      and "落盘自检" in _cfgsrc256)
+check("save 自检失败按保存失败处理",
+      _cfgsrc256[_cfgsrc256.index("落盘自检"):].index("return False") <
+      _cfgsrc256[_cfgsrc256.index("落盘自检"):].index("return True"))
+# 设置页失败提示分流：load_failed 单独文案，不再谎报"磁盘满"
+_setsrc256 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
+                  encoding="utf-8").read()
+check("load_failed 拒写单独提示", "load_failed" in _setsrc256
+      and "配置文件此前读取失败" in _setsrc256)
+check("真磁盘错误文案保留", "磁盘满或被占用" in _setsrc256)
+# 运行时端到端：带 BOM 配置 load→save 全链路（临时 home，不碰真实配置）
+try:
+    import json as _json256
+    import tempfile as _tmpf256
+    import shutil as _shu256
+    _home256 = _tmpf256.mkdtemp(prefix="_tmp_sweep256_")
+    os.environ["SUBTITLE_STUDIO_HOME"] = _home256
+    from sstudio.core import config as _cfgmod256
+    _cfgmod256._CACHE_ROOT.pop("config", None)
+    _cfgmod256._CACHE_ROOT.pop("data", None)
+    from sstudio.core.config import Config as _Cfg256, config_path as _cp256, \
+        config_dir as _cd256
+    os.makedirs(_cd256(), exist_ok=True)
+    with open(_cp256(), "wb") as _f256:
+        _f256.write(b"\xef\xbb\xbf")
+        _f256.write(_json256.dumps({"setup_done": True, "ui_scale": 1.25},
+                                   ensure_ascii=False).encode("utf-8"))
+    _c256 = _Cfg256.load()
+    check("带 BOM 配置 load 成功", not getattr(_c256, "load_failed", False))
+    check("setup_done/ui_scale 读出", _c256.setup_done is True
+          and abs(_c256.ui_scale - 1.25) < 1e-9)
+    _c256.ui_scale = 1.5
+    check("save 落盘成功", _c256.save())
+    _raw256 = open(_cp256(), "rb").read()
+    check("save 不写 BOM", not _raw256.startswith(b"\xef\xbb\xbf"))
+    _re256 = _Cfg256.load()
+    check("save 后重读正确", abs(_re256.ui_scale - 1.5) < 1e-9
+          and _re256.setup_done is True)
+    _shu256.rmtree(_home256, ignore_errors=True)
+    _cfgmod256._CACHE_ROOT.pop("config", None)
+    _cfgmod256._CACHE_ROOT.pop("data", None)
+except Exception as _e256:
+    check("BOM 端到端", False, str(_e256))
+
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发
 # 0xc0000005。显式处理完挂起事件并把 QApplication 置 None 再退出，
