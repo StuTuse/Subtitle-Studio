@@ -1878,7 +1878,7 @@ check("探测路径转义", "_esc(rt.cublas_dir)" in _src132 and "_esc(rt.note)"
 _src132b = _insp132.getsource(_spmod132.SettingsInterface._build_asr)
 check("translate 前缀在语言下拉", "translate:zh" in _src132b)
 _src132c = _insp132.getsource(_spmod132.SettingsInterface._build_misc)
-check("缩放 0=跟随系统 specialValue", "setSpecialValueText(S(\"跟随系统\", \"System\"))" in _src132c)
+check("缩放控件换下拉后仍是 _build_misc 一员", "self.ui_scale = ComboBox(card)" in _src132c)
 check("空隙衔接开关双文案", "setOnText(S(\"衔接\", \"Join\"))" in _src132c and "setOffText(S(\"留缝\", \"Keep gap\"))" in _src132c)
 
 section("114. 编辑页动作分发与撤销语义（第 133 轮钉子）")
@@ -5257,15 +5257,16 @@ check("double stepBy 全拦（运行时）", abs(_dp235.value() - 4.2) < 1e-9)
 # MRO 诊断钉：子类 __dict__ 必须自有 stepBy（否则回归回旧病）
 check("子类本体定义 stepBy", "stepBy" in vars(_SS235)
       and "stepBy" in vars(_SDS235))
-# ② ui_scale 出厂值与设置页推荐一致（config 默认 1.5 vs 页面「1.00（推荐）」）
+# ② ui_scale 出厂值=0（跟随 Windows，第 287 轮改为下拉选择时同步）
 from sstudio.core.config import Config as _Cfg235  # noqa: E402
-check("ui_scale 出厂 1.0", _Cfg235().ui_scale == 1.0)
+check("ui_scale 出厂 0（跟随 Windows）", _Cfg235().ui_scale == 0.0)
 _src235cfg = open(os.path.join(_harness.ROOT, "sstudio", "core", "config.py"),
                   encoding="utf-8").read()
-check("出厂值注释同步", "1.0=物理 1:1 最清晰（推荐出厂值" in _src235cfg)
+check("出厂值注释同步", "0=跟随 Windows 显示缩放（出厂默认" in _src235cfg)
 _src235set = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
                   encoding="utf-8").read()
-check("设置页推荐标仍是 1.00", "1.00 ×（推荐）" in _src235set)
+check("设置页推荐标已改「跟随 Windows（推荐）」",
+      "跟随 Windows（推荐）" in _src235set)
 
 section("236. 批量队列多文件顺序转写（第 245 轮 backlog ③ 钉子）")
 from sstudio.ui.main_window import MainWindow as _MW236  # noqa: E402
@@ -6366,6 +6367,32 @@ check("下拉 minW 300（窄窗可读下限）",
 check("LLM 数值参数钳 220", "w.setMaximumWidth(220)" in _sp266)
 check("LLM Base URL 单独给宽 560", "self.p_base.setMaximumWidth(560)" in _sp266)
 check("接入点右列统一 150 宽", "it.widget().setFixedWidth(150)" in _sp266)
+
+section("267. 界面缩放：ComboBox 下拉 + 跟随 Windows（用户反馈：调不动/不跟系统）")
+# 用户实测 SafeDoubleSpinBox 的点击弹层打不开、上下按钮和手输都没反应，
+# 且「跟随系统=0」藏在 specialValueText 里语义反直觉。三步治理：
+# ① 控件换 ComboBox（qfluentwidgets 原生下拉，交互必然可达）；
+# ② 出厂默认改 0=跟随 Windows（不设 QT_SCALE_FACTOR，Qt High-DPI 直接
+#    读系统缩放）；③ 旧配置任意倍率就近吸附到候选档，不显示空白。
+_sp267 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "settings_page.py"),
+              encoding="utf-8").read()
+check("ui_scale 是 ComboBox", "self.ui_scale = ComboBox(card)" in _sp267)
+check("候选含「跟随 Windows（推荐）」",
+      "跟随 Windows（推荐）" in _sp267)
+check("userData 数值档位", "self.ui_scale.addItem(_label, userData=_v)" in _sp267)
+check("读侧旧值就近吸附", "min(_cands, key=lambda c: abs(c - _sv))" in _sp267)
+check("写侧取 currentData", "cfg.ui_scale = float(self.ui_scale.currentData() or 0.0)"
+      in _sp267)
+check("SafeDoubleSpinBox 仍用于温度/空隙阈值（不误伤）",
+      "self.p_temp = SafeDoubleSpinBox(card)" in _sp267
+      and "self.gap_max = SafeDoubleSpinBox(card)" in _sp267)
+_msrc267 = open(os.path.join(_harness.ROOT, "sstudio", "__main__.py"),
+                encoding="utf-8").read()
+check("跟随模式不设 QT_SCALE_FACTOR（Qt 原生跟 Windows）",
+      'os.environ.pop("QT_SCALE_FACTOR", None)' in _msrc267
+      and "if float(cfg.ui_scale) > 0:" in _msrc267)
+from sstudio.core.config import Config as _Cfg267  # noqa: E402
+check("出厂 ui_scale=0.0", _Cfg267().ui_scale == 0.0)
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

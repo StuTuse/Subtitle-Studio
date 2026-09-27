@@ -92,10 +92,11 @@ class SettingsInterface(QWidget):
         # 400 最小宽，内容列 336 下拉 + 标签 60 放得下，这里 maxW 钳宽
         # 只防 1360 全屏拉稀；minW 保窄窗下限
         for w in (self.engine, self.model, self.device, self.compute,
-                  self.lang, self.mirror, self.theme, self.ui_lang):
+                  self.lang, self.mirror, self.theme, self.ui_lang,
+                  self.ui_scale):
             w.setMaximumWidth(_FORM_MAX_W)
             w.setMinimumWidth(300)
-        for w in (self.beam, self.ui_scale, self.gap_max):
+        for w in (self.beam, self.gap_max):
             w.setMaximumWidth(_FORM_MAX_W)
         for w in (self.vad, self.wts, self.cpt, self.fallback,
                   self.autosave, self.keepaudio, self.gap_auto):
@@ -498,29 +499,29 @@ class SettingsInterface(QWidget):
         self.theme.addItems([S("auto（跟随系统）", "auto (follow system)"),
                              S("light（浅色）", "light"), S("dark（深色）", "dark")])
         form.addRow(S("主题", "Theme"), self.theme)
-        self.ui_scale = SafeDoubleSpinBox(card)
-        self.ui_scale.setRange(0, 3)
-        self.ui_scale.setSingleStep(0.05)
-        self.ui_scale.setDecimals(2)
-        self.ui_scale.setSpecialValueText(S("跟随系统", "System"))
-        self.ui_scale.setSuffix(" ×")
-        self.ui_scale.set_choices([(0, S("跟随系统", "System")),
-                                   (1.0, S("1.00 ×（推荐）", "1.00 × (recommended)")),
-                                   (1.25, "1.25 ×"), (1.5, "1.50 ×"),
-                                   (1.75, "1.75 ×"), (2.0, "2.00 ×")])
+        # 界面缩放：下拉选择（SafeDoubleSpinBox 的点击弹层在本机实测
+        # 打不开/不可输入——用户反馈"点旁边按钮和输入都没反应"）。语义
+        # 反转对齐直觉：出厂默认「跟随 Windows」，想改大小才选固定倍率。
+        self.ui_scale = ComboBox(card)
+        _US_FOLLOW = 0.0
+        for _v, _label in (
+                (_US_FOLLOW, S("跟随 Windows（推荐）", "Follow Windows (recommended)")),
+                (1.0, S("1.00 ×（物理 1:1，最紧凑）", "1.00 × (physical 1:1, most compact)")),
+                (1.25, "1.25 ×"), (1.5, "1.50 ×"),
+                (1.75, "1.75 ×"), (2.0, "2.00 ×")):
+            self.ui_scale.addItem(_label, userData=_v)
         self.ui_scale.setToolTip(
             S("界面整体大小倍率，重启后生效。\n\n"
-              "1.00 = 按物理像素 1:1 渲染：最清晰、最紧凑（推荐，"
-              "高缩放屏上不会出现放大发糊）。\n"
-              "1.25 / 1.50 = 想要更大的控件时选这个。\n"
-              "跟随系统 = 交给 Windows 的显示缩放决定（你的屏幕是 150%，"
-              "界面会明显变大）。",
+              "跟随 Windows（默认）：直接采用系统显示缩放——Windows 里调多少，"
+              "软件就跟着多大，高分屏不再字小；系统缩放中途改变也自动适配。\n"
+              "1.00 ×：按物理像素 1:1 渲染，最紧凑，适合高分屏嫌控件太大。\n"
+              "1.25~2.00 ×：在跟随的基础上再放大，想要更大控件时选。",
               "Overall UI size multiplier; takes effect after restart.\n\n"
-              "1.00 = render 1:1 at physical pixels: sharpest and most compact "
-              "(recommended; avoids blur on high-DPI screens).\n"
-              "1.25 / 1.50 = larger controls.\n"
-              "System = let Windows display scaling decide (on a 150% screen the UI "
-              "gets noticeably bigger)."))
+              "Follow Windows (default): adopt the system display scaling — "
+              "whatever Windows uses, the app matches; adapts automatically "
+              "when you change system scaling.\n"
+              "1.00 ×: render 1:1 at physical pixels, most compact.\n"
+              "1.25–2.00 ×: zoom in further on top of the system scale."))
         form.addRow(S("界面缩放", "UI scale"), self.ui_scale)
         self.ui_lang = ComboBox(card)
         self.ui_lang.addItem("中文", userData="zh")
@@ -635,8 +636,17 @@ class SettingsInterface(QWidget):
         self.theme.setCurrentText({S("light（浅色）", "light"): "light",
                                    S("dark（深色）", "dark"): "dark"}.get(
             cfg.theme, S("auto（跟随系统）", "auto (follow system)")))
-        self.ui_scale.setValue(float(cfg.ui_scale))
-        self._ui_scale_loaded = float(cfg.ui_scale)
+        # ui_scale 旧值兼容：老配置里的任意倍率（如 1.1）不在候选里时，
+        # 就近吸附到候选档位，避免 setCurrentIndex(-1) 后显示空白
+        _sv = float(getattr(cfg, "ui_scale", 0.0) or 0.0)
+        if _sv <= 0:
+            _si = 0
+        else:
+            _cands = [1.0, 1.25, 1.5, 1.75, 2.0]
+            _sv = min(_cands, key=lambda c: abs(c - _sv))
+            _si = next(i for i in range(1, self.ui_scale.count())
+                       if abs(float(self.ui_scale.itemData(i)) - _sv) < 1e-9)
+        self.ui_scale.setCurrentIndex(_si)
         _li = self.ui_lang.findData(getattr(cfg, "lang", "zh") or "zh")
         self.ui_lang.setCurrentIndex(max(0, _li))
         self.autosave.setChecked(cfg.auto_save)
@@ -694,9 +704,9 @@ class SettingsInterface(QWidget):
         cfg.word_timestamps = self.wts.isChecked()
         cfg.condition_on_previous_text = self.cpt.isChecked()
         cfg.theme = self.theme.currentText().split("（")[0]
-        scale_changed = abs(float(self.ui_scale.value()) - float(getattr(
-            self, "_ui_scale_loaded", self.ui_scale.value()))) > 1e-6
-        cfg.ui_scale = float(self.ui_scale.value())
+        scale_changed = abs(float(self.ui_scale.currentData() or 0.0) - float(
+            getattr(cfg, "ui_scale", 0.0) or 0.0)) > 1e-6
+        cfg.ui_scale = float(self.ui_scale.currentData() or 0.0)
         lang_changed = (self.ui_lang.currentData() or "zh") != getattr(cfg, "lang", "zh")
         cfg.lang = self.ui_lang.currentData() or "zh"
         cfg.auto_save = self.autosave.isChecked()

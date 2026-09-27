@@ -141,12 +141,17 @@ def main(argv=None) -> int:
     except Exception:
         pass
 
-    # 界面缩放：见 _scale_factor_for。默认 ui_scale=1.0 → 高缩放屏上也按
-    # 物理像素 1:1 渲染：清晰、紧凑，不再"放大发糊"。0 = 跟随系统缩放。
+    # 界面缩放：cfg.ui_scale 的语义——
+    #   0（出厂默认「跟随 Windows」）：不设 QT_SCALE_FACTOR，Qt 自身的
+    #     High-DPI 缩放（AA_EnableHighDpiScaling + PassThrough 取整策略）
+    #     直接读 Windows 显示缩放，系统 125%/150% 软件就 125%/150%；
+    #   >0（固定倍率）：让有效渲染倍率（OS缩放 × factor）恰为该物理倍率。
     # 必须在 QApplication 创建前写环境变量，Qt 才会读到。
     try:
         if float(cfg.ui_scale) > 0:
             os.environ["QT_SCALE_FACTOR"] = f"{_scale_factor_for(cfg.ui_scale):.3f}"
+        else:
+            os.environ.pop("QT_SCALE_FACTOR", None)
     except Exception:
         pass
 
