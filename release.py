@@ -14,6 +14,9 @@
 ----
 * 版本号真源是根目录 ``VERSION``（语义化版本 MAJOR.MINOR.PATCH）。
 * 发布 = 提交 VERSION+CHANGELOG -> 打 ``vX.Y.Z`` tag -> （可选）PyInstaller。
+* GitHub Release 只给功能版本（x.y.0）挂：x.y 是小版本（功能级更新），
+  x.y.z 第三段是日常细微修正，只提交+打 tag，不建 Release（否则列表
+  会被几百个细微版本刷爆）。
 * 加 --push 时发版完成后自动推送 main+tag 到 GitHub（推送结果以远端
   ls-remote 复核为准，不确认不算成功）。
 * 每次打包完成会自动同步桌面快捷方式指向新产物（找不到就新建）。
@@ -345,6 +348,17 @@ def _gh_token() -> str:
     return ""
 
 
+def is_feature_version(version: str) -> bool:
+    """是否「功能版本」（x.y.0）：只有这类才在 GitHub 建 Release。
+
+    用户约定：x.y 是小版本（功能级更新），x.y.z 的第三段是日常细微
+    修正——后者太多会把 Release 列表刷爆。规则：第三段为 0 才算功能
+    版本，1.17.289 这类细微更新只提交+打 tag+推送，不建 Release。
+    """
+    m = _SEMVER.match(version)
+    return bool(m) and m.group(3) == "0"
+
+
 def do_release(tag: str, notes: str) -> None:
     """在 GitHub 发布 Release 并上传本版安装包（gh CLI + 令牌）。
 
@@ -352,6 +366,10 @@ def do_release(tag: str, notes: str) -> None:
     之后可以手动补挂（网页或重跑本步）。
     """
     new = tag[1:] if tag.startswith("v") else tag
+    if not is_feature_version(new):
+        print(f"· {new} 是细微更新（第三段非 0），按约定跳过 GitHub Release"
+              "（只有 x.y.0 功能版本才发布 Release）")
+        return
     setup = os.path.join(ROOT, "installer", f"SubtitleStudio-{new}-setup.exe")
     gh = shutil.which("gh")
     tok = _gh_token()
@@ -473,7 +491,8 @@ def main() -> int:
         do_push(tag)
         do_release(tag, args.notes)
     else:
-        print(f"· 未推送（--push 可在发版后自动推：main + tag {tag}，并挂 GitHub Release）")
+        print(f"· 未推送（--push 可在发版后自动推：main + tag {tag}；"
+              f"x.y.0 功能版本还会挂 GitHub Release）")
     return 0
 
 
