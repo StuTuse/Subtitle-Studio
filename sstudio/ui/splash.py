@@ -15,6 +15,8 @@ from PyQt5.QtGui import (QBrush, QColor, QFont, QLinearGradient, QPainter,
                          QPainterPath, QPen, QRadialGradient)
 from PyQt5.QtWidgets import QApplication, QWidget
 
+from ..core.i18n import S
+
 
 def paint_app_icon(p: QPainter, rect: QRectF) -> None:
     """应用图标：一块"视频屏"里压着两条字幕杠 + 播放三角。
@@ -100,7 +102,7 @@ class Splash(QWidget):
         # 现在缩放完全交给 Qt 的 devicePixelRatio；scale 参数保留兼容旧调用
         # 但不再参与几何计算，绘制统一用实时 DPR。
         self._version = version or ""
-        self._stage = "正在启动…"
+        self._stage = S("正在启动…", "Starting…")
         self._phase = 0.0                    # 进度条动画相位 0..1
         self._opacity = 1.0                  # 淡出用（映射到窗口不透明度）
         self._fade: QPropertyAnimation | None = None
@@ -260,7 +262,8 @@ class Splash(QWidget):
         p.setFont(f2)
         p.setPen(QColor(196, 205, 224))
         p.drawText(QRectF(panel.left(), ty + 34 * s, panel.width(), 26 * s),
-                   Qt.AlignHCenter | Qt.AlignVCenter, "视 频 字 幕 工 坊")
+                   Qt.AlignHCenter | Qt.AlignVCenter,
+                   S("视 频 字 幕 工 坊", "V i d e o   S u b t i t l e   S t u d i o"))
 
         # ---- 不确定进度条：轨道 + 往复游走的亮块
         track_w = panel.width() * 0.56
@@ -292,5 +295,6 @@ class Splash(QWidget):
         p.drawText(QRectF(panel.left(), panel.bottom() - 26 * s,
                           panel.width(), 20 * s),
                    Qt.AlignHCenter | Qt.AlignVCenter,
-                   f"版本 {self._version}  ·  Tuse Creation")
+                   S(f"版本 {self._version}  ·  Tuse Creation",
+                     f"Version {self._version}  ·  Tuse Creation"))
         p.end()

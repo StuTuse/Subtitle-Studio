@@ -44,7 +44,7 @@ class EditorInterface(QWidget):
     def __init__(self, cfg: Config, main):
         super().__init__()
         self.setObjectName("editor")
-        self.setWindowTitle("字幕编辑")
+        self.setWindowTitle(S("字幕编辑", "Editor"))
         self.cfg = cfg
         self.main = main
         self.doc: Optional[CueDocument] = None

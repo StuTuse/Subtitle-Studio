@@ -320,6 +320,39 @@ def main(argv=None) -> int:
     # 400ms 定时器晚于它，时序安全。
     QTimer.singleShot(400, lambda: _maybe_welcome(cfg, win))
 
+    # 新版本检查：启动 6 秒后后台线程查 GitHub latest release（4s 超时、
+    # 静默失败）。只比功能版本 x.y.0——与发版策略一致，细微更新不提示。
+    # 发现有新版只在主窗顶部挂一条不阻塞的 InfoBar，不打断任何操作。
+    def _check_update():
+        import threading as _th
+
+        def _worker():
+            try:
+                from sstudio.core.update_check import has_newer, fetch_latest
+                if not has_newer(__version__):
+                    return
+                info = fetch_latest()
+
+                def _notify():
+                    try:
+                        from sstudio.core.i18n import S as _S
+                        from qfluentwidgets import InfoBar as _IB
+                        from qfluentwidgets import InfoBarPosition as _IP
+                        _IB.info(
+                            _S("发现新版本", "New version available"),
+                            _S(f"Subtitle Studio {info['version']} 已发布，"
+                               "可到「帮助」→「检查更新」下载。",
+                               f"Subtitle Studio {info['version']} is out — "
+                               "see Help → Check for updates."),
+                            parent=win, position=_IP.TOP, duration=8000)
+                    except Exception:
+                        pass
+                QTimer.singleShot(0, _notify)   # UI 更新回主线程
+            except Exception:
+                pass
+        _th.Thread(target=_worker, daemon=True).start()
+    QTimer.singleShot(6000, _check_update)
+
     target = args.file or (extra[0] if extra else "")
     if target:
         if os.path.isfile(target):

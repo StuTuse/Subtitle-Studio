@@ -969,8 +969,10 @@ class SettingsInterface(QWidget):
                                    if e.get("name") != name] + [entry]
         self.cfg.save()
         self._fill_presets()
-        InfoBar.success("已存为自定义预设",
-                        f"「{name}」已加入预设下拉，其他接入点也能一键套用。",
+        InfoBar.success(S("已存为自定义预设", "Saved as custom preset"),
+                        S(f"「{name}」已加入预设下拉，其他接入点也能一键套用。",
+                          f"「{name}」was added to the preset dropdown — apply it "
+                          "to any profile with one click."),
                         parent=self.main, position=InfoBarPosition.TOP,
                         duration=2600)
 

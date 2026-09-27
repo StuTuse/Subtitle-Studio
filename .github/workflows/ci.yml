@@ -1,0 +1,47 @@
+# Subtitle Studio CI：三门禁自动跑（compileall + bugfix_sweep + run_all --quick）
+#
+# 与本地发版前跑的门禁完全一致；offscreen 模式不开窗。真实转写
+# （transcribe）需要本地 CT2 模型，CI 上一律 --quick 跳过。
+# 触发：push 到 main / 任意 PR / 每周一自动回归（防依赖漂移）。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"   # 每周一 03:00 UTC 自动回归
+  workflow_dispatch: {}
+
+jobs:
+  gates:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: 装依赖
+        run: pip install -r requirements.txt
+
+      - name: 门禁 1/3 — compileall
+        run: python -m compileall -q sstudio
+
+      - name: 门禁 2/3 — bugfix_sweep（267 节回归钉）
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONIOENCODING: utf-8
+        run: python -X utf8 -u tests/bugfix_sweep.py
+
+      - name: 门禁 3/3 — run_all --quick
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONIOENCODING: utf-8
+        run: python -X utf8 tests/run_all.py --quick

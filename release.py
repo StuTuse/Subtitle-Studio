@@ -189,9 +189,40 @@ def do_installer() -> None:
     if os.path.isfile(setup):
         mb = os.path.getsize(setup) / 1048576
         print(f"✓ 安装包：{setup}\n  体积 {mb:.1f} MB")
+        _prune_installers(out)
     else:
         print("× 未找到安装包产物，ISCC 输出：")
         print((r.stdout if isinstance(r.stdout, str) else "")[-800:])
+
+
+def _prune_installers(out_dir: str, keep_recent: int = 5) -> None:
+    """安装包目录防堆积：只留 x.y.0 功能版 + 最近 N 个 patch。
+
+    历史：312 个 setup.exe 堆到 28GB 才发现没有清理策略。规则与
+    GitHub Release 策略一致——功能版长期留存，patch 留最近几个够
+    回滚即可。任何异常都不阻断发版。
+    """
+    try:
+        import re as _re
+        files = [f for f in os.listdir(out_dir)
+                 if _re.match(r"^SubtitleStudio-[\d.]+-setup\.exe$", f)]
+        keep, del_candidates = [], []
+        for f in files:
+            m = _re.match(r"^SubtitleStudio-(\d+)\.(\d+)\.(\d+)-setup\.exe$", f)
+            if m and m.group(3) == "0":
+                keep.append(f)          # 功能版永久保留
+            else:
+                del_candidates.append(f)
+        del_candidates.sort(key=lambda f: [int(x) for x in _re.match(
+            r"^SubtitleStudio-([\d.]+)-setup\.exe$", f).group(1).split(".")])
+        for f in del_candidates[:-keep_recent] if keep_recent else []:
+            try:
+                os.remove(os.path.join(out_dir, f))
+                print(f"· 清理旧安装包：{f}")
+            except OSError:
+                pass
+    except Exception as e:
+        print(f"· 安装包清理跳过（{e}）")
 
 
 # ------------------------------------------------------------ 桌面快捷方式

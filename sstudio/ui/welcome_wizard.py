@@ -138,7 +138,7 @@ class _AppearancePage(_Page):
                 f"background:{bg};color:{fg};border-radius:8px;"
                 "font-size:11px;")
             swatch.setAlignment(Qt.AlignCenter)
-            swatch.setText("Aa 字幕 · 00:12")
+            swatch.setText(S("Aa 字幕 · 00:12", "Aa Cue · 00:12"))
             cv.addWidget(swatch)
             n = StrongBodyLabel(name, card)
             cv.addWidget(n)

@@ -192,7 +192,8 @@ class CueTable(QTableWidget):
                     # 与导出页「导出前检查」同一套标准：编辑时就把问题亮出来，
                     # 别等用户点到导出页才发现"3 条语速过快"
                     d.setForeground(QBrush(QColor("#ff6b6b") if dark else QColor("#d13438")))
-                    d.setToolTip(warn + "\n（与导出预检同一套标准）")
+                    d.setToolTip(warn + S("\n（与导出预检同一套标准）",
+                                          "\n(Same criteria as the export pre-check)"))
                 self.setItem(r, COL_D, d)
 
                 badge, bg = self._styles(c.state, dark)

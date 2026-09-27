@@ -16,6 +16,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 from ..core import llm, media, transcriber
 from ..core.config import Config
+from ..core.i18n import S
 from ..core.model import Cue, CueDocument
 
 
@@ -141,10 +142,12 @@ class TranscribeWorker(_BaseWorker):
     def run(self) -> None:
         wav = ""
         try:
-            self._progress("正在读取媒体信息…", self.EXTRACT_SPAN[0])
+            self._progress(S("正在读取媒体信息…", "Reading media info…"),
+                           self.EXTRACT_SPAN[0])
             info = media.probe(self.video_path)
             if not info.audio_codec and info.duration == 0:
-                self.sig_failed.emit("无法读取这个文件，或文件不含音频。")
+                self.sig_failed.emit(S("无法读取这个文件，或文件不含音频。",
+                                       "Cannot read this file, or it has no audio track."))
                 return
             lo, hi = self.EXTRACT_SPAN
 
@@ -156,7 +159,7 @@ class TranscribeWorker(_BaseWorker):
                                       cancel=self.cancelled)
             self.current_wav = wav
             if self.cancelled():
-                self.sig_failed.emit("已取消。")
+                self.sig_failed.emit(S("已取消。", "Cancelled."))
                 return
             self.sig_stage.emit("transcribing")
             lo2, hi2 = self.TRANSCRIBE_SPAN
@@ -188,9 +191,10 @@ class TranscribeWorker(_BaseWorker):
                 doc.meta["gaps_closed"] = touched
                 doc.meta["gaps_saved"] = round(saved, 1)
             if self.cancelled():
-                self.sig_failed.emit("已取消。")
+                self.sig_failed.emit(S("已取消。", "Cancelled."))
                 return
-            self._progress(f"完成：{len(doc.cues)} 条字幕", 1.0)
+            self._progress(S(f"完成：{len(doc.cues)} 条字幕",
+                             f"Done: {len(doc.cues)} cues"), 1.0)
             self.sig_done.emit(doc)
         except Exception as e:
             tb = traceback.format_exc()

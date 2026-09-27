@@ -3010,7 +3010,7 @@ for _root180, _dirs180, _names180 in os.walk("sstudio"):
         if _n180.endswith(".py"):
             _files180.append(os.path.basename(_n180)[:-3])
 _src180 = open("tests/bugfix_sweep.py", encoding="utf-8").read()
-check("源文件 33 个全有钉子覆盖", len(_files180) == 33
+check("源文件 34 个全有钉子覆盖", len(_files180) == 34
       and all(_re180.search(_re180.escape(_n), _src180) for _n in _files180))
 _secs180 = _re180.findall(r'section\("(\d+)\.', _src180)
 check("sweep 节数持续增长", len(_secs180) >= 160)
@@ -5706,7 +5706,9 @@ _ww249 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "welcome_wizard.py"),
 check("欢迎标题双语", 'S("欢迎使用 Subtitle Studio", "Welcome to Subtitle Studio")' in _ww249)
 check("外观页标题双语", 'S("选一个顺眼的外观", "Pick a look you like")' in _ww249)
 check("体检行标签双语拼装", "'required' if it.level == 'required'" in _ww249)
-check("色板样本是字体预览（保留 zh）", 'swatch.setText("Aa 字幕 · 00:12")' in _ww249)
+check("色板样本是字体预览（双语化后仍含样本文案）",
+      'swatch.setText(S("Aa 字幕 · 00:12", "Aa Cue · 00:12"))' in _ww249
+      or 'swatch.setText("Aa 字幕 · 00:12")' in _ww249)
 
 section("250. JSON 导出/导入字段往返（第 246 期续：真缺陷修复——confidence/words 丢失）")
 from sstudio.core.formats import to_json as _tj250, parse_json as _pj250  # noqa: E402
@@ -6393,6 +6395,36 @@ check("跟随模式不设 QT_SCALE_FACTOR（Qt 原生跟 Windows）",
       and "if float(cfg.ui_scale) > 0:" in _msrc267)
 from sstudio.core.config import Config as _Cfg267  # noqa: E402
 check("出厂 ui_scale=0.0", _Cfg267().ui_scale == 0.0)
+
+section("268. 工程补全三件套（完成度收尾：CI / 更新检查 / 磁盘防堆积）")
+_ci268 = os.path.join(_harness.ROOT, ".github", "workflows", "ci.yml")
+check("GitHub Actions CI 存在", os.path.isfile(_ci268))
+if os.path.isfile(_ci268):
+    _cisrc268 = open(_ci268, encoding="utf-8").read()
+    check("CI 三门禁与本地一致",
+          "compileall" in _cisrc268 and "bugfix_sweep" in _cisrc268
+          and "run_all.py --quick" in _cisrc268)
+    check("CI offscreen 不开窗", "QT_QPA_PLATFORM: offscreen" in _cisrc268)
+    check("CI 每周自动回归", "schedule:" in _cisrc268 and "cron:" in _cisrc268)
+from sstudio.core import update_check as _uc268  # noqa: E402
+check("版本比较语义", _uc268.compare("1.18.0", "1.17.289") > 0
+      and _uc268.compare("1.17.0", "1.17.0") == 0
+      and _uc268.compare("1.17.0", "1.18.0") < 0)
+check("脏版本号拒绝", _uc268._parse_ver("abc") == ()
+      and _uc268._parse_ver("") == ())
+check("latest 查询失败静默（结构合法）",
+      isinstance(_uc268.fetch_latest(timeout=4.0), dict))
+check("has_newer 高版本自洽", _uc268.has_newer("99.99.99") is False)
+check("启动静默检查已接线", "QTimer.singleShot(6000, _check_update)"
+      in _msrc267 or "_check_update" in open(os.path.join(
+          _harness.ROOT, "sstudio", "__main__.py"), encoding="utf-8").read())
+check("导航栏手动检查入口", "def check_updates" in _mwsrc260)
+check("发版脚本自动清安装包", "_prune_installers" in open(
+    os.path.join(_harness.ROOT, "release.py"), encoding="utf-8").read())
+check("i18n 收尾：splash 阶段串双语化",
+      'self._stage = S("正在启动…", "Starting…")' in open(
+          os.path.join(_harness.ROOT, "sstudio", "ui", "splash.py"),
+          encoding="utf-8").read())
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/
 # 对话框），解释器关闭时 Python 对象析构顺序不定，DirectShow/媒体后端偶发

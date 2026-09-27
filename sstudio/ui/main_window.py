@@ -153,6 +153,14 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.settings, FIF.SETTING, S("设置", "Settings"),
                              position=NavigationItemPosition.BOTTOM)
 
+        # ------------------------------------------------------------ 检查更新
+        # 放在导航栏最底（设置下方）：低频操作不占一级位置。
+        self.btn_update = self.navigationInterface.addItem(
+            routeKey="update", icon=FIF.SYNC,
+            text=S("检查更新", "Check updates"),
+            onClick=self.check_updates, selectable=False,
+            position=NavigationItemPosition.BOTTOM)
+
         # ------------------------------------------------------------ 进度条
         # FluentWindow 没有 statusBar，用一个悬浮在底部的细条 + 文案代替。
         # 用确定值 ProgressBar：转写/纠错都有真实百分比；不确定阶段
@@ -1177,6 +1185,56 @@ class MainWindow(FluentWindow):
                           avail.center().y() - fg.height() // 2)
         except Exception:
             pass
+
+    def check_updates(self) -> None:
+        """手动检查更新：后台查 GitHub latest release，结果用 InfoBar 反馈。
+
+        与启动时的静默检查共用 update_check 模块（线程 + 4s 超时 + 进程级
+        缓存）。手动触发时绕过缓存（用户点「检查更新」就是要重新查），
+        直接重置模块缓存再拉一次。
+        """
+        import threading as _th
+        from sstudio.core import update_check as _uc
+        from sstudio.version import __version__ as _cur
+
+        def _worker():
+            try:
+                _uc._cached = None          # 手动触发：强制重新联网查
+                info = _uc.fetch_latest()
+                newer = _uc.compare(info["version"], _cur) > 0
+
+                def _notify():
+                    try:
+                        if newer:
+                            InfoBar.warning(
+                                S("发现新版本", "New version available"),
+                                S(f"最新功能版本 {info['version']}，当前 {_cur}。"
+                                  "到 GitHub Releases 页下载安装包。",
+                                  f"Latest feature release {info['version']} "
+                                  f"(current {_cur}). Grab the installer from "
+                                  "GitHub Releases."),
+                                parent=self, position=InfoBarPosition.TOP,
+                                duration=10000)
+                        elif info["version"]:
+                            InfoBar.success(
+                                S("已是最新版本", "Up to date"),
+                                S(f"当前 {_cur} 已是最新功能版本。",
+                                  f"Current {_cur} is the latest feature release."),
+                                parent=self, position=InfoBarPosition.TOP,
+                                duration=4000)
+                        else:
+                            InfoBar.warning(
+                                S("检查失败", "Check failed"),
+                                S("连不上 GitHub（网络/代理问题？），稍后再试。",
+                                  "Cannot reach GitHub (network/proxy?). Try again later."),
+                                parent=self, position=InfoBarPosition.TOP,
+                                duration=6000)
+                    except Exception:
+                        pass
+                QTimer.singleShot(0, _notify)
+            except Exception:
+                pass
+        _th.Thread(target=_worker, daemon=True).start()
 
     def closeEvent(self, e) -> None:  # noqa: N802
         # 未保存 → 先挡下这次关闭，弹框用"信号模式"。
