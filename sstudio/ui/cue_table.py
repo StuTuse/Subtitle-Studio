@@ -372,6 +372,11 @@ class CueTable(QTableWidget):
         m.addSeparator()
         m.addAction(S("复制文本", "Copy text"), lambda: self.request_action.emit("copy", rows))
         m.addAction(S("删除", "Delete"), lambda: self.request_action.emit("delete", rows))
+        if len(rows) == 1:
+            # 单条级样式：只对一条字幕有意义（多选批量样式是另一个话题）
+            m.addSeparator()
+            m.addAction(S("本条样式…", "Style for this cue…"),
+                        lambda: self.request_action.emit("cue_style", rows))
         m.exec_(self.mapToGlobal(pos))
 
 

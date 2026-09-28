@@ -3010,7 +3010,7 @@ for _root180, _dirs180, _names180 in os.walk("sstudio"):
         if _n180.endswith(".py"):
             _files180.append(os.path.basename(_n180)[:-3])
 _src180 = open("tests/bugfix_sweep.py", encoding="utf-8").read()
-check("源文件 34 个全有钉子覆盖", len(_files180) == 34
+check("源文件 37 个全有钉子覆盖", len(_files180) == 37
       and all(_re180.search(_re180.escape(_n), _src180) for _n in _files180))
 _secs180 = _re180.findall(r'section\("(\d+)\.', _src180)
 check("sweep 节数持续增长", len(_secs180) >= 160)
@@ -6424,6 +6424,55 @@ check("发版脚本自动清安装包", "_prune_installers" in open(
 check("i18n 收尾：splash 阶段串双语化",
       'self._stage = S("正在启动…", "Starting…")' in open(
           os.path.join(_harness.ROOT, "sstudio", "ui", "splash.py"),
+          encoding="utf-8").read())
+
+section("269. 视频合成页（新功能：字幕烧录进视频，画质无损）")
+# 左导航「导出成品」下方新页面：全局样式 + 单条覆盖两级样式、预设保存
+# 套用、ffmpeg+libass 烧录（PlayRes=视频分辨率，音频 copy，画质策略可
+# 选视觉无损/完全无损/硬编）。
+_bsrc269 = open(os.path.join(_harness.ROOT, "sstudio", "ui", "burn_page.py"),
+                encoding="utf-8").read()
+check("合成页存在并注册导航", "class BurnInterface" in _bsrc269
+      and "self.burn = BurnInterface" in _mwsrc260)
+check("导航位置在导出之后", _mwsrc260.find('addSubInterface(self.export')
+      < _mwsrc260.find("addSubInterface(self.burn")
+      < _mwsrc260.find("addSubInterface(self.settings"))
+check("样式编辑器组件复用（单条弹窗同款）", "class StyleEditor" in _bsrc269
+      and "collect_override" in _bsrc269)
+check("预设存/删/套三入口", "_save_preset" in _bsrc269 and "_del_preset"
+      in _bsrc269 and "_apply_preset" in _bsrc269)
+check("进度/取消链路", "_on_progress" in _bsrc269 and "_cancel_render"
+      in _bsrc269)
+_spsrc269 = open(os.path.join(_harness.ROOT, "sstudio", "core",
+                              "style_preset.py"), encoding="utf-8").read()
+check("两级样式模型", "def merged_over" in _spsrc269
+      and "def overridden_fields" in _spsrc269)
+check("ASS 颜色 BGR+alpha", "def hex_to_ass" in _spsrc269
+      and '&H{a:02X}{bb}{gg}{rr}' in _spsrc269)
+check("PlayRes=视频分辨率", "PlayResX: {w}" in _spsrc269)
+check("阴影语义：偏移/模糊/颜色", "shadow: Optional[float]" in _spsrc269
+      and "shadow_blur" in _spsrc269 and r"\blur" in _spsrc269
+      and r"\shad" in _spsrc269)
+check("单条覆盖行内标签", "def override_tags" in _spsrc269
+      and r"\fn{st.font}" in _spsrc269)
+check("预设持久化到 config（重置保留）", "burn_style_presets" in open(
+    os.path.join(_harness.ROOT, "sstudio", "core", "config.py"),
+    encoding="utf-8").read())
+_rvsrc269 = open(os.path.join(_harness.ROOT, "sstudio", "core",
+                              "render_video.py"), encoding="utf-8").read()
+check("画质策略：视觉无损默认", '"-crf", "12"' in _rvsrc269
+      and '"-qp", "0"' in _rvsrc269)
+check("音频 copy 不重编码", '"-c:a", "copy"' in _rvsrc269)
+check("分辨率跟随原片（-i 原样进 ffmpeg，不带 scale 滤镜）",
+      "-vf" in _rvsrc269 and "scale=" not in _rvsrc269
+      and "setsar" not in _rvsrc269)
+check("进度解析 out_time_us", "out_time_us" in _rvsrc269)
+check("stderr 走临时文件防死锁", "tempfile.TemporaryFile" in _rvsrc269)
+check("取消删半成品", "cancelled" in _rvsrc269 and "os.remove(out_path)"
+      in _rvsrc269)
+check("编辑页右键「本条样式」入口", "cue_style" in _ctsrc263
+      and "_edit_cue_style" in open(os.path.join(
+          _harness.ROOT, "sstudio", "ui", "editor_page.py"),
           encoding="utf-8").read())
 
 # 退出前清场：本 sweep 造了大量带 C++ 后端的 Qt 对象（player/timeline/表格/

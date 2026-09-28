@@ -260,6 +260,9 @@ class Config:
     # name / base_url / model / api_key(可选) / no_reasoning(可选)。
     # 欢迎向导与设置页的预设下拉 = 内置 + 自定义；出厂仅注入一条示例
     # 预设，用户可随意增删改。
+    burn_style_presets: Dict[str, Dict] = field(default_factory=dict)
+    # 视频合成的字幕样式预设（name → CueStyle.to_dict()）。用户在合成页
+    # 保存的字体样式，新项目直接套用；属于"数据"不属于"设置"（重置保留）。
 
     # ------------------------------------------------------------ I/O
     def to_dict(self) -> Dict[str, Any]:
@@ -320,6 +323,12 @@ class Config:
                    "base_url": "http://127.0.0.1:8790/v1",
                    "model": "deepseek-v41-flash", "no_reasoning": "1"}]
         cfg.custom_presets = cp
+        # 合成样式预设：字典一律走 from_dict 过滤未知键（手改配置的坏条目
+        # 不能带崩整个 Config），非法条目整条丢弃
+        bsp = d.get("burn_style_presets")
+        if isinstance(bsp, dict):
+            cfg.burn_style_presets = {k: v for k, v in bsp.items()
+                                      if isinstance(k, str) and isinstance(v, dict)}
         return cfg
 
     # load 失败（配置文件损坏/被锁定）时置 True：本实例里是默认值，
@@ -403,7 +412,7 @@ class Config:
     _RESET_KEEP = ("profiles", "active_profile", "window_geometry",
                    "recent_files", "last_dir", "export_dir",
                    "player_volume", "editor_hsplit",
-                   "setup_done", "custom_presets")
+                   "setup_done", "custom_presets", "burn_style_presets")
 
     def reset_to_defaults(self) -> None:
         """一键恢复出厂默认：**大模型接入点（API Key / 访问地址 / 模型名）原样保留**。

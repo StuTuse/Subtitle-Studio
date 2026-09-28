@@ -150,6 +150,9 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.editor, FIF.EDIT, S("字幕编辑", "Editor"))
         self.addSubInterface(self.fix, FIF.BROOM, S("AI 纠错", "AI Fix"))
         self.addSubInterface(self.export, FIF.SAVE, S("导出成品", "Export"))
+        from .burn_page import BurnInterface
+        self.burn = BurnInterface(self.cfg, self)
+        self.addSubInterface(self.burn, FIF.VIDEO, S("视频合成", "Video compose"))
         self.addSubInterface(self.settings, FIF.SETTING, S("设置", "Settings"),
                              position=NavigationItemPosition.BOTTOM)
 

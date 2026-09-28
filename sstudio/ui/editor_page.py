@@ -960,8 +960,73 @@ class EditorInterface(QWidget):
         elif action == "play_selection":
             self.player.seek(doc.cues[rows[0]].start)
             self.player.play()
+        elif action == "cue_style":
+            self._edit_cue_style(rows[0])
         self.update_status()
         self.main.mark_dirty()
+
+    def _edit_cue_style(self, row: int) -> None:
+        """单条字幕样式覆盖：弹样式编辑器，收与全局不同的字段存覆盖。
+
+        覆盖挂在 burn 页（渲染时字段级合并进 ASS 行内标签）；清除 =
+        恢复全局外观。该 cue 已有覆盖时先刷成合并后的完整外观，用户
+        在此基础上继续调。
+        """
+        if not self.doc or not (0 <= row < len(self.doc.cues)):
+            return
+        cue = self.doc.cues[row]
+        from ..core.style_preset import CueStyle as _CS
+        from .burn_page import StyleEditor as _SE
+        burn = getattr(self.main, "burn", None)
+        if burn is None:
+            return
+        glob = burn.global_style()
+        dlg = QDialog(self)
+        dlg.setWindowTitle(S(f"第 {row + 1} 条样式", f"Style for cue {row + 1}"))
+        v = QVBoxLayout(dlg)
+        hint = CaptionLabel(S(
+            "只调这一条：与全局不同的字段会单独保存（留空/不动即用全局值）。",
+            "This cue only: changed fields are saved as an override; "
+            "untouched ones follow the global style."), dlg)
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+        se = _SE(dlg)
+        # 已有覆盖 → 显示合并外观（用户看得到实际效果再调）
+        existing = burn.cue_override(cue.id)
+        if existing is not None:
+            se.apply(existing.merged_over(glob))
+        else:
+            se.apply(glob)
+        v.addWidget(se)
+        btns = QHBoxLayout()
+        has_ov = existing is not None
+        btn_clear = PushButton(S("清除本条覆盖", "Clear override"), dlg)
+        btn_clear.setEnabled(has_ov)
+        btn_clear.clicked.connect(dlg.reject)
+        btn_clear.clicked.connect(lambda: dlg.setProperty("clear_override", True))
+        btns.addWidget(btn_clear)
+        btns.addStretch(1)
+        ok = PrimaryPushButton(S("保存本条样式", "Save override"), dlg)
+        ok.clicked.connect(dlg.accept)
+        btns.addWidget(ok)
+        v.addLayout(btns)
+        if dlg.exec_() and not dlg.property("clear_override"):
+            full = se.collect()
+            # 与全局做字段级 diff：只有不同的字段进覆盖
+            diff = {}
+            g = _CS(**{k: getattr(glob, k) for k in
+                       ("font", "size", "color", "alpha", "bold", "italic",
+                        "underline", "outline", "outline_color", "shadow",
+                        "shadow_color", "shadow_blur", "align", "margin_v",
+                        "margin_h")})
+            for k in ("font", "size", "color", "bold", "italic", "underline",
+                      "outline", "outline_color", "shadow", "shadow_color",
+                      "shadow_blur", "align", "margin_v", "margin_h"):
+                if getattr(full, k) != getattr(g, k):
+                    diff[k] = getattr(full, k)
+            burn.set_cue_override(cue.id, _CS(**diff) if diff else None)
+        else:
+            burn.set_cue_override(cue.id, None)
 
     def _nudge_sel(self, d: float) -> None:
         rows = self.table.selected_rows()
