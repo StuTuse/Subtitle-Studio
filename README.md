@@ -1,9 +1,29 @@
 # Subtitle Studio · 视频字幕工坊
 
+**开源许可：[GPL-3.0-only](LICENSE)**，适用范围见 [许可说明](COPYING.md)；第三方组件保留各自许可，见 [第三方清单与分发待办](THIRD_PARTY_NOTICES.md)。
+
+作者：**TuseCreation** · GitHub：[StuTuse](https://github.com/StuTuse)。
+
+**Code signing policy**：[签名政策](CODE_SIGNING.md) · [隐私政策](PRIVACY.md)。目前正在准备 SignPath Foundation 申请，尚未获批，现有安装包仍未签名；本地准备不代表已经公开源码或发布新安装包。
+
+[当前下载及签名状态](DOWNLOADS.md)区分历史公开安装包和本地准备的新版本。
+
 导入视频 → **本地 Whisper 转写** → **大模型只改错别字** → 导出 SRT / VTT / ASS / TXT / JSON …
 
 一条为「UP 主 / 剪辑师 / 课程制作者」设计的字幕生产线：转写在本地跑（不上传隐私内容），
 改错别字交给大模型（但严格禁止它改写句式），最后你自己逐条过一遍就能出片。
+
+> **语言说明**：本软件以**中文优先**——界面文案、文档、日志、提示均以中文为准；
+> 英文界面（en）为渐进式覆盖（约部分双语串），**不承诺完整翻译**，未覆盖处将显示中文。
+> 这是有意的定位选择，非缺陷。
+
+**下载安装包（Windows）**：到 [Releases 最新版](https://github.com/StuTuse/Subtitle-Studio/releases/latest)
+下载 `SubtitleStudio-x.y.z-setup.exe`（约 84 MB，用户级安装、免管理员）。
+装完即用，模型在首次转写时自动下载。
+
+**遇到问题 / 想提功能**：[ Issues 页](https://github.com/StuTuse/Subtitle-Studio/issues)发帖；
+应用内 **设置 → 环境体检 → 打开体检窗口 →「复制诊断」** 可一键复制版本与组件摘要
+（不含 API Key 等敏感信息），贴进 issue 能省一轮往返。
 
 ---
 
@@ -20,7 +40,14 @@
 
 ---
 
-## 二、快速开始
+## 二、快速开始（打包版用户）
+
+1. 到 [Releases](https://github.com/StuTuse/Subtitle-Studio/releases/latest) 下载安装包并安装。
+2. 启动后跟着**首次体检向导**走：缺什么组件点一下自动补装。
+3. **设置**页 → 选模型预设（DeepSeek/Kimi/通义…）→ 填 API Key → **测试连接**。
+4. **字幕编辑**页 → 拖入视频 → **转写**（首次自动下载模型）→ **AI 纠错** → 导出成品。
+
+## 二·五、快速开始（源码开发）
 
 ```bat
 :: 1) 安装依赖（首次）
@@ -236,6 +263,28 @@ Ollama / LM Studio 等本地服务的 Base URL 用 `http://127.0.0.1:11434/v1`�
 
 ---
 
+## 八·五、隐私说明（本程序采集什么）
+
+完整说明见 [隐私政策](PRIVACY.md)。本地转写在本机执行；选择云端转写会发送音频，启动远程大模型纠错会发送字幕及任务上下文。
+
+| 数据 | 去向 | 说明 |
+|---|---|---|
+| 视频/音频文件 | 本机或你选择的云端转写服务 | 本地引擎在本机识别；主动使用云端转写时，会向所配置服务发送音频 |
+| 字幕内容 | 只在你本机 + 你配置的大模型服务商 | 只有你主动点「开始纠错」时，才把**字幕文本**发给你在设置里填的模型服务商（Base URL 可见，可用本地 Ollama/LM Studio 实现全离线） |
+| API Key | 本机保存；请求时用于所选服务的鉴权 | Windows 上经 DPAPI 保护配置；不会作为遥测发送给维护者，配置备份仍需妥善保管 |
+| 转写模型 | 从网络下载到本机 | 默认走 ModelScope 的 `pengzhendong/faster-whisper-*` 公开仓库（阿里云托管），下载完成后逐文件 SHA-256 校验，不符即拒用；也可手动指向本地已下载模型实现零联网 |
+| 启动更新检查 | GitHub API 与下载代理（可关） | 默认开启，当前依次尝试 `gh-proxy.com`、`ghfast.top`、`api.github.com`；服务器可看到 IP 和请求头，不主动携带媒体、字幕或 API Key；可在 设置 → 软件界面 →「启动时检查新版本」关闭 |
+| 崩溃报告 | 只在你本机 | 崩溃信息写本地 `crash.log` / `logs/app.log`，程序**不会自动上报**；反馈时由你决定是否附上 |
+
+一键修复（体检窗「安装」按钮）会往你机器的全局 Python 装包，装前会弹窗列明将要安装/升级哪些包，确认后才执行。
+
+> **模型档位说明**：转写模型共 tiny / base / small / medium / large-v3 / large-v3-turbo 六档，
+> 体积 75 MB ~ 3 GB。tiny/base 被定位为「快速试用档」——首次想快速验证流程可用，
+> 但中文识别质量明显弱，正式出片建议 small 起步、GPU 够用直接 large-v3-turbo。
+> 软件默认档为 `large-v3-turbo`（8GB 显存实测最稳）。
+
+---
+
 ## 九、版本系统与打包
 
 ### 版本号只有一个真源：根目录 `VERSION`
@@ -282,7 +331,7 @@ pyinstaller build.spec --noconfirm
 打包时值得注意的三点，都是踩过坑的：
 
 * **模型不打包**。每个 1.5–3 GB。程序运行时扫描标准缓存目录（HuggingFace/ModelScope）与自家模型目录（`%LOCALAPPDATA%\SubtitleStudio\models`）直接复用，见第三节。
-* **`PyQt5.QtXml` 不能排除**。qfluentwidgets 硬依赖它，只有 0.2 MB；误排会让打包版界面直接起不来（自检里会显示 `No module named 'PyQt5.QtXml'`）。
+* **PySide6 双绑定防护**。v2.1.0 起 UI 栈是 PySide6（Qt6）+ PySide6-Fluent-Widgets；`build.spec` 把 PyQt5 整族排除——打包环境若残留两套 Qt 绑定，PyInstaller 检测到会中止构建，排除后构建环境再脏也能出干净包。
 * **git 调用带 `CREATE_NO_WINDOW`**。打包版是无窗口程序，起子进程会闪黑框；冻结环境直接跳过 git，改读构建期固化的 `BUILDINFO`。
 
 ### 验证打包产物
@@ -292,7 +341,7 @@ pyinstaller build.spec --noconfirm
 "dist\Subtitle Studio\Subtitle Studio.exe" --check
 ```
 
-`--check` 会逐项打印 PyQt5 / qfluentwidgets / faster-whisper / CTranslate2 / GPU 可推理 / ffmpeg，并列出发现的本地模型。GUI 版用户看不到命令行，遇到"打不开"时把 exe 拖到 cmd 里跑这两条即可定位。
+`--check` 会逐项打印 PySide6 / PySide6-Fluent-Widgets / QtMultimedia / faster-whisper / CTranslate2 / GPU 可推理 / ffmpeg，并列出发现的本地模型。GUI 版用户看不到命令行，遇到"打不开"时把 exe 拖到 cmd 里跑这两条即可定位。
 
 > 提醒：配置与 API Key 写在 `%APPDATA%\SubtitleStudio\config.json`，是明文。把这份配置拷给别人前记得清空该目录（或首次启动后在设置里重新填）。
 
@@ -308,7 +357,7 @@ pyinstaller build.spec --noconfirm
 | --- | --- |
 | Git for Windows | 克隆、发版打 tag |
 | Python 3.10 x64 | 本机是 3.10.11，其他版本没验证过 |
-| Visual Studio 2015–2022 可再发行组件（vc_redist.x64） | PyQt5 / ctranslate2 缺 MSVC 运行时会在 import 时才炸，报错还看不懂 |
+| Visual Studio 2015–2022 可再发行组件（vc_redist.x64） | PySide6 / ctranslate2 缺 MSVC 运行时会在 import 时才炸，报错还看不懂 |
 
 然后装依赖（国内走清华源）：
 
@@ -363,7 +412,7 @@ pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-cuda-runtime-cu12 -i htt
 ### 6. 验证环境齐不齐
 
 ```bat
-python tests\doctor.py              :: 体检：python/pyqt5/faster_whisper/pyav/ffmpeg/cuda12
+python tests\doctor.py              :: 体检：python/pyside6/faster_whisper/pyav/ffmpeg/cuda12
 python -m compileall -q sstudio tests
 set QT_QPA_PLATFORM=offscreen
 python tests\run_all.py --quick     :: 不碰 GPU 的快速套件
@@ -394,7 +443,7 @@ python -X utf8 release.py --dry-run
 
 ## 十、技术选型
 
-* **PyQt5 + PyQt-Fluent-Widgets** — 原生桌面体验，Win11 风格，离线可用。
+* **PySide6（Qt6）+ PySide6-Fluent-Widgets** — 原生桌面体验，Win11 风格，离线可用；v2.1.0 起全仓单套 Qt 绑定（根除双绑定冲突，媒体链走 Qt6 内置 FFmpeg 后端，HEVC 原生可解）。
 * **faster-whisper (CTranslate2)** — 比原版 openai-whisper 快 4 倍、显存更省，支持词级时间戳。
 * **OpenAI SDK** — 只用 `chat.completions` 这一层通用能力，兼容几乎所有国内外服务商与本地推理。
 * **不引入字幕解析三方库** — SRT/VTT/ASS 的解析自己实现，容错更好（能读脏文件），也少一层依赖。
